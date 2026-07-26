@@ -18,3 +18,8 @@ MonoBehaviour:
   gatherSeconds: 0.75
   workerSpeed: 5
   cacheFallbackRadius: 20
+  houseCost: 100
+  houseBuildSeconds: 3
+  startingPopulationCap: 12
+  housePopulationCapacity: 8
+  hardPopulationCap: 60

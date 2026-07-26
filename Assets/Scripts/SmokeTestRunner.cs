@@ -10,6 +10,7 @@ namespace AshesOfRum
     {
         private const float ScreenshotTimeoutSeconds = 15f;
         private const float EconomyTimeoutSeconds = 20f;
+        private const float ConstructionTimeoutSeconds = 20f;
 
         [Serializable]
         private sealed class SmokeResult
@@ -47,6 +48,16 @@ namespace AshesOfRum
                     yield return null;
             }
             var economyCompleted = economyStarted && economy.Supplies > economy.StartingSupplies;
+            var houseStarted = economyCompleted &&
+                               economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f));
+            if (houseStarted)
+            {
+                var constructionDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
+                while (economy.PopulationCapacity == 12 && Time.realtimeSinceStartup < constructionDeadline)
+                    yield return null;
+            }
+            var houseCompleted = houseStarted && economy.PopulationCapacity == 20 &&
+                                 economy.Houses.Count == 1 && economy.Houses[0].IsComplete;
             yield return null;
 
             if (graphical)
@@ -70,6 +81,8 @@ namespace AshesOfRum
                     "Development player running",
                     "Starting economy available",
                     "Worker gather deposit completed",
+                    "House construction completed",
+                    "Population capacity increased",
                     "1920x1080 window configured",
                     "Graphical frame captured"
                 }
@@ -79,7 +92,9 @@ namespace AshesOfRum
                     "Required bootstrap objects available",
                     "Development player running",
                     "Starting economy available",
-                    "Worker gather deposit completed"
+                    "Worker gather deposit completed",
+                    "House construction completed",
+                    "Population capacity increased"
                 };
             var result = new SmokeResult
             {
@@ -94,10 +109,12 @@ namespace AshesOfRum
                 Require(Debug.isDebugBuild, checks[2]);
                 Require(economyStarted, checks[3]);
                 Require(economyCompleted, $"{checks[4]} within {EconomyTimeoutSeconds} seconds");
+                Require(houseCompleted, $"{checks[5]} within {ConstructionTimeoutSeconds} seconds");
+                Require(economy.PopulationCapacity == 20, checks[6]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[5]);
-                    Require(HasContent(screenshotPath), $"{checks[6]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[7]);
+                    Require(HasContent(screenshotPath), $"{checks[8]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
