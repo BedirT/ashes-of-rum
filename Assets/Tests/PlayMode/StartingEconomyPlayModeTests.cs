@@ -243,6 +243,111 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator StorehouseConstruction_CancelsRefundsCompletesAndBecomesNearestDropOff()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var worker = economy.Workers[0];
+            economy.CreditSuppliesForAutomation(100);
+
+            Assert.That(economy.TryPlaceStorehouse(worker, new Vector3(12f, 0f, 6f)), Is.True);
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(economy.CancelConstruction(worker), Is.True);
+            yield return null;
+            Assert.That(economy.Supplies, Is.EqualTo(200));
+            Assert.That(economy.Storehouses, Is.Empty);
+
+            Assert.That(economy.TryPlaceStorehouse(worker, new Vector3(12f, 0f, 6f)), Is.True);
+            yield return WaitUntil(() => economy.Storehouses.Count == 1 && economy.Storehouses[0].IsComplete);
+            var storehouse = economy.Storehouses[0];
+            worker.IssueGather(economy.Caches[1]);
+            yield return WaitUntil(() => worker.CurrentActivity == WorkerAgent.Activity.Returning &&
+                                         worker.CarriedSupplies == 10);
+
+            Assert.That(Vector3.Distance(worker.LastDropOffPoint, storehouse.DropOffPoint), Is.LessThan(0.01f));
+            yield return WaitUntil(() => economy.Supplies == 10);
+            yield return WaitUntil(() => worker.CurrentActivity == WorkerAgent.Activity.Returning &&
+                                         worker.CarriedSupplies == 10);
+            economy.SelectOnly(storehouse);
+            Assert.That(economy.RequestDemolition(), Is.False);
+            Assert.That(economy.RequestDemolition(), Is.True);
+            yield return WaitUntil(() => economy.Storehouses.Count == 0);
+            yield return WaitUntil(() => economy.Supplies == 20);
+            var hisar = GameObject.Find(StartingEconomyController.HisarObjectName).GetComponent<Hisar>();
+            Assert.That(Vector3.Distance(worker.LastDropOffPoint, hisar.DropOffPoint), Is.LessThan(0.01f));
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Not.Contain("IDLE"));
+        }
+
+        [UnityTest]
+        public IEnumerator WatchtowerConstruction_AutomaticallyTargetsAndDamagesNearestHostile()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(600);
+
+            Assert.That(economy.TryPlaceWatchtower(economy.Workers[0], new Vector3(0f, 0f, 10f)), Is.True);
+            yield return WaitUntil(() => economy.Watchtowers.Count == 1 && economy.Watchtowers[0].IsComplete);
+            var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
+            Assert.That(tower, Is.Not.Null);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            yield return WaitUntil(() => economy.EnemyFormations.Count == 1);
+            var hostile = economy.EnemyFormations[0];
+            yield return WaitUntil(() => tower.ShotsFired >= 1);
+            Assert.That(GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
+                .Any(itemRenderer => itemRenderer.name == "Watchtower Projectile"), Is.True);
+            yield return WaitUntil(() => hostile.MemberCount < 8);
+
+            Assert.That(tower.CurrentTarget, Is.SameAs(hostile));
+            Assert.That(hostile.MemberCount, Is.LessThan(8));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(12));
+        }
+
+        [UnityTest]
+        public IEnumerator CompletedBuilding_DemolitionRequiresConfirmationAndNeverRefunds()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(100);
+            Assert.That(economy.TryPlaceStorehouse(economy.Workers[0], new Vector3(12f, 0f, 6f)), Is.True);
+            yield return WaitUntil(() => economy.Storehouses.Count == 1 && economy.Storehouses[0].IsComplete);
+            var storehouse = economy.Storehouses[0];
+            economy.SelectOnly(storehouse);
+
+            Assert.That(economy.RequestDemolition(), Is.False);
+            Assert.That(economy.Storehouses, Has.Count.EqualTo(1));
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(GameObject.Find("Demolish Building").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("CONFIRM"));
+            Assert.That(economy.RequestDemolition(), Is.True);
+            yield return WaitUntil(() => economy.Storehouses.Count == 0);
+
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(storehouse.IsDestroyed, Is.True);
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("NO REFUND"));
+        }
+
+        [UnityTest]
+        public IEnumerator CompletedHouse_DemolitionRemovesItsPopulationCapacity()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            yield return WaitUntil(() => economy.Houses.Count == 1 && economy.Houses[0].IsComplete);
+            var house = economy.Houses[0];
+            Assert.That(economy.PopulationCapacity, Is.EqualTo(20));
+            economy.SelectOnly(house);
+
+            Assert.That(economy.RequestDemolition(), Is.False);
+            Assert.That(economy.RequestDemolition(), Is.True);
+            yield return WaitUntil(() => economy.Houses.Count == 0);
+
+            Assert.That(economy.PopulationCapacity, Is.EqualTo(12));
+            Assert.That(economy.Supplies, Is.Zero);
+        }
+
+        [UnityTest]
         public IEnumerator HisarQueue_TrainsFormationAndArchersWinReadableCounterFight()
         {
             yield return LoadEconomy();
@@ -359,6 +464,10 @@ namespace AshesOfRum.Tests
                 .Any(component => component.GetType().Name == "InputSystemUIInputModule"), Is.True);
             Assert.That(GameObject.Find("Build House").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("[H]"));
+            Assert.That(GameObject.Find("Build Storehouse").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("200 [D]"));
+            Assert.That(GameObject.Find("Build Watchtower").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("300 [T]"));
             Assert.That(GameObject.Find("Cancel Build").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("[X]"));
 

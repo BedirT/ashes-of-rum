@@ -59,12 +59,46 @@ namespace AshesOfRum
             }
             var houseCompleted = houseStarted && economy.PopulationCapacity == 20 &&
                                  economy.Houses.Count == 1 && economy.Houses[0].IsComplete;
+            var storehouseStarted = false;
+            var watchtowerStarted = false;
+            var defensiveBuildingsCompleted = false;
+            var storehouseDropOffUsed = false;
+            var watchtowerFired = false;
+            if (houseCompleted)
+            {
+                economy.CreditSuppliesForAutomation(500);
+                storehouseStarted = economy.TryPlaceStorehouse(economy.Workers[1], new Vector3(12f, 0f, 6f));
+                watchtowerStarted = economy.TryPlaceWatchtower(economy.Workers[2], new Vector3(0f, 0f, 10f));
+                var constructionDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
+                while ((economy.Storehouses.Count == 0 || !economy.Storehouses[0].IsComplete ||
+                        economy.Watchtowers.Count == 0 || !economy.Watchtowers[0].IsComplete) &&
+                       Time.realtimeSinceStartup < constructionDeadline)
+                    yield return null;
+                defensiveBuildingsCompleted = storehouseStarted && watchtowerStarted &&
+                                              economy.Storehouses.Count == 1 &&
+                                              economy.Storehouses[0].IsComplete &&
+                                              economy.Watchtowers.Count == 1 &&
+                                              economy.Watchtowers[0].IsComplete;
+                if (defensiveBuildingsCompleted)
+                {
+                    var storehouse = economy.Storehouses[0];
+                    var suppliesBeforeDropOff = economy.Supplies;
+                    economy.Workers[1].IssueGather(economy.Caches[1]);
+                    var economyDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
+                    while (economy.Supplies <= suppliesBeforeDropOff &&
+                           Time.realtimeSinceStartup < economyDeadline)
+                        yield return null;
+                    storehouseDropOffUsed = economy.Supplies > suppliesBeforeDropOff &&
+                                            Vector3.Distance(economy.Workers[1].LastDropOffPoint,
+                                                storehouse.DropOffPoint) < 0.1f;
+                }
+            }
             var trainingStarted = false;
             var combatWon = false;
             var supportedFormationMaterials = false;
             var supportedArrowMaterial = false;
             var nonlethalHitFeedback = false;
-            if (houseCompleted)
+            if (defensiveBuildingsCompleted && storehouseDropOffUsed)
             {
                 economy.CreditSuppliesForAutomation(400);
                 trainingStarted = economy.TryQueueFormation(FormationType.Archers);
@@ -75,6 +109,10 @@ namespace AshesOfRum
                 {
                     var friendly = economy.FriendlyFormations[0];
                     var hostile = economy.EnemyFormations[0];
+                    var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
+                    while (hostile.MemberCount == 8 && Time.realtimeSinceStartup < combatDeadline)
+                        yield return null;
+                    watchtowerFired = tower.ShotsFired > 0 && hostile.MemberCount < 8;
                     supportedFormationMaterials = friendly.HasSupportedVisualMaterials() &&
                                                   hostile.HasSupportedVisualMaterials();
                     hostile.ApplyDeterministicHit(FormationType.Spearmen);
@@ -117,6 +155,10 @@ namespace AshesOfRum
                     "Worker gather deposit completed",
                     "House construction completed",
                     "Population capacity increased",
+                    "Storehouse construction completed",
+                    "Watchtower construction completed",
+                    "Nearest Storehouse drop-off used",
+                    "Watchtower automatically damaged a hostile formation",
                     "Archer formation trained",
                     "Formation visuals use supported faction materials",
                     "Arrows use a supported material",
@@ -134,6 +176,10 @@ namespace AshesOfRum
                     "Worker gather deposit completed",
                     "House construction completed",
                     "Population capacity increased",
+                    "Storehouse construction completed",
+                    "Watchtower construction completed",
+                    "Nearest Storehouse drop-off used",
+                    "Watchtower automatically damaged a hostile formation",
                     "Archer formation trained",
                     "Formation visuals use supported faction materials",
                     "Arrows use a supported material",
@@ -155,15 +201,19 @@ namespace AshesOfRum
                 Require(economyCompleted, $"{checks[4]} within {EconomyTimeoutSeconds} seconds");
                 Require(houseCompleted, $"{checks[5]} within {ConstructionTimeoutSeconds} seconds");
                 Require(economy.PopulationCapacity == 20, checks[6]);
-                Require(trainingStarted, checks[7]);
-                Require(supportedFormationMaterials, checks[8]);
-                Require(supportedArrowMaterial, checks[9]);
-                Require(nonlethalHitFeedback, checks[10]);
-                Require(combatWon, $"{checks[11]} within {CombatTimeoutSeconds} seconds");
+                Require(storehouseStarted && defensiveBuildingsCompleted, checks[7]);
+                Require(watchtowerStarted && defensiveBuildingsCompleted, checks[8]);
+                Require(storehouseDropOffUsed, checks[9]);
+                Require(watchtowerFired, checks[10]);
+                Require(trainingStarted, checks[11]);
+                Require(supportedFormationMaterials, checks[12]);
+                Require(supportedArrowMaterial, checks[13]);
+                Require(nonlethalHitFeedback, checks[14]);
+                Require(combatWon, $"{checks[15]} within {CombatTimeoutSeconds} seconds");
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[12]);
-                    Require(HasContent(screenshotPath), $"{checks[13]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[16]);
+                    Require(HasContent(screenshotPath), $"{checks[17]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;

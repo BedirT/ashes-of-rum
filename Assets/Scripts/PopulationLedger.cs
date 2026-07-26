@@ -5,6 +5,7 @@ namespace AshesOfRum
     public sealed class PopulationLedger
     {
         private readonly int hardCap;
+        private readonly int minimumCapacity;
 
         public PopulationLedger(int used, int startingCap, int maximumCap)
         {
@@ -13,6 +14,7 @@ namespace AshesOfRum
             if (maximumCap < startingCap) throw new ArgumentOutOfRangeException(nameof(maximumCap));
             Used = used;
             Capacity = startingCap;
+            minimumCapacity = startingCap;
             hardCap = maximumCap;
         }
 
@@ -23,6 +25,12 @@ namespace AshesOfRum
         {
             if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
             Capacity = Math.Min(hardCap, checked(Capacity + amount));
+        }
+
+        public void RemoveCapacity(int amount)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+            Capacity = Math.Max(minimumCapacity, Capacity - amount);
         }
 
         public bool TryReserve(int amount)

@@ -13,6 +13,14 @@ namespace AshesOfRum
         [Min(0.1f)] public float cacheFallbackRadius = 20f;
         [Min(1)] public int houseCost = 100;
         [Min(0.1f)] public float houseBuildSeconds = 3f;
+        [Min(1)] public int storehouseCost = 200;
+        [Min(0.1f)] public float storehouseBuildSeconds = 4f;
+        [Min(1)] public int watchtowerCost = 300;
+        [Min(0.1f)] public float watchtowerBuildSeconds = 5f;
+        [Min(1)] public int buildingHealth = 100;
+        [Min(0.1f)] public float watchtowerRange = 9f;
+        [Min(0.1f)] public float watchtowerAttackSeconds = 0.75f;
+        [Min(1)] public int watchtowerDamage = 20;
         [Min(1)] public int startingPopulationCap = 12;
         [Min(1)] public int housePopulationCapacity = 8;
         [Min(1)] public int hardPopulationCap = 60;

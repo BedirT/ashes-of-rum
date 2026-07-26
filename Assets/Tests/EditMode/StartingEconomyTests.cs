@@ -41,6 +41,22 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void Population_DestroyedHouseRemovesCapacityWithoutKillingOverCapPopulation()
+        {
+            var population = new PopulationLedger(4, 12, 60);
+            population.AddCapacity(8);
+            Assert.That(population.TryReserve(16), Is.True);
+
+            population.RemoveCapacity(8);
+
+            Assert.That(population.Used, Is.EqualTo(20));
+            Assert.That(population.Capacity, Is.EqualTo(12));
+            Assert.That(population.TryReserve(1), Is.False);
+            population.RemoveCapacity(8);
+            Assert.That(population.Capacity, Is.EqualTo(12));
+        }
+
+        [Test]
         public void Population_ReserveAndReleaseTracksAvailableCapacity()
         {
             var population = new PopulationLedger(4, 12, 60);
@@ -89,6 +105,46 @@ namespace AshesOfRum.Tests
             Assert.That(snapped, Is.EqualTo(new Vector3(7f, 0f, 10f)));
             Assert.That(HousePlacementRules.IsInsidePlayableBounds(snapped), Is.True);
             Assert.That(HousePlacementRules.IsInsidePlayableBounds(new Vector3(21f, 0f, 10f)), Is.False);
+        }
+
+        [Test]
+        public void BuildingTuning_PreservesApprovedOneTwoThreeCostRatio()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            try
+            {
+                Assert.That(tuning.storehouseCost, Is.EqualTo(tuning.houseCost * 2));
+                Assert.That(tuning.watchtowerCost, Is.EqualTo(tuning.houseCost * 3));
+            }
+            finally
+            {
+                Object.DestroyImmediate(tuning);
+            }
+        }
+
+        [Test]
+        public void ConstructibleBuilding_CompletesAndDestructionCallbackFiresOnce()
+        {
+            var root = new GameObject("Storehouse");
+            try
+            {
+                var destructionCount = 0;
+                var building = root.AddComponent<ConstructibleBuilding>();
+                building.Initialize(BuildingType.Storehouse, 4f, 100, Color.blue, _ => destructionCount++);
+
+                Assert.That(building.Advance(3.9f), Is.False);
+                Assert.That(building.Advance(0.1f), Is.True);
+                Assert.That(building.IsComplete, Is.True);
+                Assert.That(building.ApplyDamage(100), Is.True);
+                Assert.That(building.IsDestroyed, Is.True);
+                Assert.That(destructionCount, Is.EqualTo(1));
+                Assert.That(building.Demolish(), Is.False);
+                Assert.That(destructionCount, Is.EqualTo(1));
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
         }
 
         [Test]

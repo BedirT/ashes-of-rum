@@ -20,6 +20,14 @@ MonoBehaviour:
   cacheFallbackRadius: 20
   houseCost: 100
   houseBuildSeconds: 3
+  storehouseCost: 200
+  storehouseBuildSeconds: 4
+  watchtowerCost: 300
+  watchtowerBuildSeconds: 5
+  buildingHealth: 100
+  watchtowerRange: 9
+  watchtowerAttackSeconds: 0.75
+  watchtowerDamage: 20
   startingPopulationCap: 12
   housePopulationCapacity: 8
   hardPopulationCap: 60

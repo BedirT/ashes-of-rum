@@ -31,6 +31,7 @@ namespace AshesOfRum
         private EconomyTuning tuning;
         private EconomyWallet wallet;
         private Hisar hisar;
+        private Func<Vector3, Vector3> resolveDropOff;
         private IReadOnlyList<ResourceCache> knownCaches;
         private Action<string> notifyEconomyState;
         private ResourceCache targetCache;
@@ -41,22 +42,25 @@ namespace AshesOfRum
         private DeferredOrder deferredOrder;
         private Vector3 deferredDestination;
         private ResourceCache deferredCache;
-        private HouseBuilding deferredBuilding;
-        private HouseBuilding construction;
+        private ConstructibleBuilding deferredBuilding;
+        private ConstructibleBuilding construction;
         private ResourceCache resumeCache;
-        private Action<HouseBuilding> constructionCompleted;
+        private Action<ConstructibleBuilding> constructionCompleted;
 
         public Activity CurrentActivity { get; private set; }
         public bool IsSelected { get; private set; }
         public int CarriedSupplies { get; private set; }
-        public HouseBuilding CurrentConstruction => construction ?? deferredBuilding;
+        public ConstructibleBuilding CurrentConstruction => construction ?? deferredBuilding;
+        public Vector3 LastDropOffPoint { get; private set; }
 
         public void Initialize(EconomyTuning economyTuning, EconomyWallet economyWallet, Hisar home,
-            IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification)
+            IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification,
+            Func<Vector3, Vector3> dropOffResolver = null)
         {
             tuning = economyTuning;
             wallet = economyWallet;
             hisar = home;
+            resolveDropOff = dropOffResolver;
             knownCaches = caches;
             notifyEconomyState = economyStateNotification;
             gatherSlot = slot;
@@ -105,7 +109,7 @@ namespace AshesOfRum
             BeginGather(cache);
         }
 
-        public void IssueConstruct(HouseBuilding building, Action<HouseBuilding> completed)
+        public void IssueConstruct(ConstructibleBuilding building, Action<ConstructibleBuilding> completed)
         {
             if (building == null) return;
             resumeCache = targetCache;
@@ -188,6 +192,7 @@ namespace AshesOfRum
                     if (Time.time >= gatherReadyAt) FinishGathering();
                     break;
                 case Activity.Returning:
+                    RefreshDropOff();
                     if (HasArrived()) DepositAndReturn();
                     break;
                 case Activity.GoingToConstruction:
@@ -250,7 +255,15 @@ namespace AshesOfRum
         {
             CurrentActivity = Activity.Returning;
             agent.stoppingDistance = 0.5f;
-            agent.SetDestination(hisar.DropOffPoint);
+            RefreshDropOff();
+        }
+
+        private void RefreshDropOff()
+        {
+            var currentDropOff = resolveDropOff?.Invoke(transform.position) ?? hisar.DropOffPoint;
+            if ((currentDropOff - LastDropOffPoint).sqrMagnitude < 0.01f && agent.hasPath) return;
+            LastDropOffPoint = currentDropOff;
+            agent.SetDestination(LastDropOffPoint);
         }
 
         private void ExecuteDeferredOrder()
@@ -271,7 +284,7 @@ namespace AshesOfRum
             }
         }
 
-        private void BeginConstruction(HouseBuilding building)
+        private void BeginConstruction(ConstructibleBuilding building)
         {
             construction = building;
             if (construction == null)
