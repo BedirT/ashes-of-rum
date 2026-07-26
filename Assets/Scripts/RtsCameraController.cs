@@ -11,6 +11,21 @@ namespace AshesOfRum
         private const float DragScale = 0.025f;
         private Vector2 previousMousePosition;
 
+        public Vector3 LastRequestedCenter { get; private set; }
+
+        public void CenterOn(Vector3 worldPosition)
+        {
+            LastRequestedCenter = worldPosition;
+            var position = transform.position;
+            var forward = transform.forward;
+            var groundOffset = forward.y < -0.01f
+                ? forward * (position.y / -forward.y)
+                : Vector3.zero;
+            position.x = Mathf.Clamp(worldPosition.x - groundOffset.x, -20f, 20f);
+            position.z = Mathf.Clamp(worldPosition.z - groundOffset.z, -25f, 12f);
+            transform.position = position;
+        }
+
         private void Update()
         {
             var keyboard = Keyboard.current;

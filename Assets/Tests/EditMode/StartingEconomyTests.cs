@@ -112,6 +112,39 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void FormationTuning_CavalryIsClearlyFasterThanFootFormations()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            try
+            {
+                Assert.That(tuning.cavalrySpeed, Is.GreaterThan(tuning.footSpeed * 1.4f));
+                Assert.That(tuning.sightRadius, Is.GreaterThan(0f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(tuning);
+            }
+        }
+
+        [Test]
+        public void FogMap_PreservesExplorationAndClearsOnlyCurrentVisibility()
+        {
+            var fog = new FogOfWarMap(-10f, 10f, -10f, 10f, 1f);
+            fog.UpdateVisibility(new[] { Vector3.zero }, 3f);
+
+            Assert.That(fog.StateAt(Vector3.zero), Is.EqualTo(FogState.Visible));
+            Assert.That(fog.StateAt(new Vector3(8f, 0f, 8f)), Is.EqualTo(FogState.Unexplored));
+
+            fog.UpdateVisibility(new[] { new Vector3(8f, 0f, 8f) }, 2f);
+
+            Assert.That(fog.StateAt(Vector3.zero), Is.EqualTo(FogState.Explored));
+            Assert.That(fog.StateAt(new Vector3(8f, 0f, 8f)), Is.EqualTo(FogState.Visible));
+            var world = fog.UvToWorld(fog.WorldToUv(new Vector3(4f, 0f, -3f)));
+            Assert.That(world.x, Is.EqualTo(4f).Within(0.01f));
+            Assert.That(world.z, Is.EqualTo(-3f).Within(0.01f));
+        }
+
+        [Test]
         public void HousePlacement_SnapsAndChecksBuildableBounds()
         {
             var snapped = HousePlacementRules.Snap(new Vector3(7.4f, 2f, 9.6f));

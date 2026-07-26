@@ -6,7 +6,7 @@ namespace AshesOfRum
     public sealed class EconomyTuning : ScriptableObject
     {
         [Min(0)] public int startingSupplies = 100;
-        [Min(1)] public int cacheSupplies = 200;
+        [Min(1)] public int cacheSupplies = 400;
         [Min(1)] public int gatherBatch = 10;
         [Min(0.05f)] public float gatherSeconds = 0.75f;
         [Min(0.1f)] public float workerSpeed = 5f;
@@ -33,5 +33,7 @@ namespace AshesOfRum
         [Min(0.1f)] public float attackSeconds = 0.75f;
         [Min(0.1f)] public float projectileSeconds = 0.35f;
         [Min(0.1f)] public float footSpeed = 3.5f;
+        [Min(0.1f)] public float cavalrySpeed = 5.25f;
+        [Min(0.1f)] public float sightRadius = 10f;
     }
 }

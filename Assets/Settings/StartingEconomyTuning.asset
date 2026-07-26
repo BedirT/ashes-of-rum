@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: StartingEconomyTuning
   m_EditorClassIdentifier: AshesOfRum.Runtime::AshesOfRum.EconomyTuning
   startingSupplies: 100
-  cacheSupplies: 200
+  cacheSupplies: 400
   gatherBatch: 10
   gatherSeconds: 0.75
   workerSpeed: 5
@@ -40,3 +40,5 @@ MonoBehaviour:
   attackSeconds: 0.75
   projectileSeconds: 0.35
   footSpeed: 3.5
+  cavalrySpeed: 5.25
+  sightRadius: 10
