@@ -92,6 +92,10 @@ publish_status() {
   remote="$(git -C "$ROOT" remote get-url origin)"
   local repo
   repo="$(printf '%s' "$remote" | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
+  if ! gh api "repos/$repo/commits/$SHA" >/dev/null 2>&1; then
+    say "Commit $SHA is not on GitHub yet; status publication deferred until the post-push verification."
+    return 0
+  fi
   gh api --method POST "repos/$repo/statuses/$SHA" \
     -f state="$state" \
     -f context='unity-local/verify' \
