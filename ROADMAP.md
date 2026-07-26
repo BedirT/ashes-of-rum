@@ -12,7 +12,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | 001 - Establish and command the starting economy | Launch with one Hisar and four workers, select workers, gather Supplies, and issue visible move and gather orders. |
 | Complete | 002 - Build and expand population | Spend Supplies through the real economy to place and complete a House. |
 | Complete | 003 - Train and counter | Train the first formations through the Hisar queue, then resolve the first readable counter fight. |
-| Planned | 004 - Build the defensive line | Place a Storehouse and Tower with valid placement, construction, and destruction states. |
+| Complete | 004 - Build the defensive line | Place a Storehouse and Tower with valid placement, construction, and destruction states. |
 | Planned | 005 - Contest the road | Add Cavalry, control groups, formations, fog, and minimap information. |
 | Planned | 006 - Win a complete match | Add fair scripted AI, both Hisar destruction outcomes, restart, quit, and a 10-15 minute match tune. |
 
