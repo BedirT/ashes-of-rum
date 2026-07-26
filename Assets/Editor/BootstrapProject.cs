@@ -25,8 +25,8 @@ namespace AshesOfRum.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             PlayerSettings.productName = "Ashes of Rum";
             PlayerSettings.companyName = "Ashes of Rum Prototype";
-            PlayerSettings.defaultScreenWidth = 1280;
-            PlayerSettings.defaultScreenHeight = 720;
+            PlayerSettings.defaultScreenWidth = 1920;
+            PlayerSettings.defaultScreenHeight = 1080;
             PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
             PlayerSettings.runInBackground = true;
             AssetDatabase.SaveAssets();

@@ -1,4 +1,4 @@
-.PHONY: doctor bootstrap verify-fast verify smoke pr-ready post-merge static
+.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke pr-ready post-merge static
 
 doctor:
 	@./scripts/harness doctor
@@ -14,6 +14,9 @@ verify:
 
 smoke:
 	@./scripts/harness smoke
+
+graphical-smoke:
+	@./scripts/harness graphical-smoke
 
 pr-ready:
 	@./scripts/harness pr-ready

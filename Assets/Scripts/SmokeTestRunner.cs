@@ -28,10 +28,36 @@ namespace AshesOfRum
 
         private static IEnumerator Run()
         {
+            var screenshotPath = GetArgumentValue("--smoke-screenshot");
+            var graphical = !string.IsNullOrEmpty(screenshotPath);
+            if (graphical) Screen.SetResolution(1920, 1080, FullScreenMode.Windowed);
             yield return null;
             yield return new WaitForEndOfFrame();
 
-            var checks = new[] { "Bootstrap scene loaded", "Required bootstrap objects available" };
+            if (graphical)
+            {
+                var screenshotDirectory = Path.GetDirectoryName(screenshotPath);
+                if (!string.IsNullOrEmpty(screenshotDirectory)) Directory.CreateDirectory(screenshotDirectory);
+                ScreenCapture.CaptureScreenshot(screenshotPath);
+                yield return new WaitForEndOfFrame();
+                yield return new WaitUntil(() => File.Exists(screenshotPath));
+            }
+
+            var checks = graphical
+                ? new[]
+                {
+                    "Bootstrap scene loaded",
+                    "Required bootstrap objects available",
+                    "Development player running",
+                    "1920x1080 window configured",
+                    "Graphical frame captured"
+                }
+                : new[]
+                {
+                    "Bootstrap scene loaded",
+                    "Required bootstrap objects available",
+                    "Development player running"
+                };
             var result = new SmokeResult
             {
                 scene = SceneManager.GetActiveScene().name,
@@ -42,6 +68,13 @@ namespace AshesOfRum
             {
                 Require(result.scene == HarnessContract.SceneName, checks[0]);
                 Require(HarnessContract.HasRequiredObjects(name => GameObject.Find(name) != null), checks[1]);
+                Require(Debug.isDebugBuild, checks[2]);
+                if (graphical)
+                {
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[3]);
+                    Require(File.Exists(screenshotPath), checks[4]);
+                }
+
                 result.passed = true;
             }
             catch (Exception exception)

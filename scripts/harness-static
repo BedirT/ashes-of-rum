@@ -24,8 +24,42 @@ while IFS= read -r asset; do
 done < <(git ls-files Assets)
 (( missing == 0 )) || exit 1
 
+while IFS= read -r directory; do
+  [[ "$directory" == "Assets" ]] && continue
+  if [[ ! -f "$directory.meta" ]]; then
+    printf 'Missing Unity folder meta file: %s.meta\n' "$directory" >&2
+    missing=1
+  fi
+done < <(git ls-files Assets | awk -F/ 'NF > 1 {path=$1; for (i=2; i<NF; i++) {path=path "/" $i; print path}}' | sort -u)
+(( missing == 0 )) || exit 1
+
 grep -F 'm_EditorVersion: 6000.5.5f1' ProjectSettings/ProjectVersion.txt >/dev/null
 grep -F 'Assets/Scenes/Bootstrap.unity' ProjectSettings/EditorBuildSettings.asset >/dev/null
+grep -F 'defaultScreenWidth: 1920' ProjectSettings/ProjectSettings.asset >/dev/null
+grep -F 'defaultScreenHeight: 1080' ProjectSettings/ProjectSettings.asset >/dev/null
+grep -A1 'platformArchitecture:' ProjectSettings/ProjectSettings.asset | grep -F 'Standalone: 1' >/dev/null
+grep -F 'UnityEditor.OSXStandalone.UserBuildSettings.architecture = OSArchitecture.ARM64' Assets/Editor/MacPlayerBuilder.cs >/dev/null
+grep -F 'BuildOptions.CleanBuildCache | BuildOptions.Development' Assets/Editor/MacPlayerBuilder.cs >/dev/null
+for forbidden_package in \
+  com.unity.collab-proxy \
+  com.unity.ide.rider \
+  com.unity.ide.visualstudio \
+  com.unity.multiplayer.center \
+  com.unity.timeline \
+  com.unity.visualscripting; do
+  if jq -e --arg package "$forbidden_package" '.dependencies[$package]' Packages/manifest.json >/dev/null; then
+    printf 'Forbidden package remains: %s\n' "$forbidden_package" >&2
+    exit 1
+  fi
+done
+
+review_fixture="$(printf '%s\n' \
+  '[{"body":"reviewed-head: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nreview-round: 1\nblocking-findings: 3","submitted_at":"2026-07-25T01:00:00Z"}]' \
+  '[{"body":"unrelated reviewed-head: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"body":"reviewed-head: cccccccccccccccccccccccccccccccccccccccc\nreview-round: 2\nblocking-findings: 0","created_at":"2026-07-25T02:00:00Z"}]' \
+  | jq -sf scripts/review-state.jq)"
+[[ "$(jq -r '.head' <<<"$review_fixture")" == "cccccccccccccccccccccccccccccccccccccccc" ]]
+[[ "$(jq -r '.round' <<<"$review_fixture")" == "2" ]]
+[[ "$(jq -r '.blockers' <<<"$review_fixture")" == "0" ]]
 grep -F '## 7. Every Slice Requires A Proper Pull Request' AGENTS.md >/dev/null
 grep -F 'reviewed-head:' AGENTS.md >/dev/null
 

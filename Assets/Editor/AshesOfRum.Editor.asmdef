@@ -2,5 +2,6 @@
   "name": "AshesOfRum.Editor",
   "rootNamespace": "AshesOfRum.Editor",
   "references": ["AshesOfRum.Runtime"],
+  "precompiledReferences": ["UnityEditor.OSXStandalone.Extensions.dll"],
   "includePlatforms": ["Editor"]
 }

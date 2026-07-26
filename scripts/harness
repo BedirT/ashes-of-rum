@@ -3,12 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UNITY_CLI="${UNITY_CLI:-$HOME/.unity/bin/unity}"
-EDITOR_VERSION="$(awk '{print $2}' "$ROOT/ProjectSettings/ProjectVersion.txt")"
+EDITOR_VERSION="$(awk '/^m_EditorVersion:/{print $2; exit}' "$ROOT/ProjectSettings/ProjectVersion.txt")"
 SHA="$(git -C "$ROOT" rev-parse HEAD)"
 EVIDENCE="$ROOT/.artifacts/verification/$SHA"
 BUILD_APP="$EVIDENCE/Ashes of Rum.app"
 SMOKE_RESULT="$EVIDENCE/smoke-result.json"
 PLAYER_LOG="$EVIDENCE/player.log"
+GRAPHICAL_RESULT="$EVIDENCE/graphical-smoke-result.json"
+GRAPHICAL_LOG="$EVIDENCE/graphical-player.log"
+GRAPHICAL_SCREENSHOT="$EVIDENCE/graphical-smoke.png"
 
 say() { printf '[harness] %s\n' "$*"; }
 fail() { printf '[harness] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -17,6 +20,8 @@ need() { command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1";
 doctor() {
   need git
   need gh
+  need jq
+  need file
   [[ -x "$UNITY_CLI" ]] || fail "Unity CLI not found at $UNITY_CLI"
   [[ -f "$ROOT/Assets/Scenes/Bootstrap.unity" ]] || fail "Bootstrap scene is missing; run make bootstrap"
   [[ -f "$ROOT/Packages/manifest.json" ]] || fail "Unity package manifest is missing"
@@ -32,14 +37,13 @@ doctor() {
 }
 
 bootstrap() {
-  "$UNITY_CLI" run "$ROOT" -- \
-    -batchmode -quit \
+  "$UNITY_CLI" run "$ROOT" --timeout 300 -- \
     -executeMethod AshesOfRum.Editor.BootstrapProject.Generate \
     -logFile "$ROOT/Logs/bootstrap.log"
 }
 
 import_project() {
-  "$UNITY_CLI" run "$ROOT" -- -batchmode -quit -logFile "$ROOT/Logs/import.log"
+  "$UNITY_CLI" run "$ROOT" --timeout 300 -- -logFile "$ROOT/Logs/import.log"
 }
 
 run_tests() {
@@ -60,9 +64,25 @@ verify_fast() {
 scan_log() {
   local log="$1"
   [[ -f "$log" ]] || fail "Expected log not found: $log"
-  if grep -E "(^|[^A-Za-z])(NullReferenceException|MissingReferenceException|Assertion failed|Crash!!!|Scripts have compiler errors)([^A-Za-z]|$)" "$log" >/dev/null; then
+  if grep -E "(^|[^A-Za-z])(NullReferenceException|MissingReferenceException|Assertion failed|Crash!!!|Scripts have compiler errors|Compilation failed|Player build failed)([^A-Za-z]|$)" "$log" >/dev/null; then
     fail "Runtime or compiler failure found in $log"
   fi
+}
+
+validate_json() {
+  local json_file="$1"
+  jq -e . "$json_file" >/dev/null || fail "Invalid JSON: $json_file"
+}
+
+assert_arm64_development_build() {
+  local executable="$BUILD_APP/Contents/MacOS/Ashes of Rum"
+  local architecture
+  [[ -x "$executable" ]] || fail "Built player missing at $BUILD_APP"
+  architecture="$(file "$executable")"
+  [[ "$architecture" == *"arm64"* && "$architecture" != *"x86_64"* ]] \
+    || fail "Expected ARM64-only executable, got: $architecture"
+  grep -F 'BUILD_COMPLETE:' "$EVIDENCE/build.log" | grep -F ':Development:ARM64' >/dev/null \
+    || fail "Build log does not confirm Development ARM64 configuration"
 }
 
 smoke() {
@@ -84,54 +104,56 @@ smoke() {
     waited=$((waited + 1))
   done
   wait "$pid"
-  grep -F '"passed": true' "$SMOKE_RESULT" >/dev/null || fail "Smoke result did not pass"
+  validate_json "$SMOKE_RESULT"
+  jq -e '.passed == true and (.checks | index("Development player running")) != null' "$SMOKE_RESULT" >/dev/null \
+    || fail "Smoke result did not pass development-player checks"
   grep -F 'SMOKE_TEST:PASS' "$PLAYER_LOG" >/dev/null || fail "Smoke pass marker missing from player log"
   scan_log "$PLAYER_LOG"
   say "Built-player smoke passed."
 }
 
-publish_status() {
-  local state="$1"
-  local description="$2"
-  local remote
-  remote="$(git -C "$ROOT" remote get-url origin)"
-  local repo
-  repo="$(printf '%s' "$remote" | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
-  if ! gh api "repos/$repo/commits/$SHA" >/dev/null 2>&1; then
-    say "Commit $SHA is not on GitHub yet; status publication deferred until the post-push verification."
-    return 0
-  fi
-  gh api --method POST "repos/$repo/statuses/$SHA" \
-    -f state="$state" \
-    -f context='unity-local/verify' \
-    -f description="$description" >/dev/null
+graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -f "$GRAPHICAL_RESULT" "$GRAPHICAL_LOG" "$GRAPHICAL_SCREENSHOT"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$GRAPHICAL_LOG" --smoke-test \
+    --smoke-output "$GRAPHICAL_RESULT" --smoke-screenshot "$GRAPHICAL_SCREENSHOT"
+  validate_json "$GRAPHICAL_RESULT"
+  jq -e '.passed == true and (.checks | index("1920x1080 window configured")) != null and (.checks | index("Graphical frame captured")) != null' "$GRAPHICAL_RESULT" >/dev/null \
+    || fail "Graphical smoke result did not pass rendering checks"
+  [[ -s "$GRAPHICAL_SCREENSHOT" ]] || fail "Graphical smoke screenshot was not created"
+  local dimensions
+  dimensions="$(sips -g pixelWidth -g pixelHeight "$GRAPHICAL_SCREENSHOT" 2>/dev/null)"
+  [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
+    || fail "Graphical smoke screenshot is not 1920x1080: $dimensions"
+  grep -F 'SMOKE_TEST:PASS' "$GRAPHICAL_LOG" >/dev/null || fail "Graphical smoke pass marker missing"
+  scan_log "$GRAPHICAL_LOG"
+  say "Graphical 1920x1080 smoke passed."
 }
 
 write_summary() {
   local cli_version
   cli_version="$($UNITY_CLI --version | tail -1)"
-  cat > "$EVIDENCE/summary.json" <<EOF
-{
-  "schema": 1,
-  "sha": "$SHA",
-  "unityEditor": "$EDITOR_VERSION",
-  "unityCli": "$cli_version",
-  "platform": "StandaloneOSX-arm64",
-  "seed": 0,
-  "editModeTests": "passed",
-  "playModeTests": "passed",
-  "build": "passed",
-  "smoke": "passed"
-}
-EOF
+  jq -n \
+    --arg sha "$SHA" \
+    --arg editor "$EDITOR_VERSION" \
+    --arg cli "$cli_version" \
+    '{schema: 1, sha: $sha, unityEditor: $editor, unityCli: $cli,
+      platform: "StandaloneOSX-arm64", developmentBuild: true, resolution: "1920x1080",
+      seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
+      build: "passed", headlessSmoke: "passed", graphicalSmoke: "passed"}' \
+    > "$EVIDENCE/summary.json"
+  validate_json "$EVIDENCE/summary.json"
+  jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
+    "$EVIDENCE/summary.json" >/dev/null || fail "Verification summary contract failed"
 }
 
 verify() {
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "Full verification requires a clean committed tree"
   doctor
   mkdir -p "$EVIDENCE"
-  publish_status pending "Local Unity verification is running"
-  trap 'publish_status failure "Local Unity verification failed" || true' ERR
+  "$ROOT/scripts/harness-static"
   run_tests "$EVIDENCE"
   "$UNITY_CLI" build "$ROOT" \
     --target StandaloneOSX \
@@ -141,12 +163,12 @@ verify() {
     --log-file "$EVIDENCE/build.log" \
     --no-tail
   scan_log "$EVIDENCE/build.log"
+  assert_arm64_development_build
   smoke
+  graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
-  publish_status success "EditMode, PlayMode, macOS build, and smoke passed"
-  trap - ERR
   say "Full verification passed for $SHA."
   say "Evidence: $EVIDENCE"
 }
@@ -155,15 +177,23 @@ pr_ready() {
   [[ "$(git -C "$ROOT" branch --show-current)" != "main" ]] || fail "PR readiness must run on a feature branch"
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "Working tree is not clean"
   [[ -f "$EVIDENCE/summary.json" ]] || fail "No full verification evidence for $SHA"
-  grep -F "\"sha\": \"$SHA\"" "$EVIDENCE/summary.json" >/dev/null || fail "Evidence does not cover HEAD"
-  local pr_number comments reviewed_head blockers fixer_runs
+  validate_json "$EVIDENCE/summary.json"
+  jq -e --arg sha "$SHA" '.sha == $sha' "$EVIDENCE/summary.json" >/dev/null || fail "Evidence does not cover HEAD"
+  local pr_number review_record reviewed_head blockers fixer_runs
   pr_number="$(gh pr view --json number --jq .number)"
-  comments="$(gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate --jq '.[].body')"
-  reviewed_head="$(printf '%s\n' "$comments" | sed -n 's/.*reviewed-head:[[:space:]]*`\{0,1\}\([0-9a-f]\{40\}\)`\{0,1\}.*/\1/p' | tail -1)"
+  review_record="$({
+    gh api "repos/{owner}/{repo}/pulls/$pr_number/reviews" --paginate
+    gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate
+  } | jq -sf "$ROOT/scripts/review-state.jq")"
+  [[ -n "$review_record" ]] || fail "No complete context-free review footer found"
+  reviewed_head="$(jq -r '.head' <<<"$review_record")"
   [[ "$reviewed_head" == "$SHA" ]] || fail "Latest context-free review does not cover HEAD $SHA"
-  blockers="$(printf '%s\n' "$comments" | sed -n 's/.*blocking-findings:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  blockers="$(jq -r '.blockers' <<<"$review_record")"
   [[ "${blockers:-missing}" == "0" ]] || fail "Latest review still has blocking findings"
-  fixer_runs="$(printf '%s\n' "$comments" | grep -c 'fixer-run:' || true)"
+  fixer_runs="$({
+    gh api "repos/{owner}/{repo}/pulls/$pr_number/reviews" --paginate
+    gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate
+  } | jq -s '[.[][] | select((.body // "") | test("(?m)^fixer-run:[[:space:]]*[1-3][[:space:]]*$"))] | length')"
   (( fixer_runs <= 3 )) || fail "Fixer invocation cap exceeded: $fixer_runs"
   say "PR #$pr_number is ready at reviewed HEAD $SHA with $fixer_runs fixer run(s)."
 }
@@ -181,8 +211,9 @@ case "${1:-}" in
   verify-fast) verify_fast ;;
   verify) verify ;;
   smoke) smoke ;;
+  graphical-smoke) graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

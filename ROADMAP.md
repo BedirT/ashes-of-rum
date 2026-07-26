@@ -9,12 +9,12 @@ change when playtesting exposes a stronger dependency.
 | State | Slice | Player-observable outcome |
 | --- | --- | --- |
 | In progress | 000 - Bootstrap automated harness | Import the Unity project, run tests, build a native macOS player, launch a neutral scene, and exit through deterministic smoke. |
-| Planned | 001 - Select and command a formation | Select the starting Spearmen formation and issue a visible move order. |
-| Planned | 002 - Gather and spend Supplies | Task workers to Supplies and spend them on a House. |
-| Planned | 003 - Train and counter | Train Spearmen and Archers, then resolve the first readable counter fight. |
+| Planned | 001 - Establish and command the starting economy | Launch with one Hisar and four workers, select workers, gather Supplies, and issue visible move and gather orders. |
+| Planned | 002 - Build and expand population | Spend Supplies through the real economy to place and complete a House. |
+| Planned | 003 - Train and counter | Train the first formations through the Hisar queue, then resolve the first readable counter fight. |
 | Planned | 004 - Build the defensive line | Place a Storehouse and Tower with valid placement, construction, and destruction states. |
 | Planned | 005 - Contest the road | Add Cavalry, control groups, formations, fog, and minimap information. |
-| Planned | 006 - Win a complete match | Add fair scripted AI, both Hisar destruction outcomes, pause, restart, and a 10-15 minute match tune. |
+| Planned | 006 - Win a complete match | Add fair scripted AI, both Hisar destruction outcomes, restart, quit, and a 10-15 minute match tune. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.

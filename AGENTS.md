@@ -140,6 +140,10 @@ The PR body must contain:
 
 Never open a PR for a branch that does not run properly.
 
+Verification is deliberately local-first. Do not add hosted CI workflows, GitHub commit
+statuses, or required-check dependencies for this prototype. Record exact-SHA local evidence
+from `make verify` in the PR, then use review and fixer footer freshness as the merge gate.
+
 ## 8. Mandatory Context-Free PR Review
 
 Immediately after opening the PR, the primary agent must spawn a review sub-agent with **no
