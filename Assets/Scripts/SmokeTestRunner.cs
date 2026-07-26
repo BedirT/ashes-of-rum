@@ -51,7 +51,7 @@ namespace AshesOfRum
             }
             var economyCompleted = economyStarted && economy.Supplies > economy.StartingSupplies;
             var houseStarted = economyCompleted &&
-                               economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f));
+                               economy.TryPlaceHouse(economy.Workers[0], new Vector3(8f, 0f, -1f));
             if (houseStarted)
             {
                 var constructionDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
@@ -69,7 +69,8 @@ namespace AshesOfRum
             {
                 economy.CreditSuppliesForAutomation(500);
                 storehouseStarted = economy.TryPlaceStorehouse(economy.Workers[1], new Vector3(12f, 0f, 6f));
-                watchtowerStarted = economy.TryPlaceWatchtower(economy.Workers[2], new Vector3(0f, 0f, 10f));
+                economy.FogOfWar.RefreshNow();
+                watchtowerStarted = economy.TryPlaceWatchtower(economy.Workers[2], new Vector3(4f, 0f, 10f));
                 var constructionDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
                 while ((economy.Storehouses.Count == 0 || !economy.Storehouses[0].IsComplete ||
                         economy.Watchtowers.Count == 0 || !economy.Watchtowers[0].IsComplete) &&

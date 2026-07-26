@@ -32,6 +32,7 @@ namespace AshesOfRum
         private EconomyWallet wallet;
         private Hisar hisar;
         private Func<Vector3, Vector3> resolveDropOff;
+        private Func<Vector3, bool> isCurrentlyVisible;
         private IReadOnlyList<ResourceCache> knownCaches;
         private Action<string> notifyEconomyState;
         private ResourceCache targetCache;
@@ -55,12 +56,13 @@ namespace AshesOfRum
 
         public void Initialize(EconomyTuning economyTuning, EconomyWallet economyWallet, Hisar home,
             IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification,
-            Func<Vector3, Vector3> dropOffResolver = null)
+            Func<Vector3, Vector3> dropOffResolver = null, Func<Vector3, bool> visibilityResolver = null)
         {
             tuning = economyTuning;
             wallet = economyWallet;
             hisar = home;
             resolveDropOff = dropOffResolver;
+            isCurrentlyVisible = visibilityResolver;
             knownCaches = caches;
             notifyEconomyState = economyStateNotification;
             gatherSlot = slot;
@@ -327,7 +329,8 @@ namespace AshesOfRum
             {
                 foreach (var cache in knownCaches)
                 {
-                    if (cache == null || cache.Remaining <= 0) continue;
+                    if (cache == null || cache.Remaining <= 0 ||
+                        isCurrentlyVisible?.Invoke(cache.transform.position) == false) continue;
                     var sqrDistance = Vector3.SqrMagnitude(cache.transform.position - searchOrigin);
                     if (sqrDistance > nearestSqrDistance) continue;
                     fallback = cache;

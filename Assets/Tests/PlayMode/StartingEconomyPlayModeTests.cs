@@ -17,6 +17,8 @@ namespace AshesOfRum.Tests
     public sealed class StartingEconomyPlayModeTests
     {
         private const float TimeoutSeconds = 15f;
+        private static readonly Vector3 VisibleHouseSite = new(8f, 0f, -1f);
+        private static readonly Vector3 VisibleStorehouseSite = new(8f, 0f, -1f);
 
         [UnityTest]
         public IEnumerator Worker_GathersDepositsAndReturnsAutomatically()
@@ -82,7 +84,7 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
-        public IEnumerator ReturningWorker_ExhaustedCacheOrderDepositsAndFallsBack()
+        public IEnumerator ReturningWorker_ExhaustedCacheOrderDepositsAndFallsBackToVisibleCache()
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
@@ -94,6 +96,10 @@ namespace AshesOfRum.Tests
             worker.IssueGather(availableCache);
             yield return WaitUntil(() => worker.CurrentActivity == WorkerAgent.Activity.Returning &&
                                          worker.CarriedSupplies == 10);
+            var scout = new GameObject("Returning worker fallback scout");
+            scout.transform.position = availableCache.transform.position;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
             worker.IssueGather(exhaustedCache);
             yield return WaitUntil(() => economy.Supplies == economy.StartingSupplies + 20);
 
@@ -102,10 +108,11 @@ namespace AshesOfRum.Tests
             Assert.That(worker.CarriedSupplies, Is.Zero);
             Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.GoingToCache));
             Assert.That(economy.LastEconomyNotification, Is.Null);
+            Object.Destroy(scout);
         }
 
         [UnityTest]
-        public IEnumerator DepletedCache_MultipleWorkersRetargetToNearbyAvailableCache()
+        public IEnumerator DepletedCache_UnseenFallbackMakesWorkersIdleAndNotifiesPlayer()
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
@@ -118,13 +125,35 @@ namespace AshesOfRum.Tests
             firstWorker.IssueGather(depletedCache);
             secondWorker.IssueGather(depletedCache);
             yield return WaitUntil(() => depletedCache.Remaining == 0);
-            yield return WaitUntil(() => firstWorker.CurrentActivity != WorkerAgent.Activity.Idle &&
-                                         secondWorker.CurrentActivity != WorkerAgent.Activity.Idle &&
-                                         fallbackCache.Remaining < 200);
+            yield return WaitUntil(() => firstWorker.CurrentActivity == WorkerAgent.Activity.Idle &&
+                                         secondWorker.CurrentActivity == WorkerAgent.Activity.Idle);
 
-            Assert.That(firstWorker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
-            Assert.That(secondWorker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
+            Assert.That(fallbackCache.Remaining, Is.EqualTo(200),
+                "Workers must not reveal or retarget to a cache outside shared current vision.");
+            Assert.That(economy.LastEconomyNotification, Does.Contain("idle"));
+        }
+
+        [UnityTest]
+        public IEnumerator DepletedCache_RevealedFallbackIsUsedAutomatically()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var depletedCache = economy.Caches[0];
+            var fallbackCache = economy.Caches[1];
+            depletedCache.Initialize(10);
+            var scout = new GameObject("Fallback cache scout");
+            scout.transform.position = fallbackCache.transform.position;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
+            Assert.That(economy.FogOfWar.StateAt(fallbackCache.transform.position), Is.EqualTo(FogState.Visible));
+
+            var worker = economy.Workers[0];
+            worker.IssueGather(depletedCache);
+            yield return WaitUntil(() => fallbackCache.Remaining < 200);
+
+            Assert.That(worker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
             Assert.That(economy.LastEconomyNotification, Is.Null);
+            Object.Destroy(scout);
         }
 
         [UnityTest]
@@ -146,6 +175,47 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator GatherOrder_RequiresTheCacheToBeCurrentlyVisible()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var worker = economy.Workers[0];
+            var cache = economy.Caches[1];
+            Assert.That(economy.FogOfWar.StateAt(cache.transform.position), Is.Not.EqualTo(FogState.Visible));
+            economy.SelectOnly(worker);
+            var mouse = InputSystem.AddDevice<Mouse>();
+            mouse.MakeCurrent();
+            var cacheScreenPosition = Camera.main.WorldToScreenPoint(cache.transform.position + Vector3.up * 0.5f);
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = cacheScreenPosition });
+            InputSystem.Update();
+            Physics.SyncTransforms();
+            Assert.That(Physics.Raycast(Camera.main.ScreenPointToRay(cacheScreenPosition), out var cacheHit, 200f),
+                Is.True);
+            Assert.That(cacheHit.collider.GetComponentInParent<ResourceCache>(), Is.SameAs(cache),
+                $"Expected the live neutral cache collider, but hit {cacheHit.collider.name}.");
+
+            yield return PressMouseButton(economy, mouse, cacheScreenPosition, MouseButton.Right,
+                "HandleOrderInput");
+            Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.Moving));
+            Assert.That(GameObject.Find("Order").GetComponent<Text>().text,
+                Does.Not.Contain(cache.name.ToUpperInvariant()),
+                "An unseen neutral collider must behave like terrain instead of leaking a gather target.");
+
+            var scout = new GameObject("Gather order scout");
+            scout.transform.position = cache.transform.position;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
+            yield return PressMouseButton(economy, mouse, cacheScreenPosition, MouseButton.Right,
+                "HandleOrderInput");
+
+            Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.GoingToCache));
+            Assert.That(GameObject.Find("Order").GetComponent<Text>().text,
+                Does.Contain(cache.name.ToUpperInvariant()));
+            Object.Destroy(scout);
+            InputSystem.RemoveDevice(mouse);
+        }
+
+        [UnityTest]
         public IEnumerator HouseConstruction_SpendsCompletesRaisesCapacityAndResumesGathering()
         {
             yield return LoadEconomy();
@@ -155,7 +225,7 @@ namespace AshesOfRum.Tests
             worker.IssueGather(cache);
             yield return null;
 
-            Assert.That(economy.TryPlaceHouse(worker, new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(worker, VisibleHouseSite), Is.True);
             Assert.That(economy.Supplies, Is.Zero);
             Assert.That(economy.PopulationCapacity, Is.EqualTo(12));
             Assert.That(economy.Houses, Has.Count.EqualTo(1));
@@ -179,7 +249,7 @@ namespace AshesOfRum.Tests
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var worker = economy.Workers[0];
 
-            Assert.That(economy.TryPlaceHouse(worker, new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(worker, VisibleHouseSite), Is.True);
             economy.SelectOnly(worker);
             GameObject.Find("Cancel Build").GetComponent<UnityEngine.UI.Button>().onClick.Invoke();
             yield return null;
@@ -204,6 +274,33 @@ namespace AshesOfRum.Tests
             Assert.That(economy.Houses, Is.Empty);
             Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
                 Does.Contain("INVALID"));
+        }
+
+        [UnityTest]
+        public IEnumerator BuildingPlacement_RejectsExploredAndUnexploredTerrainWithoutSpendingSupplies()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var worker = economy.Workers[0];
+            var exploredPosition = new Vector3(12f, 0f, 10f);
+            var unexploredPosition = new Vector3(-12f, 0f, 20f);
+            var scout = new GameObject("Placement visibility scout");
+            scout.transform.position = exploredPosition;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
+            scout.transform.position = new Vector3(0f, 0f, -8f);
+            economy.FogOfWar.RefreshNow();
+
+            Assert.That(economy.FogOfWar.StateAt(exploredPosition), Is.EqualTo(FogState.Explored));
+            Assert.That(economy.FogOfWar.StateAt(unexploredPosition), Is.EqualTo(FogState.Unexplored));
+            Assert.That(economy.TryPlaceHouse(worker, exploredPosition), Is.False);
+            Assert.That(GameObject.Find("Order").GetComponent<Text>().text,
+                Does.Contain("NOT CURRENTLY VISIBLE"));
+            Assert.That(economy.TryPlaceHouse(worker, unexploredPosition), Is.False);
+
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.Houses, Is.Empty);
+            Object.Destroy(scout);
         }
 
         [UnityTest]
@@ -237,6 +334,10 @@ namespace AshesOfRum.Tests
             yield return null;
 
             var worker = economy.Workers[0];
+            var scout = new GameObject("Route placement scout");
+            scout.transform.position = new Vector3(0f, 0f, 10f);
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
             Assert.That(worker.CanReach(new Vector3(0f, 0f, 20f)), Is.True,
                 "The worker must be able to navigate through the final open gap before placement.");
 
@@ -246,6 +347,7 @@ namespace AshesOfRum.Tests
             Assert.That(economy.Houses, Is.Empty);
             Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
                 Does.Contain("MUST PRESERVE A ROUTE"));
+            Object.Destroy(scout);
         }
 
         [UnityTest]
@@ -256,14 +358,14 @@ namespace AshesOfRum.Tests
             var worker = economy.Workers[0];
             economy.CreditSuppliesForAutomation(100);
 
-            Assert.That(economy.TryPlaceStorehouse(worker, new Vector3(12f, 0f, 6f)), Is.True);
+            Assert.That(economy.TryPlaceStorehouse(worker, VisibleStorehouseSite), Is.True);
             Assert.That(economy.Supplies, Is.Zero);
             Assert.That(economy.CancelConstruction(worker), Is.True);
             yield return null;
             Assert.That(economy.Supplies, Is.EqualTo(200));
             Assert.That(economy.Storehouses, Is.Empty);
 
-            Assert.That(economy.TryPlaceStorehouse(worker, new Vector3(12f, 0f, 6f)), Is.True);
+            Assert.That(economy.TryPlaceStorehouse(worker, VisibleStorehouseSite), Is.True);
             yield return WaitUntil(() => economy.Storehouses.Count == 1 && economy.Storehouses[0].IsComplete);
             var storehouse = economy.Storehouses[0];
             worker.IssueGather(economy.Caches[1]);
@@ -437,7 +539,7 @@ namespace AshesOfRum.Tests
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             economy.CreditSuppliesForAutomation(100);
-            Assert.That(economy.TryPlaceStorehouse(economy.Workers[0], new Vector3(12f, 0f, 6f)), Is.True);
+            Assert.That(economy.TryPlaceStorehouse(economy.Workers[0], VisibleStorehouseSite), Is.True);
             yield return WaitUntil(() => economy.Storehouses.Count == 1 && economy.Storehouses[0].IsComplete);
             var storehouse = economy.Storehouses[0];
             economy.SelectOnly(storehouse);
@@ -461,7 +563,7 @@ namespace AshesOfRum.Tests
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.Houses.Count == 1 && economy.Houses[0].IsComplete);
             var house = economy.Houses[0];
             Assert.That(economy.PopulationCapacity, Is.EqualTo(20));
@@ -643,11 +745,86 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator SelectionInput_DragShiftAndDoubleClickUpdatesVisibleSelection()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var mouse = InputSystem.AddDevice<Mouse>();
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            mouse.MakeCurrent();
+            keyboard.MakeCurrent();
+            InputSystem.QueueStateEvent(mouse, new MouseState
+            {
+                position = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f)
+            });
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+            var workerScreenPositions = economy.Workers
+                .Select(worker => (Vector2)Camera.main.WorldToScreenPoint(worker.transform.position))
+                .ToArray();
+            var dragStart = new Vector2(workerScreenPositions.Min(position => position.x) - 20f,
+                workerScreenPositions.Min(position => position.y) - 20f);
+            var dragEnd = new Vector2(workerScreenPositions.Max(position => position.x) + 20f,
+                workerScreenPositions.Max(position => position.y) + 20f);
+            Assert.That(dragStart.y, Is.GreaterThan(Screen.height * 0.16f));
+            Assert.That(dragEnd.y, Is.LessThan(Screen.height * 0.9f));
+
+            yield return DragBattlefieldSelection(economy, mouse, dragStart, dragEnd);
+            Assert.That(economy.Workers.All(worker => worker.IsSelected), Is.True,
+                "Dragging across the starting workers must show every selection ring.");
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.LeftShift));
+            InputSystem.Update();
+            var firstWorker = economy.Workers[0];
+            var workerCollider = firstWorker.GetComponentInChildren<Collider>();
+            var workerClick = (Vector2)Camera.main.WorldToScreenPoint(workerCollider.bounds.center);
+            yield return PressMouseButton(economy, mouse, workerClick, MouseButton.Left,
+                "HandleSelectionInput");
+            Assert.That(firstWorker.IsSelected, Is.False,
+                "Shift-clicking a selected worker must visibly remove it from the selection.");
+            Assert.That(economy.Workers.Skip(1).All(worker => worker.IsSelected), Is.True);
+            yield return PressMouseButton(economy, mouse, workerClick, MouseButton.Left,
+                "HandleSelectionInput");
+            Assert.That(firstWorker.IsSelected, Is.True,
+                "Shift-clicking the worker again must visibly add it back.");
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+
+            Assert.That(economy.TryPlaceHouse(firstWorker, VisibleHouseSite), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(800);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 2);
+            var firstFormation = economy.FriendlyFormations[0];
+            var secondFormation = economy.FriendlyFormations[1];
+            Assert.That(firstFormation.GetComponent<NavMeshAgent>().Warp(new Vector3(-4f, 0f, 1f)), Is.True);
+            Assert.That(secondFormation.GetComponent<NavMeshAgent>().Warp(new Vector3(4f, 0f, 1f)), Is.True);
+            Physics.SyncTransforms();
+            var formationCollider = firstFormation.GetComponentInChildren<Collider>();
+            var formationClick = (Vector2)Camera.main.WorldToScreenPoint(formationCollider.bounds.center);
+
+            yield return PressMouseButton(economy, mouse, formationClick, MouseButton.Left,
+                "HandleSelectionInput");
+            Assert.That(firstFormation.IsSelected, Is.True);
+            Assert.That(secondFormation.IsSelected, Is.False);
+            yield return PressMouseButton(economy, mouse, formationClick, MouseButton.Left,
+                "HandleSelectionInput");
+
+            Assert.That(economy.SelectedFormations, Is.EquivalentTo(new[] { firstFormation, secondFormation }));
+            Assert.That(firstFormation.IsSelected && secondFormation.IsSelected, Is.True,
+                "Double-clicking a formation must show selection rings on every visible formation of its type.");
+            Assert.That(GameObject.Find("Selection").GetComponent<Text>().text, Does.Contain("2 FORMATIONS"));
+            InputSystem.RemoveDevice(mouse);
+            InputSystem.RemoveDevice(keyboard);
+        }
+
+        [UnityTest]
         public IEnumerator FormationGroups_PreserveLayoutRecallAndApplyCommandsTogether()
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
             economy.CreditSuppliesForAutomation(800);
             Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
@@ -692,7 +869,7 @@ namespace AshesOfRum.Tests
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
             economy.CreditSuppliesForAutomation(400);
             Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
@@ -833,7 +1010,7 @@ namespace AshesOfRum.Tests
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
             economy.CreditSuppliesForAutomation(800);
             Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
@@ -874,7 +1051,7 @@ namespace AshesOfRum.Tests
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
             economy.CreditSuppliesForAutomation(400);
             Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
@@ -971,6 +1148,40 @@ namespace AshesOfRum.Tests
             InputSystem.QueueStateEvent(keyboard, new KeyboardState());
             InputSystem.Update();
             InvokePrivateMethod(economy, "HandleControlGroupInput");
+        }
+
+        private static IEnumerator PressMouseButton(StartingEconomyController economy, Mouse mouse, Vector2 position,
+            MouseButton button, string handler)
+        {
+            var buttonControl = button == MouseButton.Left ? mouse.leftButton : mouse.rightButton;
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = position }.WithButton(button));
+            InputSystem.Update();
+            Assert.That(Mouse.current, Is.SameAs(mouse));
+            Assert.That(buttonControl.isPressed, Is.True);
+            InvokePrivateMethod(economy, handler);
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = position });
+            InputSystem.Update();
+            Assert.That(buttonControl.isPressed, Is.False);
+            InvokePrivateMethod(economy, handler);
+            yield break;
+        }
+
+        private static IEnumerator DragBattlefieldSelection(StartingEconomyController economy, Mouse mouse,
+            Vector2 start, Vector2 end)
+        {
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = start }.WithButton(MouseButton.Left));
+            InputSystem.Update();
+            Assert.That(Mouse.current, Is.SameAs(mouse));
+            Assert.That(mouse.leftButton.isPressed, Is.True);
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = end }.WithButton(MouseButton.Left));
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = end });
+            InputSystem.Update();
+            Assert.That(mouse.leftButton.isPressed, Is.False);
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            yield break;
         }
 
         private static FormationAgent CreateFormationForTest(string name, FormationType type, bool friendly,

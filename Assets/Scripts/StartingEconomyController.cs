@@ -73,6 +73,7 @@ namespace AshesOfRum
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
         private bool controlGroupKeyHandled;
+        private bool orderButtonHandled;
 
         private static readonly Key[] ControlGroupKeys =
         {
@@ -427,7 +428,8 @@ namespace AshesOfRum
                 CreatePrimitive(PrimitiveType.Cube, "Carried Supplies", workerObject.transform,
                     new Vector3(0f, 1.35f, -0.62f), new Vector3(0.42f, 0.42f, 0.42f), new Color(0.95f, 0.68f, 0.2f));
                 var worker = workerObject.AddComponent<WorkerAgent>();
-                worker.Initialize(tuning, wallet, hisar, Caches, i, NotifyEconomyState, FindNearestDropOff);
+                worker.Initialize(tuning, wallet, hisar, Caches, i, NotifyEconomyState, FindNearestDropOff,
+                    IsCurrentlyVisible);
                 workers.Add(worker);
             }
         }
@@ -505,14 +507,14 @@ namespace AshesOfRum
             var position = mouse.position.ReadValue();
             if (!selecting)
             {
-                if (!mouse.leftButton.wasPressedThisFrame || position.y < Screen.height * 0.16f ||
+                if (!mouse.leftButton.isPressed || position.y < Screen.height * 0.16f ||
                     position.y > Screen.height * 0.9f || IsPointerOverHud(position)) return;
                 selecting = true;
                 selectionStart = position;
                 selectionBox.gameObject.SetActive(true);
             }
             if (selecting && mouse.leftButton.isPressed) UpdateSelectionBox(selectionStart, position);
-            if (!selecting || !mouse.leftButton.wasReleasedThisFrame) return;
+            if (!selecting || mouse.leftButton.isPressed) return;
             selecting = false;
             selectionBox.gameObject.SetActive(false);
             if (IsPointerOverHud(position)) return;
@@ -523,7 +525,14 @@ namespace AshesOfRum
         {
             if (placementWorker != null || awaitingAttackMove) return;
             var mouse = Mouse.current;
-            if (mouse == null || !mouse.rightButton.wasPressedThisFrame) return;
+            if (mouse == null) return;
+            if (!mouse.rightButton.isPressed)
+            {
+                orderButtonHandled = false;
+                return;
+            }
+            if (orderButtonHandled) return;
+            orderButtonHandled = true;
             if (selectedWorkers.Count == 0 && selectedFormations.Count == 0) return;
             if (!Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 200f)) return;
             var hostile = hit.collider.GetComponentInParent<FormationAgent>();
@@ -536,7 +545,7 @@ namespace AshesOfRum
             }
 
             var cache = hit.collider.GetComponentInParent<ResourceCache>();
-            if (cache != null && selectedWorkers.Count > 0)
+            if (cache != null && selectedWorkers.Count > 0 && IsCurrentlyVisible(cache.transform.position))
             {
                 if (selectedFormations.Count > 0) IssueFormationGroupOrder(hit.point, false);
                 var availableWorkers = selectedWorkers.Where(worker => worker.CurrentConstruction == null).ToList();
@@ -916,6 +925,11 @@ namespace AshesOfRum
                 reason = "Invalid - outside buildable ground";
                 return false;
             }
+            if (!IsCurrentlyVisible(position))
+            {
+                reason = "Invalid - terrain is not currently visible";
+                return false;
+            }
             var overlaps = Physics.OverlapBox(position + Vector3.up, new Vector3(2f, 0.9f, 2f));
             if (overlaps.Any(item => item.gameObject.name != "Bootstrap Ground"))
             {
@@ -935,6 +949,9 @@ namespace AshesOfRum
             reason = null;
             return true;
         }
+
+        private bool IsCurrentlyVisible(Vector3 position) =>
+            fogOfWar == null || fogOfWar.StateAt(position) == FogState.Visible;
 
         private bool PreservesNavMeshRoute(Vector3 candidatePosition)
         {
