@@ -243,12 +243,117 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator HisarQueue_TrainsFormationAndArchersWinReadableCounterFight()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(300);
+            economy.SelectHisar();
+            yield return null;
+
+            Assert.That(GameObject.Find("Train Archers").activeInHierarchy, Is.True);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(economy.PopulationUsed, Is.EqualTo(12));
+            Assert.That(economy.CancelActiveTraining(), Is.True);
+            Assert.That(economy.Supplies, Is.EqualTo(400));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(4));
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 1);
+            var archers = economy.FriendlyFormations[0];
+            var spearmen = economy.EnemyFormations[0];
+            Assert.That(archers.MemberCount, Is.EqualTo(8));
+            Assert.That(spearmen.MemberCount, Is.EqualTo(8));
+            Assert.That(economy.IssueFocusForSmoke(archers, spearmen), Is.True);
+
+            yield return WaitUntil(() => economy.EnemyFormations.Count == 0);
+
+            Assert.That(archers.MemberCount, Is.GreaterThanOrEqualTo(4));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(4 + archers.MemberCount));
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("ENEMY FORMATION DEFEATED"));
+        }
+
+        [UnityTest]
+        public IEnumerator FormationVisuals_UseSupportedUrpMaterialsForBodiesMarkersRingsAndArrows()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(300);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+            var archers = economy.FriendlyFormations[0];
+            var spearmen = economy.EnemyFormations[0];
+
+            Assert.That(archers.HasSupportedVisualMaterials(), Is.True);
+            Assert.That(spearmen.HasSupportedVisualMaterials(), Is.True);
+            var friendlyMarkers = archers.GetComponentsInChildren<Renderer>(true)
+                .Where(itemRenderer => itemRenderer.name == "Black Falcon Diamond").ToArray();
+            var hostileMarkers = spearmen.GetComponentsInChildren<Renderer>(true)
+                .Where(itemRenderer => itemRenderer.name == "Living Flame Square").ToArray();
+            Assert.That(friendlyMarkers, Has.Length.EqualTo(8));
+            Assert.That(hostileMarkers, Has.Length.EqualTo(8));
+            Assert.That(friendlyMarkers.All(itemRenderer => itemRenderer.transform.localRotation != Quaternion.identity),
+                Is.True);
+            Assert.That(hostileMarkers.All(itemRenderer => itemRenderer.transform.localRotation == Quaternion.identity),
+                Is.True);
+
+            Assert.That(archers.ExecuteAttackVolley(spearmen), Is.True);
+            yield return null;
+            var arrows = GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
+                .Where(itemRenderer => itemRenderer.name == "Arrow").ToArray();
+            Assert.That(arrows, Has.Length.EqualTo(8));
+            Assert.That(arrows.All(FormationAgent.UsesSupportedMaterial), Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator Combat_LivingMembersDriveOutputAndNonlethalHitsFlashTheMember()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var fullAttackers = CreateFormationForTest("Full attackers", FormationType.Spearmen, true, tuning);
+            var reducedAttackers = CreateFormationForTest("Reduced attackers", FormationType.Spearmen, true, tuning);
+            var fullTarget = CreateFormationForTest("Full target", FormationType.Archers, false, tuning);
+            var reducedTarget = CreateFormationForTest("Reduced target", FormationType.Archers, false, tuning);
+
+            for (var i = 0; i < 7; i++) reducedAttackers.ApplyDeterministicHit(FormationType.Archers);
+            Assert.That(reducedAttackers.MemberCount, Is.EqualTo(1));
+
+            var fullHealthBefore = fullTarget.TotalMemberHealth;
+            var reducedHealthBefore = reducedTarget.TotalMemberHealth;
+            Assert.That(fullAttackers.ExecuteAttackVolley(fullTarget), Is.True);
+            Assert.That(reducedAttackers.ExecuteAttackVolley(reducedTarget), Is.True);
+
+            Assert.That(fullAttackers.LastAttackMemberCount, Is.EqualTo(8));
+            Assert.That(reducedAttackers.LastAttackMemberCount, Is.EqualTo(1));
+            Assert.That(fullHealthBefore - fullTarget.TotalMemberHealth, Is.EqualTo(80));
+            Assert.That(reducedHealthBefore - reducedTarget.TotalMemberHealth, Is.EqualTo(10));
+            Assert.That(fullTarget.MemberCount, Is.EqualTo(8), "A base-damage volley must be nonlethal per member.");
+            Assert.That(fullTarget.GetComponentsInChildren<FormationMemberVisual>()
+                .All(visual => visual.IsShowingHitFeedback), Is.True);
+            Assert.That(reducedTarget.GetComponentsInChildren<FormationMemberVisual>()
+                .Count(visual => visual.IsShowingHitFeedback), Is.EqualTo(1));
+
+            yield return new WaitForSeconds(0.2f);
+            Assert.That(fullTarget.GetComponentsInChildren<FormationMemberVisual>()
+                .Any(visual => visual.IsShowingHitFeedback), Is.False);
+
+            Object.Destroy(fullAttackers.gameObject);
+            Object.Destroy(reducedAttackers.gameObject);
+            Object.Destroy(fullTarget.gameObject);
+            Object.Destroy(reducedTarget.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
         public IEnumerator Hud_ShowsPopulationAndClickableBuildCommands()
         {
             yield return LoadEconomy();
 
             Assert.That(GameObject.Find("Population").GetComponent<UnityEngine.UI.Text>().text,
                 Is.EqualTo("POPULATION   4 / 12"));
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectOnly(economy.Workers[0]);
             Assert.That(GameObject.Find("Build House").GetComponent<UnityEngine.UI.Button>(), Is.Not.Null);
             Assert.That(GameObject.Find("EventSystem").GetComponents<MonoBehaviour>()
                 .Any(component => component.GetType().Name == "InputSystemUIInputModule"), Is.True);
@@ -257,7 +362,15 @@ namespace AshesOfRum.Tests
             Assert.That(GameObject.Find("Cancel Build").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("[X]"));
 
-            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectHisar();
+            yield return null;
+            Assert.That(GameObject.Find("Train Spearmen").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[S]"));
+            Assert.That(GameObject.Find("Train Archers").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[A]"));
+            Assert.That(GameObject.Find("Train Cavalry").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[C]"));
+
             economy.SelectOnly(economy.Workers[0]);
             GameObject.Find("Build House").GetComponent<UnityEngine.UI.Button>().onClick.Invoke();
             Assert.That(economy.IsHousePlacementActive, Is.True);
@@ -274,6 +387,16 @@ namespace AshesOfRum.Tests
             var deadline = Time.realtimeSinceStartup + TimeoutSeconds;
             while (!condition() && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.That(condition(), Is.True, $"Condition did not become true within {TimeoutSeconds} seconds.");
+        }
+
+        private static FormationAgent CreateFormationForTest(string name, FormationType type, bool friendly,
+            EconomyTuning tuning)
+        {
+            var root = new GameObject(name);
+            root.transform.position = new Vector3(100f, 0f, 100f);
+            var formation = root.AddComponent<FormationAgent>();
+            formation.Initialize(type, friendly, tuning);
+            return formation;
         }
 
         private static void CreateRouteBlocker(string name, Vector3 position, Vector3 scale)

@@ -16,13 +16,27 @@ namespace AshesOfRum
             hardCap = maximumCap;
         }
 
-        public int Used { get; }
+        public int Used { get; private set; }
         public int Capacity { get; private set; }
 
         public void AddCapacity(int amount)
         {
             if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
             Capacity = Math.Min(hardCap, checked(Capacity + amount));
+        }
+
+        public bool TryReserve(int amount)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+            if (Used + amount > Capacity) return false;
+            Used += amount;
+            return true;
+        }
+
+        public void Release(int amount)
+        {
+            if (amount <= 0 || amount > Used) throw new ArgumentOutOfRangeException(nameof(amount));
+            Used -= amount;
         }
     }
 }
