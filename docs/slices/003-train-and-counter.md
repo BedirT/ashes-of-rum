@@ -7,24 +7,24 @@ queue, then select that formation and focus an enemy formation to resolve a read
 
 ## Acceptance
 
-- [ ] Selecting the Hisar exposes Spearman, Archer, and Cavalry training commands with visible
+- [x] Selecting the Hisar exposes Spearman, Archer, and Cavalry training commands with visible
       costs and hotkeys.
-- [ ] All formation types use one queue, spend 400 Supplies, reserve eight population, complete
+- [x] All formation types use one queue, spend 400 Supplies, reserve eight population, complete
       after a visible deterministic timer, and rally as four-wide, two-deep formations.
-- [ ] Population-blocked or unaffordable orders do not enter the queue or spend resources.
-- [ ] Cancelling the active queue item refunds its full Supply cost and releases its reserved
+- [x] Population-blocked or unaffordable orders do not enter the queue or spend resources.
+- [x] Cancelling the active queue item refunds its full Supply cost and releases its reserved
       population.
-- [ ] A completed friendly formation can be selected and right-clicked onto the first enemy
+- [x] A completed friendly formation can be selected and right-clicked onto the first enemy
       formation to issue a visible focus-target order.
-- [ ] Eight visible members fight deterministically; casualties disappear and immediately release
+- [x] Eight visible members fight deterministically; casualties disappear and immediately release
       population, while Archer damage clearly counters Spearmen.
-- [ ] Focused EditMode and PlayMode coverage protects queue arithmetic, cancellation, population,
+- [x] Focused EditMode and PlayMode coverage protects queue arithmetic, cancellation, population,
       counter modifiers, deterministic casualties, training, selection, and combat resolution.
-- [ ] The native macOS development player trains Archers and wins the counter fight during smoke
+- [x] The native macOS development player trains Archers and wins the counter fight during smoke
       while preserving gathering and House construction.
-- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
-- [ ] A context-free review covers the exact final HEAD.
-- [ ] The merged game remains playable at its current scope.
+- [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
+- [x] A context-free review covers the exact final HEAD.
+- [x] The merged game remains playable at its current scope.
 
 ## Non-Goals
 
@@ -49,4 +49,15 @@ minimap, victory or defeat, audio, and visual polish.
 
 ## Evidence
 
-Pending implementation, verification, review, and merge.
+- PR: [#6](https://github.com/BedirT/rts-game/pull/6)
+- Verification: `make verify` passed at final reviewed HEAD
+  `2dde0765ce9d1e432dee0a71992c11e179fca357` with 10 EditMode and 16 PlayMode tests,
+  an ARM64 development build, headless smoke, graphical 1920x1080 smoke, and clean logs.
+- Runtime proof: the exact-HEAD built player gathered and deposited Supplies, constructed a House,
+  trained eight Archers through the shared queue, rendered supported blue/white/cyan formation
+  materials, fired eight visible arrows, displayed nonlethal hit feedback, defeated eight Spearmen,
+  and retained all eight Archers. The graphical capture was inspected for HUD and formation clarity.
+- Review: round 1 reported two blocking findings and required fixer run 1; round 2 reported no
+  blocking findings at the final head.
+- Merge: squash-merged as `dcd54bb749731c821e447fd135605da4520a4adc`; `make post-merge`
+  passed on merged `main` with the same 10 EditMode and 16 PlayMode tests, build, smokes, and log checks.
