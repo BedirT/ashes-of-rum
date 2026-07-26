@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+UNITY_CLI="${UNITY_CLI:-$HOME/.unity/bin/unity}"
+EDITOR_VERSION="$(awk '{print $2}' "$ROOT/ProjectSettings/ProjectVersion.txt")"
+SHA="$(git -C "$ROOT" rev-parse HEAD)"
+EVIDENCE="$ROOT/.artifacts/verification/$SHA"
+BUILD_APP="$EVIDENCE/Ashes of Rum.app"
+SMOKE_RESULT="$EVIDENCE/smoke-result.json"
+PLAYER_LOG="$EVIDENCE/player.log"
+
+say() { printf '[harness] %s\n' "$*"; }
+fail() { printf '[harness] ERROR: %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"; }
+
+doctor() {
+  need git
+  need gh
+  [[ -x "$UNITY_CLI" ]] || fail "Unity CLI not found at $UNITY_CLI"
+  [[ -f "$ROOT/Assets/Scenes/SunderedRoad.unity" ]] || fail "SunderedRoad scene is missing; run make bootstrap"
+  [[ -f "$ROOT/Packages/manifest.json" ]] || fail "Unity package manifest is missing"
+  "$UNITY_CLI" --version
+  "$UNITY_CLI" auth status
+  "$UNITY_CLI" license status
+  "$UNITY_CLI" editors list --installed | grep -F "$EDITOR_VERSION" >/dev/null || fail "Unity Editor $EDITOR_VERSION is not installed"
+  gh auth status
+  if pgrep -f "Unity.*-projectPath $ROOT" >/dev/null 2>&1; then
+    fail "A Unity process already has this project open"
+  fi
+  say "Doctor passed for Unity $EDITOR_VERSION."
+}
+
+bootstrap() {
+  "$UNITY_CLI" run "$ROOT" -- \
+    -executeMethod AshesOfRum.Editor.BootstrapProject.Generate \
+    -logFile "$ROOT/Logs/bootstrap.log"
+}
+
+run_tests() {
+  local output_dir="$1"
+  mkdir -p "$output_dir"
+  "$UNITY_CLI" test "$ROOT" --mode EditMode --output "$output_dir/editmode.xml" --timeout 300
+  "$UNITY_CLI" test "$ROOT" --mode PlayMode --output "$output_dir/playmode.xml" --timeout 300
+}
+
+verify_fast() {
+  doctor
+  bootstrap
+  run_tests "$ROOT/.artifacts/verification/working-tree"
+  scan_log "$ROOT/Logs/bootstrap.log"
+  say "Fast verification passed."
+}
+
+scan_log() {
+  local log="$1"
+  [[ -f "$log" ]] || fail "Expected log not found: $log"
+  if grep -E "(^|[^A-Za-z])(NullReferenceException|MissingReferenceException|Assertion failed|Crash!!!|Scripts have compiler errors)([^A-Za-z]|$)" "$log" >/dev/null; then
+    fail "Runtime or compiler failure found in $log"
+  fi
+}
+
+smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  mkdir -p "$EVIDENCE"
+  : > "$PLAYER_LOG"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -batchmode -nographics -logFile "$PLAYER_LOG" \
+    --smoke-test --smoke-output "$SMOKE_RESULT" &
+  local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= 90 )); then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fail "Built-player smoke timed out after 90 seconds"
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid"
+  grep -F '"passed": true' "$SMOKE_RESULT" >/dev/null || fail "Smoke result did not pass"
+  grep -F 'SMOKE_TEST:PASS' "$PLAYER_LOG" >/dev/null || fail "Smoke pass marker missing from player log"
+  scan_log "$PLAYER_LOG"
+  say "Built-player smoke passed."
+}
+
+publish_status() {
+  local state="$1"
+  local description="$2"
+  local remote
+  remote="$(git -C "$ROOT" remote get-url origin)"
+  local repo
+  repo="$(printf '%s' "$remote" | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
+  gh api --method POST "repos/$repo/statuses/$SHA" \
+    -f state="$state" \
+    -f context='unity-local/verify' \
+    -f description="$description" >/dev/null
+}
+
+write_summary() {
+  local cli_version
+  cli_version="$($UNITY_CLI --version | tail -1)"
+  cat > "$EVIDENCE/summary.json" <<EOF
+{
+  "schema": 1,
+  "sha": "$SHA",
+  "unityEditor": "$EDITOR_VERSION",
+  "unityCli": "$cli_version",
+  "platform": "StandaloneOSX-arm64",
+  "seed": 0,
+  "editModeTests": "passed",
+  "playModeTests": "passed",
+  "build": "passed",
+  "smoke": "passed"
+}
+EOF
+}
+
+verify() {
+  [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "Full verification requires a clean committed tree"
+  doctor
+  mkdir -p "$EVIDENCE"
+  publish_status pending "Local Unity verification is running"
+  trap 'publish_status failure "Local Unity verification failed" || true' ERR
+  run_tests "$EVIDENCE"
+  "$UNITY_CLI" build "$ROOT" \
+    --target StandaloneOSX \
+    --architecture arm64 \
+    --execute-method AshesOfRum.Editor.MacPlayerBuilder.PerformBuild \
+    --output-path "$BUILD_APP" \
+    --log-file "$EVIDENCE/build.log" \
+    --no-tail
+  scan_log "$EVIDENCE/build.log"
+  smoke
+  write_summary
+  publish_status success "EditMode, PlayMode, macOS build, and smoke passed"
+  trap - ERR
+  say "Full verification passed for $SHA."
+  say "Evidence: $EVIDENCE"
+}
+
+pr_ready() {
+  [[ "$(git -C "$ROOT" branch --show-current)" != "main" ]] || fail "PR readiness must run on a feature branch"
+  [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "Working tree is not clean"
+  [[ -f "$EVIDENCE/summary.json" ]] || fail "No full verification evidence for $SHA"
+  grep -F "\"sha\": \"$SHA\"" "$EVIDENCE/summary.json" >/dev/null || fail "Evidence does not cover HEAD"
+  local pr_number comments reviewed_head blockers fixer_runs
+  pr_number="$(gh pr view --json number --jq .number)"
+  comments="$(gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate --jq '.[].body')"
+  reviewed_head="$(printf '%s\n' "$comments" | sed -n 's/.*reviewed-head:[[:space:]]*`\{0,1\}\([0-9a-f]\{40\}\)`\{0,1\}.*/\1/p' | tail -1)"
+  [[ "$reviewed_head" == "$SHA" ]] || fail "Latest context-free review does not cover HEAD $SHA"
+  blockers="$(printf '%s\n' "$comments" | sed -n 's/.*blocking-findings:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  [[ "${blockers:-missing}" == "0" ]] || fail "Latest review still has blocking findings"
+  fixer_runs="$(printf '%s\n' "$comments" | grep -c 'fixer-run:' || true)"
+  (( fixer_runs <= 3 )) || fail "Fixer invocation cap exceeded: $fixer_runs"
+  say "PR #$pr_number is ready at reviewed HEAD $SHA with $fixer_runs fixer run(s)."
+}
+
+post_merge() {
+  [[ "$(git -C "$ROOT" branch --show-current)" == "main" ]] || fail "Post-merge proof must run on main"
+  [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "Working tree is not clean"
+  verify
+  say "Post-merge proof passed."
+}
+
+case "${1:-}" in
+  doctor) doctor ;;
+  bootstrap) bootstrap ;;
+  verify-fast) verify_fast ;;
+  verify) verify ;;
+  smoke) smoke ;;
+  pr-ready) pr_ready ;;
+  post-merge) post_merge ;;
+  static) "$ROOT/scripts/harness-static" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|pr-ready|post-merge|static}" ;;
+esac

@@ -1,0 +1,17 @@
+name: Harness Static
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  harness-static:
+    name: harness-static
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate repository contracts
+        run: ./scripts/harness-static

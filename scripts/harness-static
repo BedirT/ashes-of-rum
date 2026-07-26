@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+bash -n scripts/harness scripts/harness-static
+git diff --check
+
+for forbidden in Library Temp Obj Logs Builds UserSettings .artifacts; do
+  if git ls-files "$forbidden" "$forbidden/**" | grep -q .; then
+    printf 'Generated directory is tracked: %s\n' "$forbidden" >&2
+    exit 1
+  fi
+done
+
+missing=0
+while IFS= read -r asset; do
+  [[ "$asset" == *.meta ]] && continue
+  if [[ ! -f "$asset.meta" ]]; then
+    printf 'Missing Unity meta file: %s.meta\n' "$asset" >&2
+    missing=1
+  fi
+done < <(git ls-files Assets)
+(( missing == 0 )) || exit 1
+
+grep -F 'm_EditorVersion: 6000.5.5f1' ProjectSettings/ProjectVersion.txt >/dev/null
+grep -F 'Assets/Scenes/SunderedRoad.unity' ProjectSettings/EditorBuildSettings.asset >/dev/null
+grep -F '## 7. Every Slice Requires A Proper Pull Request' AGENTS.md >/dev/null
+grep -F 'reviewed-head:' AGENTS.md >/dev/null
+
+printf '[harness-static] All repository checks passed.\n'
