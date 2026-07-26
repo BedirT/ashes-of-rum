@@ -1139,6 +1139,72 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator MixedSelection_CommandLayersRemainAvailableAndTargetingModesStayExclusive()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(500);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+
+            var worker = economy.Workers[1];
+            var formation = economy.FriendlyFormations[0];
+            economy.SelectOnly(worker);
+            InvokePrivateMethod(economy, "AddSelectedFormation", formation);
+            InvokePrivateMethod(economy, "UpdateHud");
+
+            var houseButton = GameObject.Find("Build House").GetComponent<Button>();
+            var storehouseRect = GameObject.Find("Build Storehouse").GetComponent<RectTransform>();
+            var watchtowerRect = GameObject.Find("Build Watchtower").GetComponent<RectTransform>();
+            var attackButton = GameObject.Find("Attack Move").GetComponent<Button>();
+            var attackRect = attackButton.GetComponent<RectTransform>();
+            var stopRect = GameObject.Find("Stop Formations").GetComponent<RectTransform>();
+            Assert.That(houseButton.gameObject.activeInHierarchy, Is.True);
+            Assert.That(attackButton.gameObject.activeInHierarchy, Is.True);
+            Assert.That(storehouseRect.anchorMin.y, Is.GreaterThan(attackRect.anchorMax.y));
+            Assert.That(watchtowerRect.anchorMin.y, Is.GreaterThan(stopRect.anchorMax.y),
+                "Worker and formation commands must occupy distinct rows for a mixed selection.");
+
+            attackButton.onClick.Invoke();
+            Assert.That(economy.IsAttackMoveTargetingActive, Is.True);
+            houseButton.onClick.Invoke();
+            Assert.That(economy.IsBuildingPlacementActive, Is.False,
+                "Building placement must not start while attack-move is targeting.");
+            Assert.That(economy.IsAttackMoveTargetingActive, Is.True);
+
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            var mouse = InputSystem.AddDevice<Mouse>();
+            keyboard.MakeCurrent();
+            mouse.MakeCurrent();
+            var groundClick = (Vector2)Camera.main.WorldToScreenPoint(new Vector3(4f, 0f, 6f));
+            QueueCoalescedClick(mouse, groundClick, MouseButton.Right);
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(economy.IsAttackMoveTargetingActive, Is.False);
+
+            houseButton.onClick.Invoke();
+            Assert.That(economy.IsBuildingPlacementActive, Is.True);
+            attackButton.onClick.Invoke();
+            Assert.That(economy.IsAttackMoveTargetingActive, Is.False,
+                "Attack-move must not start while building placement is targeting.");
+            Assert.That(economy.IsBuildingPlacementActive, Is.True);
+
+            QueueCoalescedKeyboardChord(keyboard, Key.Escape);
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(economy.IsBuildingPlacementActive, Is.False);
+
+            QueueCoalescedKeyboardChord(keyboard, Key.H);
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(economy.IsBuildingPlacementActive, Is.True,
+                "Mixed selections must retain worker building hotkeys.");
+            Assert.That(economy.IsAttackMoveTargetingActive, Is.False);
+
+            InputSystem.RemoveDevice(mouse);
+            InputSystem.RemoveDevice(keyboard);
+        }
+
+        [UnityTest]
         public IEnumerator FogAndMinimap_HideMobilesRememberStaticsAndNavigateExploredGround()
         {
             yield return LoadEconomy();

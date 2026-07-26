@@ -92,6 +92,7 @@ namespace AshesOfRum
         public int PopulationCapacity => population?.Capacity ?? 0;
         public bool IsHousePlacementActive => placementWorker != null;
         public bool IsBuildingPlacementActive => placementWorker != null;
+        public bool IsAttackMoveTargetingActive => awaitingAttackMove;
         public IReadOnlyList<WorkerAgent> Workers => workers;
         public IReadOnlyList<HouseBuilding> Houses => houses;
         public IReadOnlyList<ConstructibleBuilding> Storehouses => storehouses;
@@ -462,13 +463,13 @@ namespace AshesOfRum
             selectionText = CreateText(hudCanvas.transform, "Selection", new Vector2(0.04f, 0.045f), new Vector2(0.34f, 0.13f), 22, TextAnchor.MiddleLeft);
             orderText = CreateText(hudCanvas.transform, "Order", new Vector2(0.35f, 0.075f), new Vector2(0.57f, 0.13f), 20, TextAnchor.MiddleCenter);
             queueText = CreateText(hudCanvas.transform, "Production Queue", new Vector2(0.35f, 0.04f), new Vector2(0.57f, 0.075f), 15, TextAnchor.MiddleCenter);
-            buildHouseButton = CreateButton(hudCanvas.transform, "Build House", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
+            buildHouseButton = CreateButton(hudCanvas.transform, "Build House", new Vector2(0.58f, 0.085f), new Vector2(0.68f, 0.135f),
                 $"HOUSE {tuning.houseCost} [H]", () => BeginBuildingPlacement(BuildingType.House));
-            buildStorehouseButton = CreateButton(hudCanvas.transform, "Build Storehouse", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
+            buildStorehouseButton = CreateButton(hudCanvas.transform, "Build Storehouse", new Vector2(0.68f, 0.085f), new Vector2(0.78f, 0.135f),
                 $"STOREHOUSE {tuning.storehouseCost} [R]", () => BeginBuildingPlacement(BuildingType.Storehouse));
-            buildWatchtowerButton = CreateButton(hudCanvas.transform, "Build Watchtower", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
+            buildWatchtowerButton = CreateButton(hudCanvas.transform, "Build Watchtower", new Vector2(0.78f, 0.085f), new Vector2(0.88f, 0.135f),
                 $"WATCHTOWER {tuning.watchtowerCost} [T]", () => BeginBuildingPlacement(BuildingType.Watchtower));
-            cancelBuildButton = CreateButton(hudCanvas.transform, "Cancel Build", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
+            cancelBuildButton = CreateButton(hudCanvas.transform, "Cancel Build", new Vector2(0.88f, 0.085f), new Vector2(0.98f, 0.135f),
                 "CANCEL BUILD  [X]", CancelSelectedConstruction);
             demolishButton = CreateButton(hudCanvas.transform, "Demolish Building", new Vector2(0.78f, 0.05f), new Vector2(0.98f, 0.125f),
                 "DEMOLISH [X]", () => RequestDemolition());
@@ -480,9 +481,9 @@ namespace AshesOfRum
                 $"CAVALRY {tuning.formationCost} [C]", () => TryQueueFormation(FormationType.Cavalry));
             cancelTrainingButton = CreateButton(hudCanvas.transform, "Cancel Training", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
                 "CANCEL [X]", () => CancelActiveTraining());
-            attackMoveButton = CreateButton(hudCanvas.transform, "Attack Move", new Vector2(0.68f, 0.05f), new Vector2(0.83f, 0.125f),
+            attackMoveButton = CreateButton(hudCanvas.transform, "Attack Move", new Vector2(0.68f, 0.03f), new Vector2(0.83f, 0.08f),
                 "ATTACK-MOVE [F]", BeginAttackMoveTargeting);
-            stopFormationsButton = CreateButton(hudCanvas.transform, "Stop Formations", new Vector2(0.83f, 0.05f), new Vector2(0.98f, 0.125f),
+            stopFormationsButton = CreateButton(hudCanvas.transform, "Stop Formations", new Vector2(0.83f, 0.03f), new Vector2(0.98f, 0.08f),
                 "STOP [G]", StopSelectedFormations);
 
             var boxObject = new GameObject("Selection Box", typeof(RectTransform), typeof(Image));
@@ -761,12 +762,14 @@ namespace AshesOfRum
             {
                 if (key == Key.F) BeginAttackMoveTargeting();
                 else if (key == Key.G) StopSelectedFormations();
-                return;
             }
-            if (key == Key.H) BeginBuildingPlacement(BuildingType.House);
-            else if (key == Key.R) BeginBuildingPlacement(BuildingType.Storehouse);
-            else if (key == Key.T) BeginBuildingPlacement(BuildingType.Watchtower);
-            else if (key == Key.X) CancelSelectedConstruction();
+            if (selectedWorkers.Count > 0)
+            {
+                if (key == Key.H) BeginBuildingPlacement(BuildingType.House);
+                else if (key == Key.R) BeginBuildingPlacement(BuildingType.Storehouse);
+                else if (key == Key.T) BeginBuildingPlacement(BuildingType.Watchtower);
+                else if (key == Key.X) CancelSelectedConstruction();
+            }
         }
 
         private void ApplySelection(Vector2 start, Vector2 end, bool modify)
@@ -892,11 +895,11 @@ namespace AshesOfRum
             queueText.text = productionQueue.Active.HasValue
                 ? $"QUEUE: {productionQueue.Active.Value.ToString().ToUpperInvariant()} {productionQueue.Progress:P0}  +{productionQueue.Count - 1}"
                 : "QUEUE: EMPTY";
-            buildHouseButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
+            buildHouseButton.interactable = placementWorker == null && !awaitingAttackMove && selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
                                             selectedWorkers[0].CurrentConstruction == null;
-            buildStorehouseButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.storehouseCost &&
+            buildStorehouseButton.interactable = placementWorker == null && !awaitingAttackMove && selectedWorkers.Count > 0 && Supplies >= tuning.storehouseCost &&
                                                  selectedWorkers[0].CurrentConstruction == null;
-            buildWatchtowerButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.watchtowerCost &&
+            buildWatchtowerButton.interactable = placementWorker == null && !awaitingAttackMove && selectedWorkers.Count > 0 && Supplies >= tuning.watchtowerCost &&
                                                  selectedWorkers[0].CurrentConstruction == null;
             cancelBuildButton.interactable = selectedWorkers.Any(worker => worker.CurrentConstruction != null);
             buildHouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
@@ -918,7 +921,7 @@ namespace AshesOfRum
             cancelTrainingButton.interactable = productionQueue.Count > 0;
             attackMoveButton.gameObject.SetActive(selectedFormations.Count > 0);
             stopFormationsButton.gameObject.SetActive(selectedFormations.Count > 0);
-            attackMoveButton.interactable = !awaitingAttackMove;
+            attackMoveButton.interactable = !awaitingAttackMove && placementWorker == null;
             stopFormationsButton.interactable = selectedFormations.Count > 0;
         }
 
@@ -970,6 +973,11 @@ namespace AshesOfRum
 
         private void BeginBuildingPlacement(BuildingType type)
         {
+            if (awaitingAttackMove)
+            {
+                SetOrderFeedback("Cancel attack-move before placing a building");
+                return;
+            }
             if (placementWorker != null)
             {
                 SetOrderFeedback($"Finish or cancel {placementType} placement first");
@@ -1015,6 +1023,11 @@ namespace AshesOfRum
         private void BeginAttackMoveTargeting()
         {
             if (selectedFormations.Count == 0) return;
+            if (placementWorker != null)
+            {
+                SetOrderFeedback($"Finish or cancel {placementType} placement first");
+                return;
+            }
             CancelSelectionGesture();
             awaitingAttackMove = true;
             SetOrderFeedback("Attack-move - left click ground / right click cancel");

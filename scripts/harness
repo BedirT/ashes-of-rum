@@ -74,9 +74,11 @@ scan_log() {
   severity_lines="$(grep -E '(^|\]) (Error:|Failed( |$))' "$log" || true)"
   unexpected_severity="$(printf '%s\n' "$severity_lines" \
     | grep -Fv '[Licensing::Client] Error: HandshakeResponse reported an error:' \
-    | grep -Fv '[Licensing::Module] Error: Failed to handshake to channel:' || true)"
+    | grep -Fv '[Licensing::Module] Error: Failed to handshake to channel:' \
+    | grep -Fv '[Licensing::Module] Error: Licensing initialization failed after' \
+    | grep -Fv '[Licensing::Module] Error: The connection with the Unity Licensing Client has been lost. Attempting to reconnect.' || true)"
   [[ -z "$unexpected_severity" ]] || fail "Unexpected error-severity log entry in $log: $unexpected_severity"
-  if grep -F '[Licensing::Client] Error: HandshakeResponse reported an error:' "$log" >/dev/null; then
+  if grep -E '(HandshakeResponse reported an error:|Licensing initialization failed after|connection with the Unity Licensing Client has been lost)' "$log" >/dev/null; then
     # Unity can first contact an older shared LicensingClient, then relaunch its versioned client.
     grep -F '[Licensing::Module] Successfully connected to LicensingClient on channel:' "$log" >/dev/null \
       || fail "Licensing fallback did not reconnect successfully in $log"
