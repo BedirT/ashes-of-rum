@@ -1,4 +1,9 @@
 {
   "name": "AshesOfRum.Runtime",
-  "rootNamespace": "AshesOfRum"
+  "rootNamespace": "AshesOfRum",
+  "references": [
+    "Unity.AI.Navigation",
+    "Unity.InputSystem",
+    "Unity.ugui"
+  ]
 }

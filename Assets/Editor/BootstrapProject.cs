@@ -9,6 +9,7 @@ namespace AshesOfRum.Editor
     public static class BootstrapProject
     {
         private const string ScenePath = "Assets/Scenes/Bootstrap.unity";
+        private const string TuningPath = "Assets/Settings/StartingEconomyTuning.asset";
 
         [MenuItem("Ashes of Rum/Regenerate Bootstrap Scene")]
         public static void Generate()
@@ -16,7 +17,10 @@ namespace AshesOfRum.Editor
             Directory.CreateDirectory("Assets/Scenes");
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            new GameObject(HarnessContract.RootObjectName);
+            var tuning = LoadOrCreateTuning();
+            var root = new GameObject(HarnessContract.RootObjectName);
+            var economy = root.AddComponent<StartingEconomyController>();
+            economy.Configure(tuning);
             CreateCamera();
             CreateLighting();
             CreateNeutralGround();
@@ -38,10 +42,11 @@ namespace AshesOfRum.Editor
         {
             var cameraObject = new GameObject(HarnessContract.CameraObjectName);
             cameraObject.tag = "MainCamera";
-            cameraObject.transform.SetPositionAndRotation(new Vector3(0f, 8f, -10f), Quaternion.Euler(30f, 0f, 0f));
+            cameraObject.transform.SetPositionAndRotation(new Vector3(0f, 19f, -18f), Quaternion.Euler(48f, 0f, 0f));
             var camera = cameraObject.AddComponent<Camera>();
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.16f, 0.18f, 0.2f);
+            cameraObject.AddComponent<RtsCameraController>();
         }
 
         private static void CreateLighting()
@@ -49,7 +54,7 @@ namespace AshesOfRum.Editor
             var lightObject = new GameObject("Bootstrap Light");
             var light = lightObject.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.2f;
+            light.intensity = 1.35f;
             lightObject.transform.rotation = Quaternion.Euler(45f, -30f, 0f);
         }
 
@@ -57,12 +62,21 @@ namespace AshesOfRum.Editor
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Bootstrap Ground";
-            ground.transform.localScale = new Vector3(2f, 1f, 2f);
+            ground.transform.localScale = new Vector3(5f, 1f, 7f);
             var material = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
-                color = new Color(0.3f, 0.32f, 0.34f)
+                color = new Color(0.43f, 0.34f, 0.23f)
             };
             ground.GetComponent<MeshRenderer>().sharedMaterial = material;
+        }
+
+        private static EconomyTuning LoadOrCreateTuning()
+        {
+            var tuning = AssetDatabase.LoadAssetAtPath<EconomyTuning>(TuningPath);
+            if (tuning != null) return tuning;
+            tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            AssetDatabase.CreateAsset(tuning, TuningPath);
+            return tuning;
         }
     }
 }
