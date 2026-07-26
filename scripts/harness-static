@@ -47,18 +47,39 @@ grep -F 'defaultScreenHeight: 1080' ProjectSettings/ProjectSettings.asset >/dev/
 grep -A1 'platformArchitecture:' ProjectSettings/ProjectSettings.asset | grep -F 'Standalone: 1' >/dev/null
 grep -F 'UnityEditor.OSXStandalone.UserBuildSettings.architecture = OSArchitecture.ARM64' Assets/Editor/MacPlayerBuilder.cs >/dev/null
 grep -F 'BuildOptions.CleanBuildCache | BuildOptions.Development' Assets/Editor/MacPlayerBuilder.cs >/dev/null
-for forbidden_package in \
-  com.unity.collab-proxy \
-  com.unity.ide.rider \
-  com.unity.ide.visualstudio \
-  com.unity.multiplayer.center \
-  com.unity.timeline \
-  com.unity.visualscripting; do
-  if jq -e --arg package "$forbidden_package" '.dependencies[$package]' Packages/manifest.json >/dev/null; then
-    printf 'Forbidden package remains: %s\n' "$forbidden_package" >&2
-    exit 1
-  fi
-done
+grep -F 'PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Standalone, ManagedStrippingLevel.High)' Assets/Editor/MacPlayerBuilder.cs >/dev/null
+jq -e '.dependencies | keys | sort == [
+  "com.unity.ai.navigation",
+  "com.unity.inputsystem",
+  "com.unity.modules.screencapture",
+  "com.unity.render-pipelines.universal",
+  "com.unity.test-framework",
+  "com.unity.ugui"
+]' Packages/manifest.json >/dev/null
+jq -e '[.dependencies | to_entries[] | select(.value.depth == 0) | .key] | sort == [
+  "com.unity.ai.navigation",
+  "com.unity.inputsystem",
+  "com.unity.modules.screencapture",
+  "com.unity.render-pipelines.universal",
+  "com.unity.test-framework",
+  "com.unity.ugui"
+]' Packages/packages-lock.json >/dev/null
+jq -e '[.dependencies | keys[] | select(startswith("com.unity.modules."))] | sort == [
+  "com.unity.modules.ai",
+  "com.unity.modules.animation",
+  "com.unity.modules.audio",
+  "com.unity.modules.hierarchycore",
+  "com.unity.modules.imageconversion",
+  "com.unity.modules.imgui",
+  "com.unity.modules.jsonserialize",
+  "com.unity.modules.physics",
+  "com.unity.modules.physics2d",
+  "com.unity.modules.physicscore2d",
+  "com.unity.modules.screencapture",
+  "com.unity.modules.terrain",
+  "com.unity.modules.ui",
+  "com.unity.modules.uielements"
+]' Packages/packages-lock.json >/dev/null
 
 review_fixture="$(printf '%s\n' \
   '[{"body":"reviewed-head: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nreview-round: 1\nblocking-findings: 3","submitted_at":"2026-07-25T01:00:00Z"}]' \
@@ -84,7 +105,12 @@ fi
 EOF
 cat > "$contract_tmp/gh" <<'EOF'
 #!/usr/bin/env bash
-exit 0
+set -euo pipefail
+if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+  printf '{"number":2,"headRefOid":"%s"}\n' "${HARNESS_PR_HEAD:-missing}"
+  exit 0
+fi
+exit 99
 EOF
 chmod +x "$contract_tmp/unity" "$contract_tmp/gh"
 HARNESS_CLI_CALLS="$contract_tmp/calls" \
@@ -92,6 +118,14 @@ HARNESS_CLI_CALLS="$contract_tmp/calls" \
   PATH="$contract_tmp:$PATH" \
   scripts/harness doctor >/dev/null
 [[ "$(wc -l < "$contract_tmp/calls" | tr -d ' ')" == "4" ]]
+HARNESS_PR_HEAD="$(git rev-parse HEAD)" PATH="$contract_tmp:$PATH" \
+  scripts/harness head-freshness-self-test >/dev/null
+if HARNESS_PR_HEAD="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" PATH="$contract_tmp:$PATH" \
+  scripts/harness head-freshness-self-test >"$contract_tmp/stale-head.log" 2>&1; then
+  printf 'Stale PR head fixture unexpectedly passed\n' >&2
+  exit 1
+fi
+grep -F 'does not match local HEAD' "$contract_tmp/stale-head.log" >/dev/null
 if PLAYER_TIMEOUT_SECONDS=1 scripts/harness watchdog-self-test >"$contract_tmp/watchdog.log" 2>&1; then
   printf 'Player watchdog self-test unexpectedly passed\n' >&2
   exit 1

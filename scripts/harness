@@ -24,7 +24,6 @@ unity_cli() { "$UNITY_CLI" --no-banner --non-interactive "$@"; }
 
 doctor() {
   need git
-  need gh
   need jq
   need file
   [[ -x "$UNITY_CLI" ]] || fail "Unity CLI not found at $UNITY_CLI"
@@ -34,7 +33,6 @@ doctor() {
   unity_cli auth status
   unity_cli license status
   unity_cli editors list --installed | grep -F "$EDITOR_VERSION" >/dev/null || fail "Unity Editor $EDITOR_VERSION is not installed"
-  gh auth status
   if pgrep -f "Unity.*-projectPath $ROOT" >/dev/null 2>&1; then
     fail "A Unity process already has this project open"
   fi
@@ -68,9 +66,20 @@ verify_fast() {
 
 scan_log() {
   local log="$1"
+  local severity_lines unexpected_severity
   [[ -f "$log" ]] || fail "Expected log not found: $log"
   if grep -E "(^|[^A-Za-z])(NullReferenceException|MissingReferenceException|Assertion failed|Crash!!!|Scripts have compiler errors|Compilation failed|Player build failed)([^A-Za-z]|$)" "$log" >/dev/null; then
     fail "Runtime or compiler failure found in $log"
+  fi
+  severity_lines="$(grep -E '(^|\]) (Error:|Failed( |$))' "$log" || true)"
+  unexpected_severity="$(printf '%s\n' "$severity_lines" \
+    | grep -Fv '[Licensing::Client] Error: HandshakeResponse reported an error:' \
+    | grep -Fv '[Licensing::Module] Error: Failed to handshake to channel:' || true)"
+  [[ -z "$unexpected_severity" ]] || fail "Unexpected error-severity log entry in $log: $unexpected_severity"
+  if grep -F '[Licensing::Client] Error: HandshakeResponse reported an error:' "$log" >/dev/null; then
+    # Unity can first contact an older shared LicensingClient, then relaunch its versioned client.
+    grep -F '[Licensing::Module] Successfully connected to LicensingClient on channel:' "$log" >/dev/null \
+      || fail "Licensing fallback did not reconnect successfully in $log"
   fi
 }
 
@@ -88,6 +97,33 @@ assert_arm64_development_build() {
     || fail "Expected ARM64-only executable, got: $architecture"
   grep -F 'BUILD_COMPLETE:' "$EVIDENCE/build.log" | grep -F ':Development:ARM64' >/dev/null \
     || fail "Build log does not confirm Development ARM64 configuration"
+}
+
+assert_unused_player_modules() {
+  local managed="$BUILD_APP/Contents/Resources/Data/Managed"
+  local features="$ROOT/Library/Bee/artifacts/MacStandalonePlayerBuildProgram/Features"
+  local pattern
+  for pattern in \
+    'UnityEngine.ClothModule.*' \
+    'UnityEngine.MultiplayerModule.*' \
+    'UnityEngine.UnityWebRequestAssetBundleModule.*' \
+    'UnityEngine.UnityWebRequestAudioModule.*' \
+    'UnityEngine.UnityWebRequestTextureModule.*' \
+    'UnityEngine.UnityWebRequestWWWModule.*' \
+    'UnityEngine.VehiclesModule.*'; do
+    if compgen -G "$managed/$pattern" >/dev/null; then
+      fail "Unused runtime assembly remains in player: $pattern"
+    fi
+  done
+
+  # Unity retains a few empty reference assemblies even after their built-in
+  # packages are removed. Prove that the player linker found no used features.
+  for pattern in Director Tilemap UnityAnalyticsCommon UnityAnalytics UnityWebRequest Video XR; do
+    [[ -f "$features/UnityEngine.${pattern}Module-FeaturesChecked.txt" ]] \
+      || fail "Missing linker feature report for UnityEngine.${pattern}Module"
+    [[ ! -s "$features/UnityEngine.${pattern}Module-FeaturesChecked.txt" ]] \
+      || fail "Unused UnityEngine.${pattern}Module has linked player features"
+  done
 }
 
 wait_for_player() {
@@ -157,7 +193,8 @@ write_summary() {
     '{schema: 1, sha: $sha, unityEditor: $editor, unityCli: $cli,
       platform: "StandaloneOSX-arm64", developmentBuild: true, resolution: "1920x1080",
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
-      build: "passed", headlessSmoke: "passed", graphicalSmoke: "passed"}' \
+      build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
+      headlessSmoke: "passed", graphicalSmoke: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -179,6 +216,7 @@ verify() {
     --no-tail
   scan_log "$EVIDENCE/build.log"
   assert_arm64_development_build
+  assert_unused_player_modules
   smoke
   graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
@@ -188,28 +226,47 @@ verify() {
   say "Evidence: $EVIDENCE"
 }
 
+read_pr_snapshot() {
+  gh pr view --json number,headRefOid
+}
+
+require_live_pr_head() {
+  local snapshot="$1"
+  local phase="$2"
+  local live_head
+  live_head="$(jq -er '.headRefOid' <<<"$snapshot")" || fail "Could not read live PR head during $phase"
+  [[ "$live_head" == "$SHA" ]] || fail "Live PR head $live_head does not match local HEAD $SHA during $phase"
+}
+
 pr_ready() {
   [[ "$(git -C "$ROOT" branch --show-current)" != "main" ]] || fail "PR readiness must run on a feature branch"
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "Working tree is not clean"
+  need gh
+  gh auth status
+  local snapshot_before snapshot_after pr_number api_payload review_record reviewed_head blockers fixer_runs
+  snapshot_before="$(read_pr_snapshot)"
+  require_live_pr_head "$snapshot_before" "initial readiness snapshot"
   [[ -f "$EVIDENCE/summary.json" ]] || fail "No full verification evidence for $SHA"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha' "$EVIDENCE/summary.json" >/dev/null || fail "Evidence does not cover HEAD"
-  local pr_number review_record reviewed_head blockers fixer_runs
-  pr_number="$(gh pr view --json number --jq .number)"
-  review_record="$({
+  pr_number="$(jq -r '.number' <<<"$snapshot_before")"
+  api_payload="$({
     gh api "repos/{owner}/{repo}/pulls/$pr_number/reviews" --paginate
     gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate
-  } | jq -sf "$ROOT/scripts/review-state.jq")"
+  })"
+  review_record="$(printf '%s\n' "$api_payload" | jq -sf "$ROOT/scripts/review-state.jq")"
   [[ -n "$review_record" ]] || fail "No complete context-free review footer found"
   reviewed_head="$(jq -r '.head' <<<"$review_record")"
   [[ "$reviewed_head" == "$SHA" ]] || fail "Latest context-free review does not cover HEAD $SHA"
   blockers="$(jq -r '.blockers' <<<"$review_record")"
   [[ "${blockers:-missing}" == "0" ]] || fail "Latest review still has blocking findings"
-  fixer_runs="$({
-    gh api "repos/{owner}/{repo}/pulls/$pr_number/reviews" --paginate
-    gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate
-  } | jq -s '[.[][] | select((.body // "") | test("(?m)^fixer-run:[[:space:]]*[1-3][[:space:]]*$"))] | length')"
+  fixer_runs="$(printf '%s\n' "$api_payload" \
+    | jq -s '[.[][] | select((.body // "") | test("(?m)^fixer-run:[[:space:]]*[1-3][[:space:]]*$"))] | length')"
   (( fixer_runs <= 3 )) || fail "Fixer invocation cap exceeded: $fixer_runs"
+  snapshot_after="$(read_pr_snapshot)"
+  require_live_pr_head "$snapshot_after" "final readiness snapshot"
+  [[ "$(jq -r '.headRefOid' <<<"$snapshot_before")" == "$(jq -r '.headRefOid' <<<"$snapshot_after")" ]] \
+    || fail "Live PR head changed while readiness data was being read"
   say "PR #$pr_number is ready at reviewed HEAD $SHA with $fixer_runs fixer run(s)."
 }
 
@@ -226,6 +283,11 @@ watchdog_self_test() {
   wait_for_player "$pid" "Watchdog self-test"
 }
 
+head_freshness_self_test() {
+  need gh
+  require_live_pr_head "$(read_pr_snapshot)" "head-freshness self-test"
+}
+
 case "${1:-}" in
   doctor) doctor ;;
   bootstrap) bootstrap ;;
@@ -236,6 +298,7 @@ case "${1:-}" in
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
+  head-freshness-self-test) head_freshness_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
   *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

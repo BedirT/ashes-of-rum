@@ -15,6 +15,7 @@ namespace AshesOfRum.Editor
                 ?? Path.GetFullPath("Builds/macOS/Ashes of Rum.app");
             Directory.CreateDirectory(Path.GetDirectoryName(output)!);
             UnityEditor.OSXStandalone.UserBuildSettings.architecture = OSArchitecture.ARM64;
+            PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Standalone, ManagedStrippingLevel.High);
 
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
