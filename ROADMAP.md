@@ -8,7 +8,7 @@ change when playtesting exposes a stronger dependency.
 
 | State | Slice | Player-observable outcome |
 | --- | --- | --- |
-| In progress | 000 - Bootstrap playable harness | Launch Sundered Road, inspect both Hisars, move and zoom the RTS camera, and quit cleanly from a verified macOS build. |
+| In progress | 000 - Bootstrap automated harness | Import the Unity project, run tests, build a native macOS player, launch a neutral scene, and exit through deterministic smoke. |
 | Planned | 001 - Select and command a formation | Select the starting Spearmen formation and issue a visible move order. |
 | Planned | 002 - Gather and spend Supplies | Task workers to Supplies and spend them on a House. |
 | Planned | 003 - Train and counter | Train Spearmen and Archers, then resolve the first readable counter fight. |

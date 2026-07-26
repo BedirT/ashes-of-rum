@@ -18,7 +18,7 @@ doctor() {
   need git
   need gh
   [[ -x "$UNITY_CLI" ]] || fail "Unity CLI not found at $UNITY_CLI"
-  [[ -f "$ROOT/Assets/Scenes/SunderedRoad.unity" ]] || fail "SunderedRoad scene is missing; run make bootstrap"
+  [[ -f "$ROOT/Assets/Scenes/Bootstrap.unity" ]] || fail "Bootstrap scene is missing; run make bootstrap"
   [[ -f "$ROOT/Packages/manifest.json" ]] || fail "Unity package manifest is missing"
   "$UNITY_CLI" --version
   "$UNITY_CLI" auth status
@@ -33,8 +33,13 @@ doctor() {
 
 bootstrap() {
   "$UNITY_CLI" run "$ROOT" -- \
+    -batchmode -quit \
     -executeMethod AshesOfRum.Editor.BootstrapProject.Generate \
     -logFile "$ROOT/Logs/bootstrap.log"
+}
+
+import_project() {
+  "$UNITY_CLI" run "$ROOT" -- -batchmode -quit -logFile "$ROOT/Logs/import.log"
 }
 
 run_tests() {
@@ -46,9 +51,9 @@ run_tests() {
 
 verify_fast() {
   doctor
-  bootstrap
+  import_project
   run_tests "$ROOT/.artifacts/verification/working-tree"
-  scan_log "$ROOT/Logs/bootstrap.log"
+  scan_log "$ROOT/Logs/import.log"
   say "Fast verification passed."
 }
 

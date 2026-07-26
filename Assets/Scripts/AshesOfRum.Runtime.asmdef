@@ -1,5 +1,4 @@
 {
   "name": "AshesOfRum.Runtime",
-  "rootNamespace": "AshesOfRum",
-  "references": ["Unity.InputSystem"]
+  "rootNamespace": "AshesOfRum"
 }

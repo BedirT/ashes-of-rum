@@ -1,11 +1,6 @@
 {
   "name": "AshesOfRum.Editor",
   "rootNamespace": "AshesOfRum.Editor",
-  "references": [
-    "AshesOfRum.Runtime",
-    "Unity.InputSystem",
-    "Unity.InputSystem.UI",
-    "Unity.ugui"
-  ],
+  "references": ["AshesOfRum.Runtime"],
   "includePlatforms": ["Editor"]
 }

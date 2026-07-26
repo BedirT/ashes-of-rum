@@ -31,14 +31,7 @@ namespace AshesOfRum
             yield return null;
             yield return new WaitForEndOfFrame();
 
-            var checks = new[]
-            {
-                "SunderedRoad scene loaded",
-                "RTS camera available",
-                "Karasungur Hisar available",
-                "Alazhan Hisar available",
-                "HUD available"
-            };
+            var checks = new[] { "Bootstrap scene loaded", "Required bootstrap objects available" };
             var result = new SmokeResult
             {
                 scene = SceneManager.GetActiveScene().name,
@@ -47,11 +40,8 @@ namespace AshesOfRum
 
             try
             {
-                Require(result.scene == "SunderedRoad", checks[0]);
-                Require(FindFirstObjectByType<RTSCameraController>() != null, checks[1]);
-                Require(GameObject.Find("Karasungur Hisar") != null, checks[2]);
-                Require(GameObject.Find("Alazhan Hisar") != null, checks[3]);
-                Require(GameObject.Find("Battle HUD") != null, checks[4]);
+                Require(result.scene == HarnessContract.SceneName, checks[0]);
+                Require(HarnessContract.HasRequiredObjects(name => GameObject.Find(name) != null), checks[1]);
                 result.passed = true;
             }
             catch (Exception exception)

@@ -16,7 +16,7 @@ namespace AshesOfRum.Editor
 
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
-                scenes = new[] { "Assets/Scenes/SunderedRoad.unity" },
+                scenes = new[] { "Assets/Scenes/Bootstrap.unity" },
                 locationPathName = output,
                 target = BuildTarget.StandaloneOSX,
                 options = BuildOptions.CleanBuildCache

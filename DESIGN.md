@@ -25,7 +25,7 @@ than frozen product commitments.
 Current development prioritizes a complete and coherent playable loop, responsive
 controls, gameplay clarity, reliable AI, and repeatable verification. Story depth, historical
 detail, and visual polish are secondary and should receive only the effort required to make
-the prototype understandable and enjoyable.
+the prototype understandable and usable.
 
 ## 2. Game Identity
 
