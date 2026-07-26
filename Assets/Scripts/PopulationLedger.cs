@@ -6,6 +6,7 @@ namespace AshesOfRum
     {
         private readonly int hardCap;
         private readonly int minimumCapacity;
+        private int capacityBonus;
 
         public PopulationLedger(int used, int startingCap, int maximumCap)
         {
@@ -24,13 +25,15 @@ namespace AshesOfRum
         public void AddCapacity(int amount)
         {
             if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
-            Capacity = Math.Min(hardCap, checked(Capacity + amount));
+            capacityBonus = checked(capacityBonus + amount);
+            RefreshCapacity();
         }
 
         public void RemoveCapacity(int amount)
         {
             if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
-            Capacity = Math.Max(minimumCapacity, Capacity - amount);
+            capacityBonus = Math.Max(0, capacityBonus - amount);
+            RefreshCapacity();
         }
 
         public bool TryReserve(int amount)
@@ -45,6 +48,11 @@ namespace AshesOfRum
         {
             if (amount <= 0 || amount > Used) throw new ArgumentOutOfRangeException(nameof(amount));
             Used -= amount;
+        }
+
+        private void RefreshCapacity()
+        {
+            Capacity = Math.Min(hardCap, checked(minimumCapacity + capacityBonus));
         }
     }
 }

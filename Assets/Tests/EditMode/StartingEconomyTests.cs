@@ -41,6 +41,20 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void Population_TracksHouseCapacityHiddenAboveHardCap()
+        {
+            var population = new PopulationLedger(4, 12, 60);
+            for (var i = 0; i < 7; i++) population.AddCapacity(8);
+            Assert.That(population.Capacity, Is.EqualTo(60));
+
+            population.RemoveCapacity(8);
+            Assert.That(population.Capacity, Is.EqualTo(60));
+            population.RemoveCapacity(8);
+
+            Assert.That(population.Capacity, Is.EqualTo(52));
+        }
+
+        [Test]
         public void Population_DestroyedHouseRemovesCapacityWithoutKillingOverCapPopulation()
         {
             var population = new PopulationLedger(4, 12, 60);
