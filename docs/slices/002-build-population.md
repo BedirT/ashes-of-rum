@@ -7,19 +7,19 @@ construct it, and see population capacity increase from 12 to 20 when the House 
 
 ## Acceptance
 
-- [ ] A selected worker exposes a clickable `Build House` command and the visible `H` hotkey.
-- [ ] House placement snaps to the grid and rejects occupied, unreachable, out-of-bounds, or
+- [x] A selected worker exposes a clickable `Build House` command and the visible `H` hotkey.
+- [x] House placement snaps to the grid and rejects occupied, unreachable, out-of-bounds, or
       route-blocking positions without spending Supplies.
-- [ ] Valid placement spends the full House cost, assigns one worker, and gives clear placement
+- [x] Valid placement spends the full House cost, assigns one worker, and gives clear placement
       and construction feedback.
-- [ ] Cancelling unfinished construction with the clickable command or `X` refunds the full cost.
-- [ ] A completed House raises population capacity by 8, gives no refund, and the worker resumes
+- [x] Cancelling unfinished construction with the clickable command or `X` refunds the full cost.
+- [x] A completed House raises population capacity by 8, gives no refund, and the worker resumes
       its previous valid gathering assignment or becomes idle.
-- [ ] Focused EditMode and PlayMode coverage protects spending, population, placement,
+- [x] Focused EditMode and PlayMode coverage protects spending, population, placement,
       construction, cancellation, and worker resumption.
-- [ ] The native macOS development player builds a House during smoke while preserving the
+- [x] The native macOS development player builds a House during smoke while preserving the
       existing gather-deposit path.
-- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
+- [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
 - [ ] A context-free review covers the exact final HEAD.
 - [ ] The merged game remains playable at its current scope.
 
@@ -43,4 +43,9 @@ military formations, combat, enemy AI, fog of war, minimap, and visual polish.
 
 ## Evidence
 
-Pending implementation, exact-HEAD verification, context-free review, and merge.
+- Verification: `make verify` passed at implementation HEAD
+  `a7a27c2df99ebddfa00a8c0652e0700854233db5` with 8 EditMode and 11 PlayMode tests,
+  an ARM64 development build, headless smoke, graphical 1920x1080 smoke, and clean logs.
+- Runtime proof: the built player gathered and deposited Supplies, spent 100 Supplies, completed
+  one House, raised population capacity from 12 to 20, and resumed the worker's gathering assignment.
+- Review and merge: pending.
