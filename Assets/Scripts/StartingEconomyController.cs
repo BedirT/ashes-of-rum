@@ -359,7 +359,7 @@ namespace AshesOfRum
             buildHouseButton = CreateButton(canvas.transform, "Build House", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
                 $"HOUSE {tuning.houseCost} [H]", () => BeginBuildingPlacement(BuildingType.House));
             buildStorehouseButton = CreateButton(canvas.transform, "Build Storehouse", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
-                $"STOREHOUSE {tuning.storehouseCost} [D]", () => BeginBuildingPlacement(BuildingType.Storehouse));
+                $"STOREHOUSE {tuning.storehouseCost} [R]", () => BeginBuildingPlacement(BuildingType.Storehouse));
             buildWatchtowerButton = CreateButton(canvas.transform, "Build Watchtower", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
                 $"WATCHTOWER {tuning.watchtowerCost} [T]", () => BeginBuildingPlacement(BuildingType.Watchtower));
             cancelBuildButton = CreateButton(canvas.transform, "Cancel Build", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
@@ -547,11 +547,11 @@ namespace AshesOfRum
             queueText.text = productionQueue.Active.HasValue
                 ? $"QUEUE: {productionQueue.Active.Value.ToString().ToUpperInvariant()} {productionQueue.Progress:P0}  +{productionQueue.Count - 1}"
                 : "QUEUE: EMPTY";
-            buildHouseButton.interactable = selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
+            buildHouseButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
                                             selectedWorkers[0].CurrentConstruction == null;
-            buildStorehouseButton.interactable = selectedWorkers.Count > 0 && Supplies >= tuning.storehouseCost &&
+            buildStorehouseButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.storehouseCost &&
                                                  selectedWorkers[0].CurrentConstruction == null;
-            buildWatchtowerButton.interactable = selectedWorkers.Count > 0 && Supplies >= tuning.watchtowerCost &&
+            buildWatchtowerButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.watchtowerCost &&
                                                  selectedWorkers[0].CurrentConstruction == null;
             cancelBuildButton.interactable = selectedWorkers.Any(worker => worker.CurrentConstruction != null);
             buildHouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
@@ -595,7 +595,7 @@ namespace AshesOfRum
                     return;
                 }
                 if (keyboard.hKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.House);
-                if (keyboard.dKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Storehouse);
+                if (keyboard.rKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Storehouse);
                 if (keyboard.tKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Watchtower);
                 if (keyboard.xKey.wasPressedThisFrame) CancelSelectedConstruction();
                 return;
@@ -606,13 +606,24 @@ namespace AshesOfRum
                 EndBuildingPlacement($"{placementType} placement cancelled");
                 return;
             }
-            if (Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 200f))
+            var pointerPosition = mouse.position.ReadValue();
+            if (IsPointerOverHud(pointerPosition))
+            {
+                placementValid = false;
+                SetOrderFeedback($"Place {placementType} on the battlefield");
+                return;
+            }
+            if (Physics.Raycast(worldCamera.ScreenPointToRay(pointerPosition), out var hit, 200f))
             {
                 placementPosition = HousePlacementRules.Snap(hit.point);
                 placementPreview.transform.position = placementPosition;
                 placementValid = CanPlaceBuilding(placementWorker, placementPosition, out var reason);
                 TintPreview(placementValid ? new Color(0.2f, 0.8f, 0.35f, 0.55f) : new Color(0.9f, 0.2f, 0.15f, 0.55f));
                 SetOrderFeedback(placementValid ? $"Place {placementType} - left click" : reason);
+            }
+            else
+            {
+                placementValid = false;
             }
             if (!mouse.leftButton.wasPressedThisFrame || !placementValid) return;
             var worker = placementWorker;
@@ -624,6 +635,11 @@ namespace AshesOfRum
 
         private void BeginBuildingPlacement(BuildingType type)
         {
+            if (placementWorker != null)
+            {
+                SetOrderFeedback($"Finish or cancel {placementType} placement first");
+                return;
+            }
             if (selectedWorkers.Count == 0)
             {
                 SetOrderFeedback("Select a worker to build");
@@ -640,6 +656,7 @@ namespace AshesOfRum
                 SetOrderFeedback("Worker is already constructing");
                 return;
             }
+            if (placementPreview != null) Destroy(placementPreview);
             placementWorker = selectedWorkers[0];
             placementType = type;
             placementPreview = CreateBuildingVisual(type, $"{type} Placement Preview", Vector3.zero);
@@ -657,6 +674,15 @@ namespace AshesOfRum
             placementWorker = null;
             placementValid = false;
             if (!string.IsNullOrEmpty(feedback)) SetOrderFeedback(feedback);
+        }
+
+        private static bool IsPointerOverHud(Vector2 screenPosition)
+        {
+            if (EventSystem.current == null) return false;
+            var pointer = new PointerEventData(EventSystem.current) { position = screenPosition };
+            var hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointer, hits);
+            return hits.Any(hit => hit.gameObject.GetComponentInParent<Canvas>() != null);
         }
 
         private void CancelSelectedConstruction()

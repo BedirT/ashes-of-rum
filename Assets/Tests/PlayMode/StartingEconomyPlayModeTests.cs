@@ -1,10 +1,16 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 namespace AshesOfRum.Tests
 {
@@ -280,27 +286,149 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
-        public IEnumerator WatchtowerConstruction_AutomaticallyTargetsAndDamagesNearestHostile()
+        public IEnumerator Watchtower_SupportsMovingAssaultAndTargetsNearestHostileInRange()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var towerObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            towerObject.name = "Supporting Watchtower";
+            var building = towerObject.AddComponent<ConstructibleBuilding>();
+            building.Initialize(BuildingType.Watchtower, 0.1f, tuning.buildingHealth, Color.blue, _ => { });
+            Assert.That(building.Advance(0.1f), Is.True);
+
+            var nearest = CreateFormationForTest("Nearest hostile", FormationType.Spearmen, false, tuning);
+            nearest.transform.position = new Vector3(0f, 0f, 8f);
+            var farther = CreateFormationForTest("Farther hostile", FormationType.Spearmen, false, tuning);
+            farther.transform.position = new Vector3(4f, 0f, 7.5f);
+            var outOfRange = CreateFormationForTest("Out of range hostile", FormationType.Spearmen, false, tuning);
+            outOfRange.transform.position = new Vector3(0f, 0f, 10f);
+            var targets = new List<FormationAgent> { farther, outOfRange, nearest };
+            var tower = towerObject.AddComponent<WatchtowerAttack>();
+            tower.Initialize(tuning, () => targets);
+
+            yield return WaitUntil(() => nearest.TotalMemberHealth < tuning.memberHealth * 8);
+            Assert.That(GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
+                .Any(itemRenderer => itemRenderer.name == "Watchtower Projectile"), Is.True);
+            Assert.That(tower.CurrentTarget, Is.SameAs(nearest));
+            Assert.That(farther.TotalMemberHealth, Is.EqualTo(tuning.memberHealth * 8));
+            Assert.That(outOfRange.TotalMemberHealth, Is.EqualTo(tuning.memberHealth * 8));
+
+            targets.Remove(farther);
+            targets.Remove(outOfRange);
+            var assaultDestination = CreateFormationForTest("Assault destination", FormationType.Archers, true, tuning);
+            assaultDestination.transform.position = new Vector3(0f, 0f, -12f);
+            Assert.That(nearest.IssueFocus(assaultDestination), Is.True);
+            assaultDestination.enabled = false;
+            yield return WaitUntil(() => Vector3.Distance(nearest.transform.position, towerObject.transform.position) >
+                                         tuning.watchtowerRange && nearest.transform.position.z < 0f);
+            yield return new WaitForSeconds(tuning.projectileSeconds + 0.1f);
+
+            Assert.That(nearest.MemberCount, Is.EqualTo(8),
+                "A formation moving through one tower's range must survive intact rather than be erased.");
+            Assert.That(nearest.TotalMemberHealth, Is.LessThanOrEqualTo(tuning.memberHealth * 6),
+                "The supporting tower should still inflict meaningful deterministic damage during the assault.");
+            targets.Clear();
+            Object.Destroy(nearest.gameObject);
+            Object.Destroy(assaultDestination.gameObject);
+            yield return null;
+
+            farther.transform.position = new Vector3(0f, 0f, 8f);
+            targets.Add(farther);
+            yield return WaitUntil(() => farther.MemberCount < 8);
+            tower.enabled = false;
+
+            Assert.That(farther.MemberCount, Is.InRange(6, 7),
+                "Sustained tower fire may cause casualties but must leave meaningful survivors.");
+            Object.Destroy(towerObject);
+            Object.Destroy(farther.gameObject);
+            Object.Destroy(outOfRange.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator BuildHotkeys_KeepDForCameraAndUseRForStorehousePlacement()
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            economy.CreditSuppliesForAutomation(600);
+            economy.CreditSuppliesForAutomation(100);
+            economy.SelectOnly(economy.Workers[0]);
+            var keyboard = Keyboard.current ?? InputSystem.AddDevice<Keyboard>();
+            var mouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
+            var cameraController = Object.FindAnyObjectByType<RtsCameraController>();
+            var cameraStart = cameraController.transform.position;
 
-            Assert.That(economy.TryPlaceWatchtower(economy.Workers[0], new Vector3(0f, 0f, 10f)), Is.True);
-            yield return WaitUntil(() => economy.Watchtowers.Count == 1 && economy.Watchtowers[0].IsComplete);
-            var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
-            Assert.That(tower, Is.Not.Null);
-            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
-            yield return WaitUntil(() => economy.EnemyFormations.Count == 1);
-            var hostile = economy.EnemyFormations[0];
-            yield return WaitUntil(() => tower.ShotsFired >= 1);
-            Assert.That(GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
-                .Any(itemRenderer => itemRenderer.name == "Watchtower Projectile"), Is.True);
-            yield return WaitUntil(() => hostile.MemberCount < 8);
+            InputSystem.QueueStateEvent(mouse, new MouseState
+            {
+                position = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f)
+            });
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.D));
+            InputSystem.Update();
+            InvokePrivateMethod(cameraController, "Update");
+            InvokePrivateMethod(economy, "HandleBuildInput");
 
-            Assert.That(tower.CurrentTarget, Is.SameAs(hostile));
-            Assert.That(hostile.MemberCount, Is.LessThan(8));
-            Assert.That(economy.PopulationUsed, Is.EqualTo(12));
+            Assert.That(cameraController.transform.position.x, Is.GreaterThan(cameraStart.x));
+            Assert.That(economy.IsBuildingPlacementActive, Is.False,
+                "Pressing D to pan the camera must not trigger a contextual worker command.");
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+            GameObject.Find("Build Storehouse").GetComponent<Button>().onClick.Invoke();
+            Assert.That(economy.IsBuildingPlacementActive, Is.True);
+            Assert.That(GameObject.Find("Storehouse Placement Preview"), Is.Not.Null);
+
+            InvokePrivateMethod(economy, "EndBuildingPlacement", "Storehouse placement cancelled");
+            yield return null;
+            Assert.That(economy.IsBuildingPlacementActive, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator Placement_DisablesBuildSwitchingAndIgnoresHudPointerClicks()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(500);
+            economy.SelectOnly(economy.Workers[0]);
+            var houseButton = GameObject.Find("Build House").GetComponent<Button>();
+            var storehouseButton = GameObject.Find("Build Storehouse").GetComponent<Button>();
+            houseButton.onClick.Invoke();
+            yield return null;
+
+            Assert.That(economy.IsBuildingPlacementActive, Is.True);
+            Assert.That(storehouseButton.interactable, Is.False);
+            Assert.That(PlacementPreviewCount(), Is.EqualTo(1));
+            Assert.That(GameObject.Find("House Placement Preview"), Is.Not.Null);
+
+            var pointer = new PointerEventData(EventSystem.current)
+            {
+                position = RectTransformUtility.WorldToScreenPoint(null, storehouseButton.transform.position)
+            };
+            ExecuteEvents.Execute(storehouseButton.gameObject, pointer, ExecuteEvents.pointerClickHandler);
+            yield return null;
+            Assert.That(GameObject.Find("House Placement Preview"), Is.Not.Null);
+            Assert.That(GameObject.Find("Storehouse Placement Preview"), Is.Null);
+            Assert.That(PlacementPreviewCount(), Is.EqualTo(1));
+
+            var mouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
+            SetPrivateField(economy, "placementPosition", new Vector3(12f, 0f, -1f));
+            SetPrivateField(economy, "placementValid", true);
+
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = pointer.position }
+                .WithButton(MouseButton.Left));
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleBuildInput");
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = pointer.position });
+            InputSystem.Update();
+            yield return null;
+
+            Assert.That(economy.Houses, Is.Empty,
+                "Clicking the HUD during placement must not place the building behind it.");
+            Assert.That(economy.Supplies, Is.EqualTo(600));
+            Assert.That(economy.IsBuildingPlacementActive, Is.True);
+            Assert.That(PlacementPreviewCount(), Is.EqualTo(1));
+
+            InvokePrivateMethod(economy, "EndBuildingPlacement", "House placement cancelled");
+            yield return null;
+            Assert.That(economy.IsBuildingPlacementActive, Is.False);
+            Assert.That(PlacementPreviewCount(), Is.Zero);
         }
 
         [UnityTest]
@@ -465,7 +593,7 @@ namespace AshesOfRum.Tests
             Assert.That(GameObject.Find("Build House").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("[H]"));
             Assert.That(GameObject.Find("Build Storehouse").GetComponentInChildren<UnityEngine.UI.Text>().text,
-                Does.Contain("200 [D]"));
+                Does.Contain("200 [R]"));
             Assert.That(GameObject.Find("Build Watchtower").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("300 [T]"));
             Assert.That(GameObject.Find("Cancel Build").GetComponentInChildren<UnityEngine.UI.Text>().text,
@@ -497,6 +625,16 @@ namespace AshesOfRum.Tests
             while (!condition() && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.That(condition(), Is.True, $"Condition did not become true within {TimeoutSeconds} seconds.");
         }
+
+        private static int PlacementPreviewCount() =>
+            GameObject.FindObjectsByType<Transform>(FindObjectsSortMode.None)
+                .Count(item => item.name.EndsWith("Placement Preview"));
+
+        private static void SetPrivateField<T>(object target, string fieldName, T value) =>
+            target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(target, value);
+
+        private static void InvokePrivateMethod(object target, string methodName, params object[] arguments) =>
+            target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(target, arguments);
 
         private static FormationAgent CreateFormationForTest(string name, FormationType type, bool friendly,
             EconomyTuning tuning)

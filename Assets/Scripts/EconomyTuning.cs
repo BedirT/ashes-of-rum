@@ -20,7 +20,7 @@ namespace AshesOfRum
         [Min(1)] public int buildingHealth = 100;
         [Min(0.1f)] public float watchtowerRange = 9f;
         [Min(0.1f)] public float watchtowerAttackSeconds = 0.75f;
-        [Min(1)] public int watchtowerDamage = 20;
+        [Min(1)] public int watchtowerDamage = 10;
         [Min(1)] public int startingPopulationCap = 12;
         [Min(1)] public int housePopulationCapacity = 8;
         [Min(1)] public int hardPopulationCap = 60;

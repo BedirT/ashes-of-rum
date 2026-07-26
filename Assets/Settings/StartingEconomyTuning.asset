@@ -27,7 +27,7 @@ MonoBehaviour:
   buildingHealth: 100
   watchtowerRange: 9
   watchtowerAttackSeconds: 0.75
-  watchtowerDamage: 20
+  watchtowerDamage: 10
   startingPopulationCap: 12
   housePopulationCapacity: 8
   hardPopulationCap: 60

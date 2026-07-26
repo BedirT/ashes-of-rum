@@ -17,7 +17,8 @@ the nearest hostile formation in range.
 - [ ] A completed Storehouse becomes an available drop-off and workers carrying Supplies choose it
       when it is closer than the Hisar.
 - [ ] A completed Watchtower automatically targets the nearest hostile formation in range, fires a
-      visible deterministic projectile, and removes casualties without consuming population.
+      visible deterministic projectile, and supports the defense without resolving a moving assault
+      by itself.
 - [ ] Completed friendly buildings can be selected and deliberately demolished only after visible
       confirmation, with no refund.
 - [ ] Focused EditMode and PlayMode coverage protects building costs, placement, completion,
@@ -31,13 +32,13 @@ the nearest hostile formation in range.
 ## Non-Goals
 
 Enemy building construction, worker training, Storehouse or Watchtower rebuilding AI, enemy attacks
-against structures, structure-focused formation orders, Watchtower dominance tuning, fog of war,
+against structures, structure-focused formation orders, fog of war,
 minimap, control groups, complete AI, victory or defeat, audio, and visual polish.
 
 ## Manual Play Check
 
 1. Launch the exact-HEAD macOS development build at 1920x1080.
-2. Gather enough Supplies, select one worker, and confirm House `[H]`, Storehouse `[D]`, and
+2. Gather enough Supplies, select one worker, and confirm House `[H]`, Storehouse `[R]`, and
    Watchtower `[T]` commands show costs of 100, 200, and 300.
 3. Place a Storehouse near a cache; confirm snapped placement, invalid placement feedback,
    Supply spending, one-worker construction, cancellation with a full refund, and completion.
