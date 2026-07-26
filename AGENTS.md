@@ -14,17 +14,21 @@ Before planning, designing, reviewing, or implementing anything, read the reposi
 - Update `DESIGN.md` in the same PR whenever the user approves a product decision change.
 - Do not silently expand the rapid prototype into production or presentation-polish scope.
 
-## 2. Optimize For A Fun, Complete, Playable Prototype
+## 2. Optimize For A Complete, Playable Prototype
 
 Current priorities, in order:
 
-1. A complete core loop that is genuinely playable and fun.
+1. A complete, coherent core loop that is genuinely playable.
 2. Correct, responsive controls and clear gameplay feedback.
 3. Reliable simulation, AI, tests, builds, and iteration tooling.
 4. Only the story and visuals required to make gameplay readable.
 
 Story depth, historical detail, decorative content, and visual polish are not current goals.
 Never trade a working gameplay loop for more lore, art, animation, effects, or architecture.
+
+Do not claim or gate work on subjective "fun." Automated and manual proof must establish
+that the current prototype is complete for its stated scope, coherent, responsive, and
+playable.
 
 ## 3. Deliver Only Vertical Slices
 
@@ -136,6 +140,10 @@ The PR body must contain:
 
 Never open a PR for a branch that does not run properly.
 
+Verification is deliberately local-first. Do not add hosted CI workflows, GitHub commit
+statuses, or required-check dependencies for this prototype. Record exact-SHA local evidence
+from `make verify` in the PR, then use review and fixer footer freshness as the merge gate.
+
 ## 8. Mandatory Context-Free PR Review
 
 Immediately after opening the PR, the primary agent must spawn a review sub-agent with **no
@@ -167,6 +175,17 @@ The reviewer must:
 
 A review that exists only in agent chat does not count. It must land on the PR itself.
 
+Every posted review must end with these machine-readable footer lines:
+
+```text
+reviewed-head: <40-character commit SHA>
+review-round: <positive integer>
+blocking-findings: <non-negative integer>
+```
+
+The reviewed HEAD must equal the current PR HEAD. Any code-changing fix invalidates the
+earlier review and requires a fresh context-free review of the new HEAD.
+
 ## 9. Review-Fix Loop: Maximum Three Fixer Runs
 
 The primary agent orchestrates the loop. A **round** consists of one context-free PR review
@@ -190,6 +209,9 @@ For each round:
 
 Stop early when a review reports no blocking findings and all required gates are green. Never
 run more than three fixing-agent invocations for one PR.
+
+Every fixer response posted to the PR must end with `fixer-run: <1-3>`,
+`fixed-head: <SHA>`, and `verification-head: <SHA>` footer lines.
 
 After the third fixer run, do not invoke a fourth fixer. The primary agent must perform the
 final green-gate audit and decide the terminal action. It may request one final context-free
