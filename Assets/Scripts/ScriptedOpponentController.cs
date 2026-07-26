@@ -228,8 +228,10 @@ namespace AshesOfRum
         private bool IsThreateningBase(Vector3 position)
         {
             if ((position - ownHisar.transform.position).sqrMagnitude <= 144f) return true;
-            return buildings.Any(building => building != null && !building.IsDestroyed &&
-                                              (position - building.transform.position).sqrMagnitude <= 100f);
+            if (buildings.Any(building => building != null && !building.IsDestroyed &&
+                                          (position - building.transform.position).sqrMagnitude <= 100f)) return true;
+            return workers.Any(worker => worker != null && worker.IsAlive &&
+                                         (position - worker.transform.position).sqrMagnitude <= 100f);
         }
 
         private void ApplyCurrentPhaseOrders()

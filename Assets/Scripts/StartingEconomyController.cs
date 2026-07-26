@@ -451,7 +451,8 @@ namespace AshesOfRum
         private Hisar CreateHisar(bool friendly)
         {
             var root = new GameObject(friendly ? HisarObjectName : EnemyHisarObjectName);
-            root.transform.SetPositionAndRotation(new Vector3(0f, 0f, friendly ? -8f : 26f), Quaternion.identity);
+            root.transform.SetPositionAndRotation(new Vector3(0f, 0f, friendly ? -8f : 26f),
+                friendly ? Quaternion.Euler(0f, 180f, 0f) : Quaternion.identity);
             var factionColor = friendly ? new Color(0.08f, 0.24f, 0.55f) : new Color(0.62f, 0.1f, 0.05f);
             CreatePrimitive(PrimitiveType.Cube, "Hisar Keep", root.transform,
                 new Vector3(0f, 1.4f, 0f), new Vector3(5f, 2.8f, 4f), factionColor);
@@ -763,30 +764,22 @@ namespace AshesOfRum
         {
             if (worker == null) return;
             var orphanedConstruction = worker.CurrentConstruction;
+            var constructionAbandoned = orphanedConstruction != null && !orphanedConstruction.IsComplete &&
+                                        !orphanedConstruction.IsDestroyed &&
+                                        orphanedConstruction.ApplyStructuralDamage(orphanedConstruction.Health);
             if (worker.IsFriendly)
             {
                 workers.Remove(worker);
                 selectedWorkers.Remove(worker);
                 if (population.Used > 0) population.Release(1);
-                if (orphanedConstruction != null && !orphanedConstruction.IsComplete)
-                {
-                    RemoveBuildingFromLists(orphanedConstruction);
-                    Destroy(orphanedConstruction.gameObject);
+                if (constructionAbandoned)
                     SetOrderFeedback($"{orphanedConstruction.Type} abandoned - builder lost, no refund");
-                }
             }
             else
             {
                 enemyWorkers.Remove(worker);
                 if (opponent?.Population != null && opponent.Population.Used > 0) opponent.Population.Release(1);
                 fogOfWar?.UnregisterHostile(worker.gameObject);
-                if (orphanedConstruction != null && !orphanedConstruction.IsComplete)
-                {
-                    opponent?.NotifyConstructionAbandoned(orphanedConstruction);
-                    enemyBuildings.Remove(orphanedConstruction);
-                    fogOfWar?.UnregisterHostile(orphanedConstruction.gameObject);
-                    Destroy(orphanedConstruction.gameObject);
-                }
             }
             telemetry.RecordEntityLost(worker.IsFriendly, "Worker", MatchElapsedSeconds);
         }

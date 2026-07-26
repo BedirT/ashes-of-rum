@@ -239,7 +239,8 @@ namespace AshesOfRum
     {
         private Renderer[] renderers;
         private Collider[] colliders;
-        private Color[] originalColors;
+        private Color[] liveColors;
+        private Color[] rememberedColors;
         private bool remembersWhenExplored;
         private bool hasEverBeenVisible;
 
@@ -251,20 +252,25 @@ namespace AshesOfRum
             hasEverBeenVisible = false;
             renderers = GetComponentsInChildren<Renderer>(true);
             colliders = GetComponentsInChildren<Collider>(true);
-            originalColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            liveColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            rememberedColors = (Color[])liveColors.Clone();
         }
 
         public void RefreshColors()
         {
             if (renderers == null) return;
-            originalColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            liveColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
             Apply(State);
         }
 
         public bool Apply(FogState state)
         {
             var firstReveal = state == FogState.Visible && !hasEverBeenVisible;
-            if (state == FogState.Visible) hasEverBeenVisible = true;
+            if (state == FogState.Visible)
+            {
+                hasEverBeenVisible = true;
+                rememberedColors = (Color[])liveColors.Clone();
+            }
             State = state;
             var show = state == FogState.Visible ||
                        remembersWhenExplored && hasEverBeenVisible && state == FogState.Explored;
@@ -274,8 +280,8 @@ namespace AshesOfRum
                 renderers[index].enabled = show;
                 if (show)
                     renderers[index].material.color = state == FogState.Explored
-                        ? Color.Lerp(originalColors[index], Color.black, 0.65f)
-                        : originalColors[index];
+                        ? Color.Lerp(rememberedColors[index], Color.black, 0.65f)
+                        : liveColors[index];
             }
             foreach (var itemCollider in colliders)
                 if (itemCollider != null) itemCollider.enabled = state == FogState.Visible;

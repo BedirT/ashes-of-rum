@@ -44,6 +44,24 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator MirroredHisars_UseEqualCacheToDropOffDistances()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+
+            Assert.That(economy.Caches.Count, Is.EqualTo(economy.OpponentCaches.Count));
+            for (var index = 0; index < economy.Caches.Count; index++)
+            {
+                var friendlyDistance = Vector3.Distance(economy.Caches[index].transform.position,
+                    economy.FriendlyHisar.DropOffPoint);
+                var hostileDistance = Vector3.Distance(economy.OpponentCaches[index].transform.position,
+                    economy.EnemyHisar.DropOffPoint);
+                Assert.That(friendlyDistance, Is.EqualTo(hostileDistance).Within(0.01f),
+                    $"Mirrored cache {index + 1} must have the same Hisar deposit route length for both sides.");
+            }
+        }
+
+        [UnityTest]
         public IEnumerator BattlefieldSupplyBudget_FundsHouseAndTwoFormationsWithoutAutomationCredits()
         {
             yield return LoadEconomy();
@@ -373,6 +391,47 @@ namespace AshesOfRum.Tests
                 Object.Destroy(hostileAttackers.gameObject);
                 Object.Destroy(friendlyAttackers.gameObject);
             }
+        }
+
+        [UnityTest]
+        public IEnumerator BuilderDeaths_DestroyAndRecordBothFoundationsExactlyOnce()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var friendlyBuilder = economy.Workers[0];
+            Assert.That(economy.TryPlaceHouse(friendlyBuilder, VisibleHouseSite), Is.True);
+            var friendlyFoundation = economy.Houses.Single();
+            var friendlyDestroyed = economy.CurrentMatchSummary.friendlyBuildingsDestroyed;
+            var friendlyLost = economy.CurrentMatchSummary.friendlyEntitiesLost;
+
+            friendlyBuilder.ApplyFixedDamage(friendlyBuilder.Health);
+
+            Assert.That(friendlyFoundation.IsDestroyed, Is.True);
+            Assert.That(economy.Houses, Is.Empty);
+            Assert.That(economy.CurrentMatchSummary.friendlyBuildingsDestroyed,
+                Is.EqualTo(friendlyDestroyed + 1));
+            Assert.That(economy.CurrentMatchSummary.friendlyEntitiesLost, Is.EqualTo(friendlyLost + 1));
+            Assert.That(friendlyFoundation.ApplyStructuralDamage(friendlyFoundation.Health), Is.False);
+            Assert.That(economy.CurrentMatchSummary.friendlyBuildingsDestroyed,
+                Is.EqualTo(friendlyDestroyed + 1), "A removed foundation must be recorded exactly once.");
+
+            var hostileFoundation = economy.EnemyBuildings.Single(building => !building.IsComplete);
+            var hostileBuilder = economy.EnemyWorkers.Single(worker =>
+                ReferenceEquals(worker.CurrentConstruction, hostileFoundation));
+            var hostileDestroyed = economy.CurrentMatchSummary.hostileBuildingsDestroyed;
+            var hostileLost = economy.CurrentMatchSummary.hostileEntitiesLost;
+
+            hostileBuilder.ApplyFixedDamage(hostileBuilder.Health);
+
+            Assert.That(hostileFoundation.IsDestroyed, Is.True);
+            Assert.That(economy.EnemyBuildings.Contains(hostileFoundation), Is.False);
+            Assert.That(economy.CurrentMatchSummary.hostileBuildingsDestroyed,
+                Is.EqualTo(hostileDestroyed + 1));
+            Assert.That(economy.CurrentMatchSummary.hostileEntitiesLost, Is.EqualTo(hostileLost + 1));
+            Assert.That(hostileFoundation.ApplyStructuralDamage(hostileFoundation.Health), Is.False);
+            Assert.That(economy.CurrentMatchSummary.hostileBuildingsDestroyed,
+                Is.EqualTo(hostileDestroyed + 1), "A removed hostile foundation must be recorded exactly once.");
+            yield return null;
         }
 
         [UnityTest]
@@ -1476,6 +1535,58 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator HostileBuildingCompletion_RemainsStaleWhileExploredUntilRevealedAgain()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var building = economy.EnemyBuildings.Single(candidate => !candidate.IsComplete);
+            var scout = new GameObject("Stale construction palette scout");
+            scout.transform.position = building.transform.position;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
+            var renderers = building.GetComponentsInChildren<Renderer>(true)
+                .Where(itemRenderer => itemRenderer.GetComponent<BuildingSelectionRing>() == null)
+                .ToArray();
+            var originalTimeScale = Time.timeScale;
+
+            try
+            {
+                Assert.That(economy.FogOfWar.IsCurrentlyVisible(building), Is.True);
+                scout.transform.position = new Vector3(-20f, 0f, -10f);
+                economy.FogOfWar.RefreshNow();
+                Assert.That(economy.FogOfWar.StateAt(building.transform.position), Is.EqualTo(FogState.Explored));
+                var rememberedFoundationColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+
+                Time.timeScale = 20f;
+                yield return WaitUntil(() => building.IsComplete);
+                Time.timeScale = 0f;
+                economy.FogOfWar.RefreshNow();
+
+                for (var index = 0; index < renderers.Length; index++)
+                    Assert.That(Vector4.Distance(renderers[index].material.color,
+                            rememberedFoundationColors[index]), Is.LessThan(0.01f),
+                        "Explored fog must retain the last-seen foundation palette after unseen completion.");
+
+                scout.transform.position = building.transform.position;
+                economy.FogOfWar.RefreshNow();
+                var expected = new Color(0.72f, 0.16f, 0.07f);
+                foreach (var itemRenderer in renderers)
+                {
+                    var actual = itemRenderer.material.color;
+                    Assert.That(actual.r, Is.EqualTo(expected.r).Within(0.02f));
+                    Assert.That(actual.g, Is.EqualTo(expected.g).Within(0.02f));
+                    Assert.That(actual.b, Is.EqualTo(expected.b).Within(0.02f),
+                        "Revealing the completed building must update its remembered red palette.");
+                }
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+                Object.Destroy(scout);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator ManualWorkerAndStructureFocus_SurviveIncomingFormationFire()
         {
             yield return LoadEconomy();
@@ -1786,6 +1897,71 @@ namespace AshesOfRum.Tests
                 yield return null;
                 Assert.That(economy.OpponentIsDefending, Is.False);
                 Assert.That(economy.EnemyFormations.All(formation => formation.Target != threat), Is.True);
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator OpponentScript_DefendsAVisibleRemoteWorkerThenResumesItsPhase()
+        {
+            yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
+            yield return null;
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var originalTimeScale = Time.timeScale;
+
+            try
+            {
+                Time.timeScale = 20f;
+                yield return WaitUntil(() => economy.EnemyFormations.Any(formation =>
+                    formation.Type == FormationType.Cavalry));
+                Time.timeScale = 0f;
+
+                var defendedWorker = economy.EnemyWorkers.First(worker => worker.CurrentConstruction == null);
+                Assert.That(defendedWorker.GetComponent<NavMeshAgent>().Warp(new Vector3(-15f, 0f, 12f)), Is.True);
+                foreach (var worker in economy.EnemyWorkers.Where(worker => worker != defendedWorker))
+                    Assert.That(worker.GetComponent<NavMeshAgent>().Warp(new Vector3(17f, 0f, 24f)), Is.True);
+                for (var index = 0; index < economy.EnemyBuildings.Count; index++)
+                    economy.EnemyBuildings[index].transform.position = new Vector3(15f + index, 0f, 24f);
+                foreach (var formation in economy.EnemyFormations)
+                {
+                    formation.IssueStop();
+                    Assert.That(formation.GetComponent<NavMeshAgent>()
+                        .Warp(economy.EnemyHisar.transform.position + Vector3.left * 8f), Is.True);
+                }
+
+                var threat = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                    defendedWorker.transform.position + Vector3.left * 4f);
+                economy.FogOfWar.RefreshNow();
+                Assert.That(economy.FogOfWar.IsCurrentlyVisible(defendedWorker), Is.True);
+                Assert.That(threat.IssueFocus(defendedWorker), Is.True);
+                yield return null;
+                yield return null;
+
+                Assert.That(Vector3.Distance(threat.transform.position, economy.EnemyHisar.transform.position),
+                    Is.GreaterThan(12f));
+                Assert.That(economy.EnemyBuildings.All(building =>
+                    Vector3.Distance(threat.transform.position, building.transform.position) > 10f), Is.True);
+                Assert.That(economy.OpponentIsDefending, Is.True,
+                    "An attack visible to a remote living worker must trigger the same defensive recall.");
+                Assert.That(economy.EnemyFormations.Any(formation => formation.Target == threat), Is.True);
+
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 180f - economy.MatchElapsedSeconds));
+                yield return null;
+                Assert.That(economy.OpponentPhase, Is.EqualTo(AiPhase.Probe));
+                Assert.That(economy.CurrentMatchSummary.probeAttackSeconds, Is.LessThan(0f));
+
+                threat.IssueStop();
+                Assert.That(threat.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, -4f)), Is.True);
+                yield return null;
+                yield return null;
+
+                Assert.That(economy.OpponentIsDefending, Is.False);
+                Assert.That(economy.CurrentMatchSummary.probeAttackSeconds, Is.GreaterThanOrEqualTo(180f));
+                Assert.That(economy.EnemyFormations.Single(formation => formation.Type == FormationType.Cavalry)
+                    .CurrentOrder, Is.EqualTo(FormationOrder.AttackMove));
             }
             finally
             {
