@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -135,6 +136,88 @@ namespace AshesOfRum.Tests
             Assert.That(economy.LastEconomyNotification, Does.Contain("idle"));
             Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
                 Does.Contain("IDLE - NO SUPPLIES CACHE NEARBY"));
+        }
+
+        [UnityTest]
+        public IEnumerator HouseConstruction_SpendsCompletesRaisesCapacityAndResumesGathering()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var worker = economy.Workers[0];
+            var cache = economy.Caches[0];
+            worker.IssueGather(cache);
+            yield return null;
+
+            Assert.That(economy.TryPlaceHouse(worker, new Vector3(12f, 0f, -1f)), Is.True);
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(economy.PopulationCapacity, Is.EqualTo(12));
+            Assert.That(economy.Houses, Has.Count.EqualTo(1));
+            Assert.That(economy.Houses[0].IsComplete, Is.False);
+            worker.IssueMove(Vector3.zero);
+            Assert.That(worker.CurrentConstruction, Is.SameAs(economy.Houses[0]));
+
+            yield return WaitUntil(() => economy.Houses[0].IsComplete);
+
+            Assert.That(economy.PopulationUsed, Is.EqualTo(4));
+            Assert.That(economy.PopulationCapacity, Is.EqualTo(20));
+            Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.GoingToCache));
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("HOUSE COMPLETE"));
+        }
+
+        [UnityTest]
+        public IEnumerator HouseConstruction_CancelRefundsAndDoesNotRaiseCapacity()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var worker = economy.Workers[0];
+
+            Assert.That(economy.TryPlaceHouse(worker, new Vector3(12f, 0f, -1f)), Is.True);
+            economy.SelectOnly(worker);
+            GameObject.Find("Cancel Build").GetComponent<UnityEngine.UI.Button>().onClick.Invoke();
+            yield return null;
+
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.PopulationCapacity, Is.EqualTo(12));
+            Assert.That(economy.Houses, Is.Empty);
+            Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.Idle));
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("REFUNDED"));
+        }
+
+        [UnityTest]
+        public IEnumerator HousePlacement_InvalidPositionDoesNotSpendSupplies()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(-7f, 0f, 4f)), Is.False);
+
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.Houses, Is.Empty);
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("INVALID"));
+        }
+
+        [UnityTest]
+        public IEnumerator Hud_ShowsPopulationAndClickableBuildCommands()
+        {
+            yield return LoadEconomy();
+
+            Assert.That(GameObject.Find("Population").GetComponent<UnityEngine.UI.Text>().text,
+                Is.EqualTo("POPULATION   4 / 12"));
+            Assert.That(GameObject.Find("Build House").GetComponent<UnityEngine.UI.Button>(), Is.Not.Null);
+            Assert.That(GameObject.Find("EventSystem").GetComponents<MonoBehaviour>()
+                .Any(component => component.GetType().Name == "InputSystemUIInputModule"), Is.True);
+            Assert.That(GameObject.Find("Build House").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[H]"));
+            Assert.That(GameObject.Find("Cancel Build").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[X]"));
+
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectOnly(economy.Workers[0]);
+            GameObject.Find("Build House").GetComponent<UnityEngine.UI.Button>().onClick.Invoke();
+            Assert.That(economy.IsHousePlacementActive, Is.True);
         }
 
         private static IEnumerator LoadEconomy()

@@ -14,14 +14,17 @@ namespace AshesOfRum
             Moving,
             GoingToCache,
             Gathering,
-            Returning
+            Returning,
+            GoingToConstruction,
+            Constructing
         }
 
         private enum DeferredOrder
         {
             None,
             Move,
-            Gather
+            Gather,
+            Construct
         }
 
         private NavMeshAgent agent;
@@ -38,10 +41,15 @@ namespace AshesOfRum
         private DeferredOrder deferredOrder;
         private Vector3 deferredDestination;
         private ResourceCache deferredCache;
+        private HouseBuilding deferredBuilding;
+        private HouseBuilding construction;
+        private ResourceCache resumeCache;
+        private Action<HouseBuilding> constructionCompleted;
 
         public Activity CurrentActivity { get; private set; }
         public bool IsSelected { get; private set; }
         public int CarriedSupplies { get; private set; }
+        public HouseBuilding CurrentConstruction => construction ?? deferredBuilding;
 
         public void Initialize(EconomyTuning economyTuning, EconomyWallet economyWallet, Hisar home,
             IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification)
@@ -71,6 +79,7 @@ namespace AshesOfRum
 
         public void IssueMove(Vector3 destination)
         {
+            if (CurrentConstruction != null) return;
             if (CarriedSupplies > 0)
             {
                 deferredOrder = DeferredOrder.Move;
@@ -84,6 +93,7 @@ namespace AshesOfRum
 
         public void IssueGather(ResourceCache cache)
         {
+            if (CurrentConstruction != null) return;
             if (CarriedSupplies > 0)
             {
                 deferredOrder = DeferredOrder.Gather;
@@ -93,6 +103,43 @@ namespace AshesOfRum
             }
 
             BeginGather(cache);
+        }
+
+        public void IssueConstruct(HouseBuilding building, Action<HouseBuilding> completed)
+        {
+            if (building == null) return;
+            resumeCache = targetCache;
+            constructionCompleted = completed;
+            if (CarriedSupplies > 0)
+            {
+                deferredOrder = DeferredOrder.Construct;
+                deferredBuilding = building;
+                ReturnHome();
+                return;
+            }
+
+            BeginConstruction(building);
+        }
+
+        public bool CancelConstruction()
+        {
+            var cancelled = CurrentConstruction;
+            if (cancelled == null || cancelled.IsComplete) return false;
+            deferredBuilding = null;
+            construction = null;
+            constructionCompleted = null;
+            if (deferredOrder == DeferredOrder.Construct) deferredOrder = DeferredOrder.None;
+            if (CurrentActivity is Activity.GoingToConstruction or Activity.Constructing)
+                ResumeAfterConstruction();
+            return true;
+        }
+
+        public bool CanReach(Vector3 destination)
+        {
+            if (agent == null || !agent.isOnNavMesh) return false;
+            var path = new NavMeshPath();
+            return NavMesh.CalculatePath(transform.position, destination, NavMesh.AllAreas, path) &&
+                   path.status == NavMeshPathStatus.PathComplete;
         }
 
         private void BeginMove(Vector3 destination)
@@ -142,6 +189,21 @@ namespace AshesOfRum
                     break;
                 case Activity.Returning:
                     if (HasArrived()) DepositAndReturn();
+                    break;
+                case Activity.GoingToConstruction:
+                    if (construction == null)
+                    {
+                        ResumeAfterConstruction();
+                    }
+                    else if (HasArrived())
+                    {
+                        CurrentActivity = Activity.Constructing;
+                        agent.ResetPath();
+                    }
+                    break;
+                case Activity.Constructing:
+                    if (construction != null && construction.Advance(Time.deltaTime))
+                        FinishConstruction();
                     break;
             }
         }
@@ -200,7 +262,48 @@ namespace AshesOfRum
             deferredCache = null;
 
             if (order == DeferredOrder.Move) BeginMove(destination);
-            else BeginGather(cache);
+            else if (order == DeferredOrder.Gather) BeginGather(cache);
+            else
+            {
+                var building = deferredBuilding;
+                deferredBuilding = null;
+                BeginConstruction(building);
+            }
+        }
+
+        private void BeginConstruction(HouseBuilding building)
+        {
+            construction = building;
+            if (construction == null)
+            {
+                ResumeAfterConstruction();
+                return;
+            }
+            targetCache = null;
+            CurrentActivity = Activity.GoingToConstruction;
+            agent.stoppingDistance = 0.35f;
+            agent.SetDestination(construction.BuildPoint);
+        }
+
+        private void FinishConstruction()
+        {
+            var completed = construction;
+            construction = null;
+            constructionCompleted?.Invoke(completed);
+            constructionCompleted = null;
+            ResumeAfterConstruction();
+        }
+
+        private void ResumeAfterConstruction()
+        {
+            var previousCache = resumeCache;
+            resumeCache = null;
+            if (previousCache != null && previousCache.Remaining > 0) BeginGather(previousCache);
+            else
+            {
+                CurrentActivity = Activity.Idle;
+                if (agent.isOnNavMesh) agent.ResetPath();
+            }
         }
 
         private void RetargetOrBecomeIdle(Vector3 searchOrigin)
