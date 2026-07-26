@@ -12,10 +12,15 @@ PLAYER_LOG="$EVIDENCE/player.log"
 GRAPHICAL_RESULT="$EVIDENCE/graphical-smoke-result.json"
 GRAPHICAL_LOG="$EVIDENCE/graphical-player.log"
 GRAPHICAL_SCREENSHOT="$EVIDENCE/graphical-smoke.png"
+PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
+
+export UNITY_NO_CONSENT_PROMPT=1
+export UNITY_NO_UPDATE_CHECK=1
 
 say() { printf '[harness] %s\n' "$*"; }
 fail() { printf '[harness] ERROR: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"; }
+unity_cli() { "$UNITY_CLI" --no-banner --non-interactive "$@"; }
 
 doctor() {
   need git
@@ -25,10 +30,10 @@ doctor() {
   [[ -x "$UNITY_CLI" ]] || fail "Unity CLI not found at $UNITY_CLI"
   [[ -f "$ROOT/Assets/Scenes/Bootstrap.unity" ]] || fail "Bootstrap scene is missing; run make bootstrap"
   [[ -f "$ROOT/Packages/manifest.json" ]] || fail "Unity package manifest is missing"
-  "$UNITY_CLI" --version
-  "$UNITY_CLI" auth status
-  "$UNITY_CLI" license status
-  "$UNITY_CLI" editors list --installed | grep -F "$EDITOR_VERSION" >/dev/null || fail "Unity Editor $EDITOR_VERSION is not installed"
+  unity_cli --version
+  unity_cli auth status
+  unity_cli license status
+  unity_cli editors list --installed | grep -F "$EDITOR_VERSION" >/dev/null || fail "Unity Editor $EDITOR_VERSION is not installed"
   gh auth status
   if pgrep -f "Unity.*-projectPath $ROOT" >/dev/null 2>&1; then
     fail "A Unity process already has this project open"
@@ -37,20 +42,20 @@ doctor() {
 }
 
 bootstrap() {
-  "$UNITY_CLI" run "$ROOT" --timeout 300 -- \
+  unity_cli run "$ROOT" --timeout 300 -- \
     -executeMethod AshesOfRum.Editor.BootstrapProject.Generate \
     -logFile "$ROOT/Logs/bootstrap.log"
 }
 
 import_project() {
-  "$UNITY_CLI" run "$ROOT" --timeout 300 -- -logFile "$ROOT/Logs/import.log"
+  unity_cli run "$ROOT" --timeout 300 -- -logFile "$ROOT/Logs/import.log"
 }
 
 run_tests() {
   local output_dir="$1"
   mkdir -p "$output_dir"
-  "$UNITY_CLI" test "$ROOT" --mode EditMode --output "$output_dir/editmode.xml" --timeout 300
-  "$UNITY_CLI" test "$ROOT" --mode PlayMode --output "$output_dir/playmode.xml" --timeout 300
+  unity_cli test "$ROOT" --mode EditMode --output "$output_dir/editmode.xml" --timeout 300
+  unity_cli test "$ROOT" --mode PlayMode --output "$output_dir/playmode.xml" --timeout 300
 }
 
 verify_fast() {
@@ -85,6 +90,24 @@ assert_arm64_development_build() {
     || fail "Build log does not confirm Development ARM64 configuration"
 }
 
+wait_for_player() {
+  local pid="$1"
+  local label="$2"
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= PLAYER_TIMEOUT_SECONDS )); then
+      kill "$pid" 2>/dev/null || true
+      sleep 2
+      kill -9 "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fail "$label timed out after $PLAYER_TIMEOUT_SECONDS seconds"
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$pid" || fail "$label exited with a failure status"
+}
+
 smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   mkdir -p "$EVIDENCE"
@@ -93,17 +116,7 @@ smoke() {
     -batchmode -nographics -logFile "$PLAYER_LOG" \
     --smoke-test --smoke-output "$SMOKE_RESULT" &
   local pid=$!
-  local waited=0
-  while kill -0 "$pid" 2>/dev/null; do
-    if (( waited >= 90 )); then
-      kill "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-      fail "Built-player smoke timed out after 90 seconds"
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  wait "$pid"
+  wait_for_player "$pid" "Built-player smoke"
   validate_json "$SMOKE_RESULT"
   jq -e '.passed == true and (.checks | index("Development player running")) != null' "$SMOKE_RESULT" >/dev/null \
     || fail "Smoke result did not pass development-player checks"
@@ -118,7 +131,9 @@ graphical_smoke() {
   "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
     -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
     -logFile "$GRAPHICAL_LOG" --smoke-test \
-    --smoke-output "$GRAPHICAL_RESULT" --smoke-screenshot "$GRAPHICAL_SCREENSHOT"
+    --smoke-output "$GRAPHICAL_RESULT" --smoke-screenshot "$GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical smoke"
   validate_json "$GRAPHICAL_RESULT"
   jq -e '.passed == true and (.checks | index("1920x1080 window configured")) != null and (.checks | index("Graphical frame captured")) != null' "$GRAPHICAL_RESULT" >/dev/null \
     || fail "Graphical smoke result did not pass rendering checks"
@@ -134,7 +149,7 @@ graphical_smoke() {
 
 write_summary() {
   local cli_version
-  cli_version="$($UNITY_CLI --version | tail -1)"
+  cli_version="$(unity_cli --version | tail -1)"
   jq -n \
     --arg sha "$SHA" \
     --arg editor "$EDITOR_VERSION" \
@@ -155,7 +170,7 @@ verify() {
   mkdir -p "$EVIDENCE"
   "$ROOT/scripts/harness-static"
   run_tests "$EVIDENCE"
-  "$UNITY_CLI" build "$ROOT" \
+  unity_cli build "$ROOT" \
     --target StandaloneOSX \
     --architecture arm64 \
     --execute-method AshesOfRum.Editor.MacPlayerBuilder.PerformBuild \
@@ -205,6 +220,12 @@ post_merge() {
   say "Post-merge proof passed."
 }
 
+watchdog_self_test() {
+  sleep 30 &
+  local pid=$!
+  wait_for_player "$pid" "Watchdog self-test"
+}
+
 case "${1:-}" in
   doctor) doctor ;;
   bootstrap) bootstrap ;;
@@ -214,6 +235,7 @@ case "${1:-}" in
   graphical-smoke) graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
+  watchdog-self-test) watchdog_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
   *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

@@ -9,7 +9,7 @@ Describe one end-to-end behavior the player can observe and use.
 - [ ] The outcome works from a clean launch without manual scene setup.
 - [ ] Focused EditMode or PlayMode coverage protects its deterministic contract.
 - [ ] The built macOS player exercises the changed runtime path.
-- [ ] `make verify` passes on the exact PR HEAD and publishes evidence.
+- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
 - [ ] A context-free review covers the exact final HEAD.
 - [ ] The merged game remains playable at its current scope.
 

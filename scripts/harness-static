@@ -7,6 +7,13 @@ cd "$ROOT"
 bash -n scripts/harness scripts/harness-static
 git diff --check
 
+branch="$(git branch --show-current)"
+if [[ "$branch" != "main" ]]; then
+  base_ref="${HARNESS_BASE_REF:-main}"
+  merge_base="$(git merge-base "$base_ref" HEAD)"
+  git diff --check "$merge_base..HEAD"
+fi
+
 for forbidden in Library Temp Obj Logs Builds UserSettings .artifacts; do
   if git ls-files "$forbidden" "$forbidden/**" | grep -q .; then
     printf 'Generated directory is tracked: %s\n' "$forbidden" >&2
@@ -60,6 +67,36 @@ review_fixture="$(printf '%s\n' \
 [[ "$(jq -r '.head' <<<"$review_fixture")" == "cccccccccccccccccccccccccccccccccccccccc" ]]
 [[ "$(jq -r '.round' <<<"$review_fixture")" == "2" ]]
 [[ "$(jq -r '.blockers' <<<"$review_fixture")" == "0" ]]
+
+contract_tmp="$(mktemp -d)"
+trap 'rm -rf "$contract_tmp"' EXIT
+cat > "$contract_tmp/unity" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${UNITY_NO_CONSENT_PROMPT:-}" == "1" ]]
+[[ "${UNITY_NO_UPDATE_CHECK:-}" == "1" ]]
+[[ "${1:-}" == "--no-banner" ]]
+[[ "${2:-}" == "--non-interactive" ]]
+printf '%s\n' "$*" >> "$HARNESS_CLI_CALLS"
+if [[ "$*" == *"editors list --installed"* ]]; then
+  printf '6000.5.5f1\n'
+fi
+EOF
+cat > "$contract_tmp/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$contract_tmp/unity" "$contract_tmp/gh"
+HARNESS_CLI_CALLS="$contract_tmp/calls" \
+  UNITY_CLI="$contract_tmp/unity" \
+  PATH="$contract_tmp:$PATH" \
+  scripts/harness doctor >/dev/null
+[[ "$(wc -l < "$contract_tmp/calls" | tr -d ' ')" == "4" ]]
+if PLAYER_TIMEOUT_SECONDS=1 scripts/harness watchdog-self-test >"$contract_tmp/watchdog.log" 2>&1; then
+  printf 'Player watchdog self-test unexpectedly passed\n' >&2
+  exit 1
+fi
+grep -F 'Watchdog self-test timed out after 1 seconds' "$contract_tmp/watchdog.log" >/dev/null
 grep -F '## 7. Every Slice Requires A Proper Pull Request' AGENTS.md >/dev/null
 grep -F 'reviewed-head:' AGENTS.md >/dev/null
 

@@ -8,6 +8,8 @@ namespace AshesOfRum
 {
     public sealed class SmokeTestRunner : MonoBehaviour
     {
+        private const float ScreenshotTimeoutSeconds = 15f;
+
         [Serializable]
         private sealed class SmokeResult
         {
@@ -40,7 +42,11 @@ namespace AshesOfRum
                 if (!string.IsNullOrEmpty(screenshotDirectory)) Directory.CreateDirectory(screenshotDirectory);
                 ScreenCapture.CaptureScreenshot(screenshotPath);
                 yield return new WaitForEndOfFrame();
-                yield return new WaitUntil(() => File.Exists(screenshotPath));
+                var deadline = Time.realtimeSinceStartup + ScreenshotTimeoutSeconds;
+                while (!HasContent(screenshotPath) && Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
             }
 
             var checks = graphical
@@ -72,7 +78,7 @@ namespace AshesOfRum
                 if (graphical)
                 {
                     Require(Screen.width == 1920 && Screen.height == 1080, checks[3]);
-                    Require(File.Exists(screenshotPath), checks[4]);
+                    Require(HasContent(screenshotPath), $"{checks[4]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
@@ -96,6 +102,8 @@ namespace AshesOfRum
         {
             if (!condition) throw new InvalidOperationException(message);
         }
+
+        private static bool HasContent(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
 
         private static bool HasArgument(string name) => Array.IndexOf(Environment.GetCommandLineArgs(), name) >= 0;
 

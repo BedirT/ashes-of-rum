@@ -9,3 +9,13 @@
 *.inputactions text eol=lf
 *.png binary
 *.jpg binary
+
+# Unity serializes empty YAML values with a trailing space. Keep other whitespace checks active.
+*.asset whitespace=-trailing-space
+*.unity whitespace=-trailing-space
+*.meta whitespace=-trailing-space
+*.inputactions whitespace=-trailing-space
+*.prefab whitespace=-trailing-space
+*.mat whitespace=-trailing-space
+*.anim whitespace=-trailing-space
+*.controller whitespace=-trailing-space
