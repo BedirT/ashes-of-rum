@@ -38,9 +38,63 @@ namespace AshesOfRum.Tests
                 yield return null;
 
             Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies + 10));
-            Assert.That(economy.Caches[0].Remaining, Is.EqualTo(190));
+            Assert.That(economy.Caches[0].Remaining, Is.EqualTo(390));
             Assert.That(worker.IsSelected, Is.True);
             Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.GoingToCache));
+        }
+
+        [UnityTest]
+        public IEnumerator BattlefieldSupplyBudget_FundsHouseAndTwoFormationsWithoutAutomationCredits()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var tuning = (EconomyTuning)economy.GetType()
+                .GetField("tuning", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(economy);
+            var availableSupplies = economy.StartingSupplies + economy.Caches.Sum(cache => cache.Remaining);
+            var requiredSupplies = tuning.houseCost + tuning.formationCost * 2;
+            Assert.That(availableSupplies, Is.GreaterThanOrEqualTo(requiredSupplies),
+                "The live battlefield must fund the documented House, first formation, and Cavalry path.");
+            Assert.That(tuning.startingPopulationCap + tuning.housePopulationCapacity,
+                Is.GreaterThanOrEqualTo(StartingEconomyController.WorkerCount + tuning.formationPopulation * 2));
+
+            var originalTimeScale = Time.timeScale;
+            GameObject firstScout = null;
+            GameObject secondScout = null;
+            try
+            {
+                Time.timeScale = 20f;
+                Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
+                yield return WaitUntil(() => economy.PopulationCapacity == 20);
+
+                firstScout = new GameObject("First budget scout");
+                firstScout.transform.position = economy.Caches[0].transform.position;
+                secondScout = new GameObject("Second budget scout");
+                secondScout.transform.position = economy.Caches[1].transform.position;
+                economy.FogOfWar.RegisterFriendly(firstScout.transform);
+                economy.FogOfWar.RegisterFriendly(secondScout.transform);
+                economy.FogOfWar.RefreshNow();
+                for (var index = 0; index < economy.Workers.Count; index++)
+                    economy.Workers[index].IssueGather(economy.Caches[index / 2]);
+
+                var gatherDeadline = Time.realtimeSinceStartup + TimeoutSeconds + 5f;
+                while (economy.Supplies < tuning.formationCost * 2 &&
+                       Time.realtimeSinceStartup < gatherDeadline) yield return null;
+                Assert.That(economy.Supplies, Is.GreaterThanOrEqualTo(tuning.formationCost * 2),
+                    $"Gathered {economy.Supplies}; caches retain " +
+                    $"{string.Join(", ", economy.Caches.Select(cache => cache.Remaining))}.");
+                Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+                Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+                Assert.That(economy.Supplies, Is.Zero);
+                yield return WaitUntil(() => economy.FriendlyFormations.Count == 2);
+                Assert.That(economy.FriendlyFormations.Select(formation => formation.Type),
+                    Is.EquivalentTo(new[] { FormationType.Archers, FormationType.Cavalry }));
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+                if (firstScout != null) Object.Destroy(firstScout);
+                if (secondScout != null) Object.Destroy(secondScout);
+            }
         }
 
         [UnityTest]
@@ -58,7 +112,7 @@ namespace AshesOfRum.Tests
             yield return WaitUntil(() => economy.Supplies == economy.StartingSupplies + 10);
 
             Assert.That(worker.CarriedSupplies, Is.Zero);
-            Assert.That(cache.Remaining, Is.EqualTo(190));
+            Assert.That(cache.Remaining, Is.EqualTo(390));
             Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.Moving));
         }
 
@@ -75,10 +129,10 @@ namespace AshesOfRum.Tests
             yield return WaitUntil(() => worker.CurrentActivity == WorkerAgent.Activity.Returning &&
                                          worker.CarriedSupplies == 10);
             worker.IssueGather(secondCache);
-            yield return WaitUntil(() => secondCache.Remaining == 190);
+            yield return WaitUntil(() => secondCache.Remaining == 390);
 
             Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies + 10));
-            Assert.That(firstCache.Remaining, Is.EqualTo(190));
+            Assert.That(firstCache.Remaining, Is.EqualTo(390));
             Assert.That(worker.CarriedSupplies, Is.EqualTo(10));
             Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.Returning));
         }
@@ -103,7 +157,7 @@ namespace AshesOfRum.Tests
             worker.IssueGather(exhaustedCache);
             yield return WaitUntil(() => economy.Supplies == economy.StartingSupplies + 20);
 
-            Assert.That(availableCache.Remaining, Is.EqualTo(180));
+            Assert.That(availableCache.Remaining, Is.EqualTo(380));
             Assert.That(exhaustedCache.Remaining, Is.Zero);
             Assert.That(worker.CarriedSupplies, Is.Zero);
             Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.GoingToCache));
@@ -128,7 +182,7 @@ namespace AshesOfRum.Tests
             yield return WaitUntil(() => firstWorker.CurrentActivity == WorkerAgent.Activity.Idle &&
                                          secondWorker.CurrentActivity == WorkerAgent.Activity.Idle);
 
-            Assert.That(fallbackCache.Remaining, Is.EqualTo(200),
+            Assert.That(fallbackCache.Remaining, Is.EqualTo(400),
                 "Workers must not reveal or retarget to a cache outside shared current vision.");
             Assert.That(economy.LastEconomyNotification, Does.Contain("idle"));
         }
@@ -149,7 +203,7 @@ namespace AshesOfRum.Tests
 
             var worker = economy.Workers[0];
             worker.IssueGather(depletedCache);
-            yield return WaitUntil(() => fallbackCache.Remaining < 200);
+            yield return WaitUntil(() => fallbackCache.Remaining < 400);
 
             Assert.That(worker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
             Assert.That(economy.LastEconomyNotification, Is.Null);
@@ -741,6 +795,19 @@ namespace AshesOfRum.Tests
             Assert.That(firstWorker.IsSelected, Is.True);
             Assert.That(secondWorker.IsSelected, Is.False);
 
+            economy.SelectOnly(secondWorker);
+            QueueCoalescedKeyboardChord(keyboard, Key.LeftCtrl, Key.Digit3);
+            InvokePrivateMethod(economy, "HandleControlGroupInput");
+            Assert.That(economy.ControlGroupSize(3), Is.EqualTo(1),
+                "A complete modified chord received within one input update must still assign the group.");
+
+            economy.SelectOnly(firstWorker);
+            QueueCoalescedKeyboardChord(keyboard, Key.Digit3);
+            InvokePrivateMethod(economy, "HandleControlGroupInput");
+            Assert.That(secondWorker.IsSelected, Is.True,
+                "A complete bare digit received within one input update must recall the assigned group.");
+            Assert.That(firstWorker.IsSelected, Is.False);
+
             InputSystem.RemoveDevice(keyboard);
         }
 
@@ -1200,6 +1267,13 @@ namespace AshesOfRum.Tests
             InputSystem.QueueStateEvent(keyboard, new KeyboardState());
             InputSystem.Update();
             InvokePrivateMethod(economy, "HandleControlGroupInput");
+        }
+
+        private static void QueueCoalescedKeyboardChord(Keyboard keyboard, params Key[] keys)
+        {
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(keys));
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
         }
 
         private static IEnumerator PressMouseButton(StartingEconomyController economy, Mouse mouse, Vector2 position,

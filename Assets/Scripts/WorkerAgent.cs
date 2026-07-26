@@ -265,7 +265,8 @@ namespace AshesOfRum
             var currentDropOff = resolveDropOff?.Invoke(transform.position) ?? hisar.DropOffPoint;
             if ((currentDropOff - LastDropOffPoint).sqrMagnitude < 0.01f && agent.hasPath) return;
             LastDropOffPoint = currentDropOff;
-            agent.SetDestination(LastDropOffPoint);
+            var slotOffset = Vector3.right * ((gatherSlot - 1.5f) * 0.7f);
+            agent.SetDestination(LastDropOffPoint + slotOffset);
         }
 
         private void ExecuteDeferredOrder()

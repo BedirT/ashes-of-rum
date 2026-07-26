@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
@@ -30,6 +31,7 @@ namespace AshesOfRum
         private readonly Dictionary<int, ControlGroup> controlGroups = new();
         private readonly Queue<PointerButtonTransition> selectionTransitions = new();
         private readonly Queue<PointerPress> orderPresses = new();
+        private readonly Queue<ControlGroupPress> controlGroupPresses = new();
         [SerializeField] private EconomyTuning tuning;
         private EconomyWallet wallet;
         private Hisar hisar;
@@ -75,7 +77,6 @@ namespace AshesOfRum
         private bool awaitingAttackMove;
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
-        private bool controlGroupKeyHandled;
 
         private static readonly Key[] ControlGroupKeys =
         {
@@ -129,7 +130,7 @@ namespace AshesOfRum
             };
             CreateWorkers();
             CreateHud();
-            InputSystem.onEvent += QueuePointerEvent;
+            InputSystem.onEvent += QueueInputEvent;
             CreateFogOfWar();
             SetOrderFeedback("Ready - select workers to begin");
         }
@@ -149,7 +150,7 @@ namespace AshesOfRum
         private void OnDestroy()
         {
             if (fogOfWar != null) fogOfWar.HostileFirstRevealed -= HandleHostileFirstRevealed;
-            InputSystem.onEvent -= QueuePointerEvent;
+            InputSystem.onEvent -= QueueInputEvent;
         }
 
         public void SelectOnly(WorkerAgent worker)
@@ -597,11 +598,15 @@ namespace AshesOfRum
             IssueMoveForSelected(hit.point);
         }
 
-        private void QueuePointerEvent(InputEventPtr eventPtr, InputDevice device)
+        private void QueueInputEvent(InputEventPtr eventPtr, InputDevice device)
         {
-            if (device is not Mouse mouse ||
-                (!eventPtr.IsA<StateEvent>() && !eventPtr.IsA<DeltaStateEvent>())) return;
+            if (!eventPtr.IsA<StateEvent>() && !eventPtr.IsA<DeltaStateEvent>()) return;
+            if (device is Mouse mouse) QueuePointerEvent(eventPtr, mouse);
+            else if (device is Keyboard keyboard) QueueControlGroupEvent(eventPtr, keyboard);
+        }
 
+        private void QueuePointerEvent(InputEventPtr eventPtr, Mouse mouse)
+        {
             var position = mouse.position.ReadValue();
             if (mouse.position.ReadValueFromEvent(eventPtr, out var eventPosition)) position = eventPosition;
             var blocked = placementWorker != null || awaitingAttackMove;
@@ -617,6 +622,30 @@ namespace AshesOfRum
             if (mouse.rightButton.ReadValueFromEvent(eventPtr, out var rightValue) &&
                 !mouse.rightButton.isPressed && rightValue >= InputSystem.settings.defaultButtonPressPoint)
                 orderPresses.Enqueue(new PointerPress(position, blocked));
+        }
+
+        private void QueueControlGroupEvent(InputEventPtr eventPtr, Keyboard keyboard)
+        {
+            var assigning = IsPressedInEvent(keyboard.leftCtrlKey, eventPtr) ||
+                            IsPressedInEvent(keyboard.rightCtrlKey, eventPtr) ||
+                            IsPressedInEvent(keyboard.leftMetaKey, eventPtr) ||
+                            IsPressedInEvent(keyboard.rightMetaKey, eventPtr);
+            for (var index = 0; index < ControlGroupKeys.Length; index++)
+            {
+                var key = keyboard[ControlGroupKeys[index]];
+                if (!key.ReadValueFromEvent(eventPtr, out var value) || key.isPressed ||
+                    value < InputSystem.settings.defaultButtonPressPoint) continue;
+                controlGroupPresses.Enqueue(new ControlGroupPress(index + 1, assigning,
+                    placementWorker != null || awaitingAttackMove));
+                return;
+            }
+        }
+
+        private static bool IsPressedInEvent(ButtonControl button, InputEventPtr eventPtr)
+        {
+            return button.ReadValueFromEvent(eventPtr, out var value)
+                ? value >= InputSystem.settings.defaultButtonPressPoint
+                : button.isPressed;
         }
 
         private void ApplySelection(Vector2 start, Vector2 end, bool modify)
@@ -912,24 +941,13 @@ namespace AshesOfRum
 
         private void HandleControlGroupInput()
         {
-            if (placementWorker != null || awaitingAttackMove) return;
-            var keyboard = Keyboard.current;
-            if (keyboard == null) return;
-            var assigning = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed ||
-                            keyboard.leftMetaKey.isPressed || keyboard.rightMetaKey.isPressed;
-            var anyNumberHeld = false;
-            for (var index = 0; index < ControlGroupKeys.Length; index++)
+            while (controlGroupPresses.Count > 0)
             {
-                var key = keyboard[ControlGroupKeys[index]];
-                anyNumberHeld |= key.isPressed;
-                if ((!key.wasPressedThisFrame && !key.isPressed) || controlGroupKeyHandled) continue;
-                var groupNumber = index + 1;
-                if (assigning) AssignControlGroup(groupNumber);
-                else RecallControlGroup(groupNumber);
-                controlGroupKeyHandled = true;
-                return;
+                var press = controlGroupPresses.Dequeue();
+                if (press.Blocked || placementWorker != null || awaitingAttackMove) continue;
+                if (press.Assigning) AssignControlGroup(press.Number);
+                else RecallControlGroup(press.Number);
             }
-            if (!anyNumberHeld) controlGroupKeyHandled = false;
         }
 
         private void IssueFormationGroupOrder(Vector3 destination, bool attackMove)
@@ -1280,6 +1298,20 @@ namespace AshesOfRum
             }
 
             public Vector2 Position { get; }
+            public bool Blocked { get; }
+        }
+
+        private readonly struct ControlGroupPress
+        {
+            public ControlGroupPress(int number, bool assigning, bool blocked)
+            {
+                Number = number;
+                Assigning = assigning;
+                Blocked = blocked;
+            }
+
+            public int Number { get; }
+            public bool Assigning { get; }
             public bool Blocked { get; }
         }
 
