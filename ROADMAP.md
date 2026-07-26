@@ -8,8 +8,8 @@ change when playtesting exposes a stronger dependency.
 
 | State | Slice | Player-observable outcome |
 | --- | --- | --- |
-| In progress | 000 - Bootstrap automated harness | Import the Unity project, run tests, build a native macOS player, launch a neutral scene, and exit through deterministic smoke. |
-| Planned | 001 - Establish and command the starting economy | Launch with one Hisar and four workers, select workers, gather Supplies, and issue visible move and gather orders. |
+| Complete | 000 - Bootstrap automated harness | Import the Unity project, run tests, build a native macOS player, launch a neutral scene, and exit through deterministic smoke. |
+| Complete | 001 - Establish and command the starting economy | Launch with one Hisar and four workers, select workers, gather Supplies, and issue visible move and gather orders. |
 | Planned | 002 - Build and expand population | Spend Supplies through the real economy to place and complete a House. |
 | Planned | 003 - Train and counter | Train the first formations through the Hisar queue, then resolve the first readable counter fight. |
 | Planned | 004 - Build the defensive line | Place a Storehouse and Tower with valid placement, construction, and destruction states. |

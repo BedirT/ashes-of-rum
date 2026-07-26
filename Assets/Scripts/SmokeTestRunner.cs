@@ -9,6 +9,7 @@ namespace AshesOfRum
     public sealed class SmokeTestRunner : MonoBehaviour
     {
         private const float ScreenshotTimeoutSeconds = 15f;
+        private const float EconomyTimeoutSeconds = 20f;
 
         [Serializable]
         private sealed class SmokeResult
@@ -36,6 +37,18 @@ namespace AshesOfRum
             yield return null;
             yield return new WaitForEndOfFrame();
 
+            var economy = FindAnyObjectByType<StartingEconomyController>();
+            var economyStarted = economy != null && economy.Workers.Count == StartingEconomyController.WorkerCount;
+            if (economyStarted)
+            {
+                economy.IssueGatherForSmoke(economy.Caches[0]);
+                var economyDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
+                while (economy.Supplies <= economy.StartingSupplies && Time.realtimeSinceStartup < economyDeadline)
+                    yield return null;
+            }
+            var economyCompleted = economyStarted && economy.Supplies > economy.StartingSupplies;
+            yield return null;
+
             if (graphical)
             {
                 var screenshotDirectory = Path.GetDirectoryName(screenshotPath);
@@ -55,6 +68,8 @@ namespace AshesOfRum
                     "Bootstrap scene loaded",
                     "Required bootstrap objects available",
                     "Development player running",
+                    "Starting economy available",
+                    "Worker gather deposit completed",
                     "1920x1080 window configured",
                     "Graphical frame captured"
                 }
@@ -62,7 +77,9 @@ namespace AshesOfRum
                 {
                     "Bootstrap scene loaded",
                     "Required bootstrap objects available",
-                    "Development player running"
+                    "Development player running",
+                    "Starting economy available",
+                    "Worker gather deposit completed"
                 };
             var result = new SmokeResult
             {
@@ -75,10 +92,12 @@ namespace AshesOfRum
                 Require(result.scene == HarnessContract.SceneName, checks[0]);
                 Require(HarnessContract.HasRequiredObjects(name => GameObject.Find(name) != null), checks[1]);
                 Require(Debug.isDebugBuild, checks[2]);
+                Require(economyStarted, checks[3]);
+                Require(economyCompleted, $"{checks[4]} within {EconomyTimeoutSeconds} seconds");
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[3]);
-                    Require(HasContent(screenshotPath), $"{checks[4]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[5]);
+                    Require(HasContent(screenshotPath), $"{checks[6]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;

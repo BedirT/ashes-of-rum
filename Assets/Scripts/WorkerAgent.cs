@@ -1,0 +1,242 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.AI;
+
+namespace AshesOfRum
+{
+    [RequireComponent(typeof(NavMeshAgent))]
+    public sealed class WorkerAgent : MonoBehaviour
+    {
+        public enum Activity
+        {
+            Idle,
+            Moving,
+            GoingToCache,
+            Gathering,
+            Returning
+        }
+
+        private enum DeferredOrder
+        {
+            None,
+            Move,
+            Gather
+        }
+
+        private NavMeshAgent agent;
+        private EconomyTuning tuning;
+        private EconomyWallet wallet;
+        private Hisar hisar;
+        private IReadOnlyList<ResourceCache> knownCaches;
+        private Action<string> notifyEconomyState;
+        private ResourceCache targetCache;
+        private GameObject selectionRing;
+        private GameObject carriedBundle;
+        private float gatherReadyAt;
+        private int gatherSlot;
+        private DeferredOrder deferredOrder;
+        private Vector3 deferredDestination;
+        private ResourceCache deferredCache;
+
+        public Activity CurrentActivity { get; private set; }
+        public bool IsSelected { get; private set; }
+        public int CarriedSupplies { get; private set; }
+
+        public void Initialize(EconomyTuning economyTuning, EconomyWallet economyWallet, Hisar home,
+            IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification)
+        {
+            tuning = economyTuning;
+            wallet = economyWallet;
+            hisar = home;
+            knownCaches = caches;
+            notifyEconomyState = economyStateNotification;
+            gatherSlot = slot;
+            agent = GetComponent<NavMeshAgent>();
+            agent.speed = tuning.workerSpeed;
+            agent.angularSpeed = 720f;
+            agent.acceleration = 18f;
+            agent.stoppingDistance = 0.25f;
+            selectionRing = transform.Find("Selection Ring")?.gameObject;
+            carriedBundle = transform.Find("Carried Supplies")?.gameObject;
+            SetSelected(false);
+            SetCarrying(0);
+        }
+
+        public void SetSelected(bool selected)
+        {
+            IsSelected = selected;
+            if (selectionRing != null) selectionRing.SetActive(selected);
+        }
+
+        public void IssueMove(Vector3 destination)
+        {
+            if (CarriedSupplies > 0)
+            {
+                deferredOrder = DeferredOrder.Move;
+                deferredDestination = destination;
+                ReturnHome();
+                return;
+            }
+
+            BeginMove(destination);
+        }
+
+        public void IssueGather(ResourceCache cache)
+        {
+            if (CarriedSupplies > 0)
+            {
+                deferredOrder = DeferredOrder.Gather;
+                deferredCache = cache;
+                ReturnHome();
+                return;
+            }
+
+            BeginGather(cache);
+        }
+
+        private void BeginMove(Vector3 destination)
+        {
+            targetCache = null;
+            CurrentActivity = Activity.Moving;
+            agent.stoppingDistance = 0.25f;
+            agent.SetDestination(destination);
+        }
+
+        private void BeginGather(ResourceCache cache)
+        {
+            targetCache = cache;
+            if (targetCache == null || targetCache.Remaining <= 0)
+            {
+                RetargetOrBecomeIdle(targetCache != null ? targetCache.transform.position : transform.position);
+                return;
+            }
+
+            CurrentActivity = Activity.GoingToCache;
+            agent.stoppingDistance = 0.2f;
+            agent.SetDestination(targetCache.GetGatherPoint(gatherSlot));
+        }
+
+        private void Update()
+        {
+            if (agent == null || agent.pathPending) return;
+
+            switch (CurrentActivity)
+            {
+                case Activity.Moving:
+                    if (HasArrived()) CurrentActivity = Activity.Idle;
+                    break;
+                case Activity.GoingToCache:
+                    if (targetCache == null || targetCache.Remaining <= 0)
+                    {
+                        RetargetOrBecomeIdle(targetCache != null ? targetCache.transform.position : transform.position);
+                    }
+                    else if (HasArrived())
+                    {
+                        CurrentActivity = Activity.Gathering;
+                        gatherReadyAt = Time.time + tuning.gatherSeconds;
+                    }
+                    break;
+                case Activity.Gathering:
+                    if (Time.time >= gatherReadyAt) FinishGathering();
+                    break;
+                case Activity.Returning:
+                    if (HasArrived()) DepositAndReturn();
+                    break;
+            }
+        }
+
+        private void FinishGathering()
+        {
+            if (targetCache == null)
+            {
+                RetargetOrBecomeIdle(transform.position);
+                return;
+            }
+
+            SetCarrying(targetCache.TakeBatch(tuning.gatherBatch));
+            if (CarriedSupplies == 0)
+            {
+                RetargetOrBecomeIdle(targetCache.transform.position);
+                return;
+            }
+
+            ReturnHome();
+        }
+
+        private void DepositAndReturn()
+        {
+            wallet.Deposit(CarriedSupplies);
+            SetCarrying(0);
+            if (deferredOrder != DeferredOrder.None)
+            {
+                ExecuteDeferredOrder();
+                return;
+            }
+
+            if (targetCache != null && targetCache.Remaining > 0)
+            {
+                BeginGather(targetCache);
+            }
+            else
+            {
+                RetargetOrBecomeIdle(targetCache != null ? targetCache.transform.position : transform.position);
+            }
+        }
+
+        private void ReturnHome()
+        {
+            CurrentActivity = Activity.Returning;
+            agent.stoppingDistance = 0.5f;
+            agent.SetDestination(hisar.DropOffPoint);
+        }
+
+        private void ExecuteDeferredOrder()
+        {
+            var order = deferredOrder;
+            var destination = deferredDestination;
+            var cache = deferredCache;
+            deferredOrder = DeferredOrder.None;
+            deferredCache = null;
+
+            if (order == DeferredOrder.Move) BeginMove(destination);
+            else BeginGather(cache);
+        }
+
+        private void RetargetOrBecomeIdle(Vector3 searchOrigin)
+        {
+            ResourceCache fallback = null;
+            var nearestSqrDistance = tuning.cacheFallbackRadius * tuning.cacheFallbackRadius;
+            if (knownCaches != null)
+            {
+                foreach (var cache in knownCaches)
+                {
+                    if (cache == null || cache.Remaining <= 0) continue;
+                    var sqrDistance = Vector3.SqrMagnitude(cache.transform.position - searchOrigin);
+                    if (sqrDistance > nearestSqrDistance) continue;
+                    fallback = cache;
+                    nearestSqrDistance = sqrDistance;
+                }
+            }
+
+            if (fallback != null)
+            {
+                BeginGather(fallback);
+                return;
+            }
+
+            targetCache = null;
+            CurrentActivity = Activity.Idle;
+            if (agent.isOnNavMesh) agent.ResetPath();
+            notifyEconomyState?.Invoke($"{name} idle - no Supplies cache nearby");
+        }
+
+        private bool HasArrived() => agent.isOnNavMesh && agent.remainingDistance <= agent.stoppingDistance + 0.05f;
+
+        private void SetCarrying(int amount)
+        {
+            CarriedSupplies = amount;
+            if (carriedBundle != null) carriedBundle.SetActive(amount > 0);
+        }
+    }
+}
