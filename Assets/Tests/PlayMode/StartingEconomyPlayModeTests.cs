@@ -88,6 +88,9 @@ namespace AshesOfRum.Tests
                 yield return WaitUntil(() => economy.FriendlyFormations.Count == 2);
                 Assert.That(economy.FriendlyFormations.Select(formation => formation.Type),
                     Is.EquivalentTo(new[] { FormationType.Archers, FormationType.Cavalry }));
+                Assert.That(economy.EnemyFormations.Select(formation => formation.Type),
+                    Is.EquivalentTo(new[] { FormationType.Spearmen, FormationType.Archers }),
+                    "The normal Archer-then-Cavalry path must deploy both documented counter encounters.");
             }
             finally
             {
@@ -974,6 +977,96 @@ namespace AshesOfRum.Tests
             Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.Idle),
                 "The click that cancels attack-move must not leak into a normal contextual order.");
             Assert.That(formation.IsSelected, Is.True);
+
+            InputSystem.RemoveDevice(mouse);
+            InputSystem.RemoveDevice(keyboard);
+        }
+
+        [UnityTest]
+        public IEnumerator QueuedInput_ExecutesInterleavedCommandsInEventOrder()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(400);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+
+            var formation = economy.FriendlyFormations[0];
+            economy.SelectOnly(formation);
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            var mouse = InputSystem.AddDevice<Mouse>();
+            keyboard.MakeCurrent();
+            mouse.MakeCurrent();
+            var destinationClick = (Vector2)Camera.main.WorldToScreenPoint(new Vector3(6f, 0f, 6f));
+
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = destinationClick }
+                .WithButton(MouseButton.Right));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = destinationClick });
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.G));
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.Idle),
+                "A Stop received after a move must remain the final command.");
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.G));
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = destinationClick }
+                .WithButton(MouseButton.Right));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = destinationClick });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.Move),
+                "A move received after Stop must remain the final command.");
+
+            formation.IssueStop();
+            economy.SelectOnly(formation);
+            var worker = economy.Workers[1];
+            var workerCollider = worker.GetComponentInChildren<Collider>();
+            var workerClick = (Vector2)Camera.main.WorldToScreenPoint(workerCollider.bounds.center);
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = destinationClick }
+                .WithButton(MouseButton.Right));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = destinationClick });
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = workerClick }
+                .WithButton(MouseButton.Left));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = workerClick });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "Update");
+
+            Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.Move),
+                "The earlier order must target the selection that existed when it was received.");
+            Assert.That(worker.IsSelected, Is.True);
+            Assert.That(formation.IsSelected, Is.False);
+
+            InputSystem.RemoveDevice(mouse);
+            InputSystem.RemoveDevice(keyboard);
+        }
+
+        [UnityTest]
+        public IEnumerator PlacementMode_CoalescedHotkeyAndClickPlacesAtThePressPosition()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectOnly(economy.Workers[0]);
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            var mouse = InputSystem.AddDevice<Mouse>();
+            keyboard.MakeCurrent();
+            mouse.MakeCurrent();
+            var placementClick = (Vector2)Camera.main.WorldToScreenPoint(VisibleHouseSite);
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.H));
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = placementClick }
+                .WithButton(MouseButton.Left));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = placementClick });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "Update");
+
+            Assert.That(economy.Houses, Has.Count.EqualTo(1));
+            Assert.That(economy.IsBuildingPlacementActive, Is.False);
+            Assert.That(economy.Supplies, Is.Zero);
 
             InputSystem.RemoveDevice(mouse);
             InputSystem.RemoveDevice(keyboard);

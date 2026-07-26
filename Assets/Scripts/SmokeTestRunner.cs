@@ -179,8 +179,8 @@ namespace AshesOfRum
                         formationGroupStopped &= Vector3.Distance(stoppedPositions[index],
                             economy.SelectedFormations[index].transform.position) < 0.15f;
 
-                    var hostileArcher = economy.DeployEnemyForAutomation(FormationType.Archers,
-                        new Vector3(0f, 0f, 26f));
+                    var hostileArcher = economy.EnemyFormations.Single(formation =>
+                        formation.Type == FormationType.Archers);
                     economy.FogOfWar.RefreshNow();
                     hostileHiddenByFog = !economy.FogOfWar.IsCurrentlyVisible(hostileArcher);
 

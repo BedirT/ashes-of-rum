@@ -29,9 +29,7 @@ namespace AshesOfRum
         private readonly List<FormationAgent> enemyFormations = new();
         private readonly List<FormationAgent> selectedFormations = new();
         private readonly Dictionary<int, ControlGroup> controlGroups = new();
-        private readonly Queue<PointerButtonTransition> selectionTransitions = new();
-        private readonly Queue<PointerPress> orderPresses = new();
-        private readonly Queue<ControlGroupPress> controlGroupPresses = new();
+        private readonly Queue<QueuedInput> queuedInputs = new();
         [SerializeField] private EconomyTuning tuning;
         private EconomyWallet wallet;
         private Hisar hisar;
@@ -63,6 +61,7 @@ namespace AshesOfRum
         private ConstructibleBuilding selectedBuilding;
         private bool hisarSelected;
         private bool firstEnemyDeployed;
+        private bool cavalryCounterDeployed;
         private GameObject placementPreview;
         private WorkerAgent placementWorker;
         private BuildingType placementType;
@@ -75,9 +74,6 @@ namespace AshesOfRum
         private bool lastRouteResult;
         private ConstructibleBuilding demolitionCandidate;
         private bool awaitingAttackMove;
-        private bool escapePressed;
-        private bool attackMovePressed;
-        private bool stopPressed;
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
 
@@ -141,17 +137,9 @@ namespace AshesOfRum
         private void Update()
         {
             UpdateHud();
-            HandleBuildInput();
-            HandleControlGroupInput();
-            if (HandleFormationCommandInput()) CancelSelectionGesture();
-            else
-            {
-                HandleSelectionInput();
-                HandleOrderInput();
-            }
-            escapePressed = false;
-            attackMovePressed = false;
-            stopPressed = false;
+            HandleQueuedInput();
+            UpdateSelectionGesture();
+            UpdatePlacementPreview();
             var completed = productionQueue.Advance(Time.deltaTime);
             if (completed.HasValue) CompleteFormation(completed.Value);
         }
@@ -521,13 +509,12 @@ namespace AshesOfRum
 
         private void HandleSelectionInput()
         {
-            while (selectionTransitions.Count > 0)
-            {
-                var transition = selectionTransitions.Dequeue();
-                if (transition.Pressed) BeginSelection(transition);
-                else CompleteSelection(transition);
-            }
+            HandleQueuedInput();
+            UpdateSelectionGesture();
+        }
 
+        private void UpdateSelectionGesture()
+        {
             var mouse = Mouse.current;
             if (!selecting) return;
             if (mouse != null && mouse.leftButton.isPressed)
@@ -547,7 +534,7 @@ namespace AshesOfRum
                 selectionBox.gameObject.SetActive(false);
             }
             var position = transition.Position;
-            if (transition.Blocked || position.y < Screen.height * 0.16f ||
+            if (position.y < Screen.height * 0.16f ||
                 position.y > Screen.height * 0.9f || IsPointerOverHud(position)) return;
             selecting = true;
             selectionStart = position;
@@ -567,20 +554,13 @@ namespace AshesOfRum
             if (!selecting) return;
             selecting = false;
             selectionBox.gameObject.SetActive(false);
-            if (transition.Blocked || placementWorker != null || awaitingAttackMove ||
-                IsPointerOverHud(transition.Position)) return;
+            if (placementWorker != null || awaitingAttackMove || IsPointerOverHud(transition.Position)) return;
             ApplySelection(selectionStart, transition.Position, transition.Modify);
         }
 
         private void HandleOrderInput()
         {
-            while (orderPresses.Count > 0)
-            {
-                var press = orderPresses.Dequeue();
-                if (press.Blocked || placementWorker != null || awaitingAttackMove ||
-                    IsPointerOverHud(press.Position)) continue;
-                ApplyOrder(press.Position);
-            }
+            HandleQueuedInput();
         }
 
         private void ApplyOrder(Vector2 position)
@@ -625,26 +605,22 @@ namespace AshesOfRum
         {
             var position = mouse.position.ReadValue();
             if (mouse.position.ReadValueFromEvent(eventPtr, out var eventPosition)) position = eventPosition;
-            var blocked = placementWorker != null || awaitingAttackMove;
             if (mouse.leftButton.ReadValueFromEvent(eventPtr, out var leftValue))
             {
                 var leftPressed = leftValue >= InputSystem.settings.defaultButtonPressPoint;
                 if (!mouse.leftButton.isPressed && leftPressed)
-                    selectionTransitions.Enqueue(new PointerButtonTransition(true, position, false, blocked));
+                    queuedInputs.Enqueue(QueuedInput.Pointer(InputCommand.LeftPressed, position));
                 else if (mouse.leftButton.isPressed && !leftPressed)
-                    selectionTransitions.Enqueue(new PointerButtonTransition(false, position,
-                        Keyboard.current?.shiftKey.isPressed == true, blocked));
+                    queuedInputs.Enqueue(QueuedInput.Pointer(InputCommand.LeftReleased, position,
+                        Keyboard.current?.shiftKey.isPressed == true));
             }
             if (mouse.rightButton.ReadValueFromEvent(eventPtr, out var rightValue) &&
                 !mouse.rightButton.isPressed && rightValue >= InputSystem.settings.defaultButtonPressPoint)
-                orderPresses.Enqueue(new PointerPress(position, blocked));
+                queuedInputs.Enqueue(QueuedInput.Pointer(InputCommand.RightPressed, position));
         }
 
         private void QueueControlGroupEvent(InputEventPtr eventPtr, Keyboard keyboard)
         {
-            escapePressed |= WasPressedInEvent(keyboard.escapeKey, eventPtr);
-            attackMovePressed |= WasPressedInEvent(keyboard.fKey, eventPtr);
-            stopPressed |= WasPressedInEvent(keyboard.gKey, eventPtr);
             var assigning = IsPressedInEvent(keyboard.leftCtrlKey, eventPtr) ||
                             IsPressedInEvent(keyboard.rightCtrlKey, eventPtr) ||
                             IsPressedInEvent(keyboard.leftMetaKey, eventPtr) ||
@@ -654,10 +630,24 @@ namespace AshesOfRum
                 var key = keyboard[ControlGroupKeys[index]];
                 if (!key.ReadValueFromEvent(eventPtr, out var value) || key.isPressed ||
                     value < InputSystem.settings.defaultButtonPressPoint) continue;
-                controlGroupPresses.Enqueue(new ControlGroupPress(index + 1, assigning,
-                    placementWorker != null || awaitingAttackMove));
-                return;
+                queuedInputs.Enqueue(QueuedInput.ControlGroup(index + 1, assigning));
+                break;
             }
+            QueueKeyPress(eventPtr, keyboard, Key.Escape);
+            QueueKeyPress(eventPtr, keyboard, Key.F);
+            QueueKeyPress(eventPtr, keyboard, Key.G);
+            QueueKeyPress(eventPtr, keyboard, Key.H);
+            QueueKeyPress(eventPtr, keyboard, Key.R);
+            QueueKeyPress(eventPtr, keyboard, Key.T);
+            QueueKeyPress(eventPtr, keyboard, Key.X);
+            QueueKeyPress(eventPtr, keyboard, Key.S);
+            QueueKeyPress(eventPtr, keyboard, Key.A);
+            QueueKeyPress(eventPtr, keyboard, Key.C);
+        }
+
+        private void QueueKeyPress(InputEventPtr eventPtr, Keyboard keyboard, Key key)
+        {
+            if (WasPressedInEvent(keyboard[key], eventPtr)) queuedInputs.Enqueue(QueuedInput.KeyPress(key));
         }
 
         private static bool IsPressedInEvent(ButtonControl button, InputEventPtr eventPtr)
@@ -671,6 +661,112 @@ namespace AshesOfRum
         {
             return button.ReadValueFromEvent(eventPtr, out var value) && !button.isPressed &&
                    value >= InputSystem.settings.defaultButtonPressPoint;
+        }
+
+        private void HandleQueuedInput()
+        {
+            while (queuedInputs.Count > 0)
+            {
+                var input = queuedInputs.Dequeue();
+                switch (input.Command)
+                {
+                    case InputCommand.LeftPressed:
+                    case InputCommand.LeftReleased:
+                    case InputCommand.RightPressed:
+                        HandlePointerCommand(input);
+                        break;
+                    case InputCommand.KeyPressed:
+                        HandleKeyCommand(input.Key);
+                        break;
+                    case InputCommand.ControlGroupPressed:
+                        if (placementWorker == null && !awaitingAttackMove)
+                        {
+                            if (input.Assigning) AssignControlGroup(input.Number);
+                            else RecallControlGroup(input.Number);
+                        }
+                        break;
+                }
+            }
+        }
+
+        private void HandlePointerCommand(QueuedInput input)
+        {
+            if (input.Command == InputCommand.RightPressed)
+            {
+                CancelSelectionGesture();
+                if (placementWorker != null)
+                {
+                    EndBuildingPlacement($"{placementType} placement cancelled");
+                    return;
+                }
+                if (awaitingAttackMove)
+                {
+                    awaitingAttackMove = false;
+                    SetOrderFeedback("Attack-move cancelled");
+                    return;
+                }
+                if (!IsPointerOverHud(input.Position)) ApplyOrder(input.Position);
+                return;
+            }
+
+            if (input.Command == InputCommand.LeftReleased)
+            {
+                if (placementWorker == null && !awaitingAttackMove)
+                    CompleteSelection(new PointerButtonTransition(false, input.Position, input.Modify));
+                return;
+            }
+
+            if (placementWorker != null)
+            {
+                TryPlaceBuildingAtPointer(input.Position);
+                return;
+            }
+            if (awaitingAttackMove)
+            {
+                CancelSelectionGesture();
+                TryIssueAttackMoveAtPointer(input.Position);
+                return;
+            }
+            BeginSelection(new PointerButtonTransition(true, input.Position, false));
+        }
+
+        private void HandleKeyCommand(Key key)
+        {
+            if (key == Key.Escape)
+            {
+                CancelSelectionGesture();
+                if (placementWorker != null) EndBuildingPlacement($"{placementType} placement cancelled");
+                else if (awaitingAttackMove)
+                {
+                    awaitingAttackMove = false;
+                    SetOrderFeedback("Attack-move cancelled");
+                }
+                return;
+            }
+            if (placementWorker != null) return;
+            if (hisarSelected)
+            {
+                if (key == Key.S) TryQueueFormation(FormationType.Spearmen);
+                else if (key == Key.A) TryQueueFormation(FormationType.Archers);
+                else if (key == Key.C) TryQueueFormation(FormationType.Cavalry);
+                else if (key == Key.X) CancelActiveTraining();
+                return;
+            }
+            if (selectedBuilding != null)
+            {
+                if (key == Key.X) RequestDemolition();
+                return;
+            }
+            if (selectedFormations.Count > 0)
+            {
+                if (key == Key.F) BeginAttackMoveTargeting();
+                else if (key == Key.G) StopSelectedFormations();
+                return;
+            }
+            if (key == Key.H) BeginBuildingPlacement(BuildingType.House);
+            else if (key == Key.R) BeginBuildingPlacement(BuildingType.Storehouse);
+            else if (key == Key.T) BeginBuildingPlacement(BuildingType.Watchtower);
+            else if (key == Key.X) CancelSelectedConstruction();
         }
 
         private void ApplySelection(Vector2 start, Vector2 end, bool modify)
@@ -828,44 +924,18 @@ namespace AshesOfRum
 
         private void HandleBuildInput()
         {
-            var keyboard = Keyboard.current;
-            var mouse = Mouse.current;
-            if (keyboard == null || mouse == null) return;
+            HandleQueuedInput();
+            UpdatePlacementPreview();
+        }
 
-            if (placementWorker == null)
-            {
-                if (hisarSelected)
-                {
-                    if (keyboard.sKey.wasPressedThisFrame) TryQueueFormation(FormationType.Spearmen);
-                    if (keyboard.aKey.wasPressedThisFrame) TryQueueFormation(FormationType.Archers);
-                    if (keyboard.cKey.wasPressedThisFrame) TryQueueFormation(FormationType.Cavalry);
-                    if (keyboard.xKey.wasPressedThisFrame) CancelActiveTraining();
-                    return;
-                }
-                if (selectedBuilding != null)
-                {
-                    if (keyboard.xKey.wasPressedThisFrame) RequestDemolition();
-                    return;
-                }
-                if (selectedFormations.Count > 0)
-                {
-                    if (attackMovePressed || keyboard.fKey.wasPressedThisFrame) BeginAttackMoveTargeting();
-                    if (stopPressed || keyboard.gKey.wasPressedThisFrame) StopSelectedFormations();
-                    return;
-                }
-                if (keyboard.hKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.House);
-                if (keyboard.rKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Storehouse);
-                if (keyboard.tKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Watchtower);
-                if (keyboard.xKey.wasPressedThisFrame) CancelSelectedConstruction();
-                return;
-            }
+        private void UpdatePlacementPreview()
+        {
+            if (placementWorker == null || Mouse.current == null) return;
+            UpdatePlacementPreview(Mouse.current.position.ReadValue());
+        }
 
-            if (keyboard.escapeKey.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame)
-            {
-                EndBuildingPlacement($"{placementType} placement cancelled");
-                return;
-            }
-            var pointerPosition = mouse.position.ReadValue();
+        private void UpdatePlacementPreview(Vector2 pointerPosition)
+        {
             if (IsPointerOverHud(pointerPosition))
             {
                 placementValid = false;
@@ -884,7 +954,13 @@ namespace AshesOfRum
             {
                 placementValid = false;
             }
-            if (!mouse.leftButton.wasPressedThisFrame || !placementValid) return;
+        }
+
+        private void TryPlaceBuildingAtPointer(Vector2 pointerPosition)
+        {
+            if (placementWorker == null || IsPointerOverHud(pointerPosition)) return;
+            UpdatePlacementPreview(pointerPosition);
+            if (!placementValid) return;
             var worker = placementWorker;
             var position = placementPosition;
             var type = placementType;
@@ -916,6 +992,7 @@ namespace AshesOfRum
                 return;
             }
             if (placementPreview != null) Destroy(placementPreview);
+            CancelSelectionGesture();
             placementWorker = selectedWorkers[0];
             placementType = type;
             placementPreview = CreateBuildingVisual(type, $"{type} Placement Preview", Vector3.zero);
@@ -938,51 +1015,23 @@ namespace AshesOfRum
         private void BeginAttackMoveTargeting()
         {
             if (selectedFormations.Count == 0) return;
+            CancelSelectionGesture();
             awaitingAttackMove = true;
             SetOrderFeedback("Attack-move - left click ground / right click cancel");
         }
 
-        private bool HandleFormationCommandInput()
+        private void TryIssueAttackMoveAtPointer(Vector2 pointer)
         {
-            if (!awaitingAttackMove) return false;
-            if (orderPresses.Count > 0 || escapePressed)
-            {
-                orderPresses.Clear();
-                selectionTransitions.Clear();
-                awaitingAttackMove = false;
-                SetOrderFeedback("Attack-move cancelled");
-                return true;
-            }
-            PointerButtonTransition press = default;
-            var foundPress = false;
-            while (selectionTransitions.Count > 0)
-            {
-                var transition = selectionTransitions.Dequeue();
-                if (!transition.Pressed) continue;
-                press = transition;
-                foundPress = true;
-                break;
-            }
-            if (!foundPress) return true;
-            selectionTransitions.Clear();
-            var pointer = press.Position;
-            if (IsPointerOverHud(pointer)) return true;
-            if (!Physics.Raycast(worldCamera.ScreenPointToRay(pointer), out var hit, 200f)) return true;
+            if (!awaitingAttackMove || IsPointerOverHud(pointer)) return;
+            if (!Physics.Raycast(worldCamera.ScreenPointToRay(pointer), out var hit, 200f)) return;
             IssueFormationGroupOrder(hit.point, true);
             CreateOrderMarker(hit.point, new Color(1f, 0.55f, 0.12f));
             awaitingAttackMove = false;
-            return true;
         }
 
         private void HandleControlGroupInput()
         {
-            while (controlGroupPresses.Count > 0)
-            {
-                var press = controlGroupPresses.Dequeue();
-                if (press.Blocked || placementWorker != null || awaitingAttackMove) continue;
-                if (press.Assigning) AssignControlGroup(press.Number);
-                else RecallControlGroup(press.Number);
-            }
+            HandleQueuedInput();
         }
 
         private void IssueFormationGroupOrder(Vector3 destination, bool attackMove)
@@ -1241,6 +1290,13 @@ namespace AshesOfRum
             var friendly = CreateFormation(type, true, new Vector3(-5f + friendlyFormations.Count * 5f, 0f, -1f));
             friendlyFormations.Add(friendly);
             SetOrderFeedback($"{type} ready - {friendly.MemberCount} members");
+            if (type == FormationType.Cavalry && !cavalryCounterDeployed)
+            {
+                cavalryCounterDeployed = true;
+                firstEnemyDeployed = true;
+                enemyFormations.Add(CreateFormation(FormationType.Archers, false, new Vector3(0f, 0f, 26f)));
+                return;
+            }
             if (firstEnemyDeployed) return;
             firstEnemyDeployed = true;
             var enemyType = type switch
@@ -1310,44 +1366,55 @@ namespace AshesOfRum
 
         private readonly struct PointerButtonTransition
         {
-            public PointerButtonTransition(bool pressed, Vector2 position, bool modify, bool blocked)
+            public PointerButtonTransition(bool pressed, Vector2 position, bool modify)
             {
                 Pressed = pressed;
                 Position = position;
                 Modify = modify;
-                Blocked = blocked;
             }
 
             public bool Pressed { get; }
             public Vector2 Position { get; }
             public bool Modify { get; }
-            public bool Blocked { get; }
         }
 
-        private readonly struct PointerPress
+        private enum InputCommand
         {
-            public PointerPress(Vector2 position, bool blocked)
+            LeftPressed,
+            LeftReleased,
+            RightPressed,
+            KeyPressed,
+            ControlGroupPressed
+        }
+
+        private readonly struct QueuedInput
+        {
+            private QueuedInput(InputCommand command, Vector2 position, bool modify, Key key, int number,
+                bool assigning)
             {
+                Command = command;
                 Position = position;
-                Blocked = blocked;
-            }
-
-            public Vector2 Position { get; }
-            public bool Blocked { get; }
-        }
-
-        private readonly struct ControlGroupPress
-        {
-            public ControlGroupPress(int number, bool assigning, bool blocked)
-            {
+                Modify = modify;
+                Key = key;
                 Number = number;
                 Assigning = assigning;
-                Blocked = blocked;
             }
 
+            public InputCommand Command { get; }
+            public Vector2 Position { get; }
+            public bool Modify { get; }
+            public Key Key { get; }
             public int Number { get; }
             public bool Assigning { get; }
-            public bool Blocked { get; }
+
+            public static QueuedInput Pointer(InputCommand command, Vector2 position, bool modify = false) =>
+                new(command, position, modify, Key.None, 0, false);
+
+            public static QueuedInput KeyPress(Key key) =>
+                new(InputCommand.KeyPressed, default, false, key, 0, false);
+
+            public static QueuedInput ControlGroup(int number, bool assigning) =>
+                new(InputCommand.ControlGroupPressed, default, false, Key.None, number, assigning);
         }
 
         private void TintPreview(Color color)
