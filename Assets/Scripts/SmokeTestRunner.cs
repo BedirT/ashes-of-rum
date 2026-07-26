@@ -83,14 +83,22 @@ namespace AshesOfRum
                 {
                     var storehouse = economy.Storehouses[0];
                     var suppliesBeforeDropOff = economy.Supplies;
-                    economy.Workers[1].IssueGather(economy.Caches[1]);
+                    var storehouseWorker = economy.Workers[1];
+                    storehouseWorker.IssueGather(economy.Caches[1]);
                     var economyDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
-                    while (economy.Supplies <= suppliesBeforeDropOff &&
+                    while ((storehouseWorker.CurrentActivity != WorkerAgent.Activity.Returning ||
+                            storehouseWorker.CarriedSupplies == 0) &&
                            Time.realtimeSinceStartup < economyDeadline)
                         yield return null;
-                    storehouseDropOffUsed = economy.Supplies > suppliesBeforeDropOff &&
-                                            Vector3.Distance(economy.Workers[1].LastDropOffPoint,
-                                                storehouse.DropOffPoint) < 0.1f;
+                    var returningToStorehouse = storehouseWorker.CarriedSupplies > 0 &&
+                                                Vector3.Distance(storehouseWorker.LastDropOffPoint,
+                                                    storehouse.DropOffPoint) < 0.1f;
+                    while (storehouseWorker.CarriedSupplies > 0 &&
+                           Time.realtimeSinceStartup < economyDeadline)
+                        yield return null;
+                    storehouseDropOffUsed = returningToStorehouse &&
+                                            storehouseWorker.CarriedSupplies == 0 &&
+                                            economy.Supplies > suppliesBeforeDropOff;
                 }
             }
             var trainingStarted = false;
