@@ -9,8 +9,9 @@ explicitly changes a decision.
 
 ## 1. Purpose And Success Criterion
 
-`Ashes of Rum` is a rapid gameplay prototype, not a vertical slice and not a
-production-ready game.
+`Ashes of Rum` is a rapid gameplay prototype, not a production-ready game or a
+presentation-polished vertical slice. Development is delivered through small end-to-end
+vertical slices, each of which must leave the complete current game playable.
 
 The prototype succeeds when repeated solo playtests demonstrate that its core loop creates
 meaningful choices. The player should be able to gather, build, produce, scout, counter,
@@ -20,6 +21,11 @@ change in a subsequent match.
 The user is the prototype's sole planned tester. Exact health, damage, sight radius, gather
 rate, build time, and similar balance values are tunable implementation parameters rather
 than frozen product commitments.
+
+Current development prioritizes a complete and genuinely fun playable loop, responsive
+controls, gameplay clarity, reliable AI, and repeatable verification. Story depth, historical
+detail, and visual polish are secondary and should receive only the effort required to make
+the prototype understandable and enjoyable.
 
 ## 2. Game Identity
 
