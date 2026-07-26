@@ -44,7 +44,7 @@ namespace AshesOfRum
         {
             var rangeSquared = range * range;
             return targets?.Invoke()
-                .Where(target => target != null && !target.IsFriendly && target.MemberCount > 0)
+                .Where(target => target != null && target.IsFriendly != building.IsFriendly && target.MemberCount > 0)
                 .Select(target => new
                 {
                     Target = target,

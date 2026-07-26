@@ -7,6 +7,8 @@ namespace AshesOfRum
     {
         [Min(0)] public int startingSupplies = 100;
         [Min(1)] public int cacheSupplies = 400;
+        [Min(1)] public int workerCost = 100;
+        [Min(0.1f)] public float workerTrainSeconds = 2.5f;
         [Min(1)] public int gatherBatch = 10;
         [Min(0.05f)] public float gatherSeconds = 0.75f;
         [Min(0.1f)] public float workerSpeed = 5f;
@@ -18,6 +20,8 @@ namespace AshesOfRum
         [Min(1)] public int watchtowerCost = 300;
         [Min(0.1f)] public float watchtowerBuildSeconds = 5f;
         [Min(1)] public int buildingHealth = 100;
+        [Min(1)] public int hisarHealth = 640;
+        [Min(1)] public int structuralDamage = 2;
         [Min(0.1f)] public float watchtowerRange = 9f;
         [Min(0.1f)] public float watchtowerAttackSeconds = 0.75f;
         [Min(1)] public int watchtowerDamage = 10;
@@ -35,5 +39,8 @@ namespace AshesOfRum
         [Min(0.1f)] public float footSpeed = 3.5f;
         [Min(0.1f)] public float cavalrySpeed = 5.25f;
         [Min(0.1f)] public float sightRadius = 10f;
+        [Min(1f)] public float aiProbeSeconds = 180f;
+        [Min(1f)] public float aiPressureSeconds = 360f;
+        [Min(1f)] public float aiFinalAssaultSeconds = 600f;
     }
 }

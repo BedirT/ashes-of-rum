@@ -112,6 +112,10 @@ namespace AshesOfRum
             if (source == null) return false;
             var formation = source.GetComponent<FormationAgent>();
             if (formation != null) return formation.MemberCount > 0;
+            var worker = source.GetComponent<WorkerAgent>();
+            if (worker != null) return worker.IsAlive;
+            var hisar = source.GetComponent<Hisar>();
+            if (hisar != null) return !hisar.IsDestroyed;
             var building = source.GetComponent<ConstructibleBuilding>();
             return building == null || !building.IsDestroyed;
         }
@@ -119,7 +123,13 @@ namespace AshesOfRum
         private static bool IsLivingHostile(GameObject target)
         {
             var formation = target.GetComponent<FormationAgent>();
-            return formation == null || formation.MemberCount > 0;
+            if (formation != null) return formation.MemberCount > 0;
+            var worker = target.GetComponent<WorkerAgent>();
+            if (worker != null) return worker.IsAlive;
+            var structure = target.GetComponent<Hisar>();
+            if (structure != null) return !structure.IsDestroyed;
+            var building = target.GetComponent<ConstructibleBuilding>();
+            return building == null || !building.IsDestroyed;
         }
 
         private void CreateBattlefieldOverlay()

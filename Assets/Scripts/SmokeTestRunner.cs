@@ -44,6 +44,8 @@ namespace AshesOfRum
             var economyStarted = economy != null && economy.Workers.Count == StartingEconomyController.WorkerCount;
             if (economyStarted)
             {
+                economy.SetOpponentEnabledForAutomation(false);
+                economy.SetOpponentTargetsAvailableForAutomation(false);
                 economy.IssueGatherForSmoke(economy.Caches[0]);
                 var economyDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
                 while (economy.Supplies <= economy.StartingSupplies && Time.realtimeSinceStartup < economyDeadline)
@@ -60,6 +62,7 @@ namespace AshesOfRum
             }
             var houseCompleted = houseStarted && economy.PopulationCapacity == 20 &&
                                  economy.Houses.Count == 1 && economy.Houses[0].IsComplete;
+            var populationCapacityIncreased = economy.PopulationCapacity == 20;
             var storehouseStarted = false;
             var watchtowerStarted = false;
             var defensiveBuildingsCompleted = false;
@@ -122,8 +125,9 @@ namespace AshesOfRum
                 var combatDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
                 while (economy.FriendlyFormations.Count == 0 && Time.realtimeSinceStartup < combatDeadline)
                     yield return null;
-                if (economy.FriendlyFormations.Count > 0 && economy.EnemyFormations.Count > 0)
+                if (economy.FriendlyFormations.Count > 0)
                 {
+                    economy.DeployEnemyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 17f));
                     var friendly = economy.FriendlyFormations[0];
                     var hostile = economy.EnemyFormations[0];
                     var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
@@ -160,6 +164,7 @@ namespace AshesOfRum
                                       formation.Type == FormationType.Cavalry && formation.MemberCount == 8);
                 if (cavalryTrained)
                 {
+                    economy.DeployEnemyForAutomation(FormationType.Archers, new Vector3(0f, 0f, 26f));
                     economy.SelectFormationsForAutomation(economy.FriendlyFormations);
                     economy.AssignControlGroup(1);
                     economy.SelectHisar();
@@ -206,6 +211,99 @@ namespace AshesOfRum
                                             formation.Type == FormationType.Cavalry && formation.MemberCount > 0);
                 }
             }
+
+            var fairOpponentEconomy = false;
+            var probeStarted = false;
+            var pressureStarted = false;
+            var finalAssaultStarted = false;
+            var enemyHisarDestroyed = false;
+            var victoryResultShown = false;
+            var telemetryWritten = false;
+            var restartResetMatch = false;
+            var friendlyHisarDestroyed = false;
+            var defeatResultShown = false;
+            var quitActionAvailable = false;
+            if (cavalryCounterWon)
+            {
+                for (var index = 0; index < economy.FriendlyFormations.Count; index++)
+                {
+                    var friendly = economy.FriendlyFormations[index];
+                    friendly.IssueStop();
+                    friendly.GetComponent<UnityEngine.AI.NavMeshAgent>()?.Warp(
+                        new Vector3(-3f + index * 6f, 0f, 0f));
+                }
+                economy.FogOfWar.RefreshNow();
+                economy.SetOpponentTargetsAvailableForAutomation(true);
+                economy.SetOpponentEnabledForAutomation(true);
+                Time.timeScale = 10f;
+                var aiDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
+                while (economy.EnemyFormations.Count < 2 && Time.realtimeSinceStartup < aiDeadline)
+                    yield return null;
+                fairOpponentEconomy = economy.EnemyFormations.Count >= 2 &&
+                                      economy.EnemyBuildings.Any(building => building.IsComplete) &&
+                                      economy.OpponentPopulationUsed == 20 &&
+                                      economy.OpponentPopulationCapacity == 20;
+
+                Time.timeScale = 0f;
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 180f - economy.MatchElapsedSeconds));
+                yield return null;
+                probeStarted = economy.OpponentPhase == AiPhase.Probe;
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 360f - economy.MatchElapsedSeconds));
+                yield return null;
+                pressureStarted = economy.OpponentPhase == AiPhase.Pressure;
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 600f - economy.MatchElapsedSeconds));
+                yield return null;
+                finalAssaultStarted = economy.OpponentPhase == AiPhase.FinalAssault;
+
+                economy.SetOpponentEnabledForAutomation(false);
+                foreach (var hostile in economy.EnemyFormations) hostile.IssueStop();
+                for (var index = 0; index < economy.FriendlyFormations.Count; index++)
+                    economy.FriendlyFormations[index].GetComponent<UnityEngine.AI.NavMeshAgent>()?.Warp(
+                        new Vector3(-3f + index * 6f, 0f, 18f));
+                economy.FogOfWar.RefreshNow();
+                foreach (var friendly in economy.FriendlyFormations)
+                    friendly.IssueFocus(economy.EnemyHisar);
+                Time.timeScale = 10f;
+                var resultDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                while (economy.Outcome == MatchOutcome.InProgress && Time.realtimeSinceStartup < resultDeadline)
+                    yield return null;
+                enemyHisarDestroyed = economy.EnemyHisar.IsDestroyed;
+                victoryResultShown = economy.Outcome == MatchOutcome.Victory &&
+                                     GameObject.Find("Match Result Title")?.GetComponent<UnityEngine.UI.Text>().text ==
+                                     "VICTORY";
+                telemetryWritten = HasContent(economy.MatchSummaryPath) && HasContent(economy.MatchEventLogPath);
+
+                var completedEconomy = economy;
+                economy.RestartMatch();
+                var restartDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
+                while ((economy == null || economy == completedEconomy) &&
+                       Time.realtimeSinceStartup < restartDeadline)
+                {
+                    economy = FindAnyObjectByType<StartingEconomyController>();
+                    yield return null;
+                }
+                restartResetMatch = economy != null && economy != completedEconomy &&
+                                    economy.Outcome == MatchOutcome.InProgress &&
+                                    economy.Supplies == economy.StartingSupplies &&
+                                    economy.FriendlyFormations.Count == 0;
+                if (restartResetMatch)
+                {
+                    economy.SetOpponentEnabledForAutomation(false);
+                    var invaders = economy.DeployEnemyForAutomation(FormationType.Cavalry,
+                        economy.FriendlyHisar.transform.position + Vector3.forward * 7f);
+                    invaders.IssueFocus(economy.FriendlyHisar);
+                    Time.timeScale = 10f;
+                    resultDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                    while (economy.Outcome == MatchOutcome.InProgress &&
+                           Time.realtimeSinceStartup < resultDeadline) yield return null;
+                    friendlyHisarDestroyed = economy.FriendlyHisar.IsDestroyed;
+                    defeatResultShown = economy.Outcome == MatchOutcome.Defeat &&
+                                        GameObject.Find("Match Result Title")?.GetComponent<UnityEngine.UI.Text>().text ==
+                                        "DEFEAT";
+                    economy.RequestQuitForAutomation();
+                    quitActionAvailable = economy.QuitRequested;
+                }
+            }
             yield return null;
 
             if (graphical)
@@ -247,6 +345,17 @@ namespace AshesOfRum
                     "Formation movement reveals hostile contact",
                     "Moving away loses contact while preserving explored ground",
                     "Cavalry wins its Archer counter fight",
+                    "Fair opponent economy builds and trains through real resources",
+                    "AI Cavalry probe begins at the configured phase",
+                    "AI mixed pressure begins at the configured phase",
+                    "AI final Hisar assault begins at the configured phase",
+                    "Karasungur formations destroy the Alazhan Hisar",
+                    "Victory result freezes the match",
+                    "Match summary and event log are written locally",
+                    "Restart creates a fresh match",
+                    "Alazhan formations destroy the Karasungur Hisar",
+                    "Defeat result freezes the match",
+                    "Quit action is available from the result",
                     "1920x1080 window configured",
                     "Graphical frame captured"
                 }
@@ -274,7 +383,18 @@ namespace AshesOfRum
                     "Hostile mobile formation starts hidden by fog",
                     "Formation movement reveals hostile contact",
                     "Moving away loses contact while preserving explored ground",
-                    "Cavalry wins its Archer counter fight"
+                    "Cavalry wins its Archer counter fight",
+                    "Fair opponent economy builds and trains through real resources",
+                    "AI Cavalry probe begins at the configured phase",
+                    "AI mixed pressure begins at the configured phase",
+                    "AI final Hisar assault begins at the configured phase",
+                    "Karasungur formations destroy the Alazhan Hisar",
+                    "Victory result freezes the match",
+                    "Match summary and event log are written locally",
+                    "Restart creates a fresh match",
+                    "Alazhan formations destroy the Karasungur Hisar",
+                    "Defeat result freezes the match",
+                    "Quit action is available from the result"
                 };
             var result = new SmokeResult
             {
@@ -290,7 +410,7 @@ namespace AshesOfRum
                 Require(economyStarted, checks[3]);
                 Require(economyCompleted, $"{checks[4]} within {EconomyTimeoutSeconds} seconds");
                 Require(houseCompleted, $"{checks[5]} within {ConstructionTimeoutSeconds} seconds");
-                Require(economy.PopulationCapacity == 20, checks[6]);
+                Require(populationCapacityIncreased, checks[6]);
                 Require(storehouseStarted && defensiveBuildingsCompleted, checks[7]);
                 Require(watchtowerStarted && defensiveBuildingsCompleted, checks[8]);
                 Require(storehouseDropOffUsed, checks[9]);
@@ -307,10 +427,21 @@ namespace AshesOfRum
                 Require(hostileRevealedByMovement, $"{checks[20]} within {CombatTimeoutSeconds} seconds");
                 Require(contactLostUnderFog, $"{checks[21]} within {CombatTimeoutSeconds} seconds");
                 Require(cavalryCounterWon, $"{checks[22]} within {CombatTimeoutSeconds} seconds");
+                Require(fairOpponentEconomy, $"{checks[23]} within {EconomyTimeoutSeconds} seconds");
+                Require(probeStarted, checks[24]);
+                Require(pressureStarted, checks[25]);
+                Require(finalAssaultStarted, checks[26]);
+                Require(enemyHisarDestroyed, $"{checks[27]} within {CombatTimeoutSeconds} seconds");
+                Require(victoryResultShown, checks[28]);
+                Require(telemetryWritten, checks[29]);
+                Require(restartResetMatch, checks[30]);
+                Require(friendlyHisarDestroyed, $"{checks[31]} within {CombatTimeoutSeconds} seconds");
+                Require(defeatResultShown, checks[32]);
+                Require(quitActionAvailable, checks[33]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[23]);
-                    Require(HasContent(screenshotPath), $"{checks[24]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[34]);
+                    Require(HasContent(screenshotPath), $"{checks[35]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;

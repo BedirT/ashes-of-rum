@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace AshesOfRum
 {
-    public class ConstructibleBuilding : MonoBehaviour
+    public class ConstructibleBuilding : MonoBehaviour, ICombatStructure
     {
         private float buildSeconds;
         private float elapsed;
@@ -14,6 +14,9 @@ namespace AshesOfRum
         private Coroutine hitRoutine;
 
         public BuildingType Type { get; private set; }
+        public Component TargetComponent => this;
+        public bool IsFriendly { get; private set; } = true;
+        public bool IsAttackable => IsComplete && !IsDestroyed;
         public bool IsComplete { get; private set; }
         public bool IsDestroyed { get; private set; }
         public bool WasDemolished { get; private set; }
@@ -23,11 +26,14 @@ namespace AshesOfRum
         public float Progress => buildSeconds <= 0f ? 0f : Mathf.Clamp01(elapsed / buildSeconds);
         public Vector3 BuildPoint => transform.position + Vector3.back * 2.4f;
         public Vector3 DropOffPoint => transform.position + Vector3.back * 2.4f;
+        public Vector3 AimPoint => transform.position + Vector3.up * 1.5f;
+        public float CombatRadius => 2.4f;
 
         public void Initialize(BuildingType buildingType, float duration, int maximumHealth, Color finishedColor,
-            Action<ConstructibleBuilding> onDestroyed)
+            Action<ConstructibleBuilding> onDestroyed, bool friendly = true)
         {
             Type = buildingType;
+            IsFriendly = friendly;
             buildSeconds = Mathf.Max(0.1f, duration);
             MaxHealth = Mathf.Max(1, maximumHealth);
             Health = MaxHealth;
@@ -68,6 +74,8 @@ namespace AshesOfRum
             hitRoutine = StartCoroutine(FlashHit());
             return false;
         }
+
+        public bool ApplyStructuralDamage(int amount) => ApplyDamage(amount);
 
         public bool Demolish()
         {

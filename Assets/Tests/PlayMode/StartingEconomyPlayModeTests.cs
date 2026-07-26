@@ -88,9 +88,8 @@ namespace AshesOfRum.Tests
                 yield return WaitUntil(() => economy.FriendlyFormations.Count == 2);
                 Assert.That(economy.FriendlyFormations.Select(formation => formation.Type),
                     Is.EquivalentTo(new[] { FormationType.Archers, FormationType.Cavalry }));
-                Assert.That(economy.EnemyFormations.Select(formation => formation.Type),
-                    Is.EquivalentTo(new[] { FormationType.Spearmen, FormationType.Archers }),
-                    "The normal Archer-then-Cavalry path must deploy both documented counter encounters.");
+                Assert.That(economy.EnemyFormations, Is.Empty,
+                    "Player production must not grant the opponent free counter formations.");
             }
             finally
             {
@@ -652,7 +651,8 @@ namespace AshesOfRum.Tests
             Assert.That(economy.PopulationUsed, Is.EqualTo(4));
             Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
 
-            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 1);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+            economy.DeployEnemyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 17f));
             var archers = economy.FriendlyFormations[0];
             var spearmen = economy.EnemyFormations[0];
             Assert.That(archers.MemberCount, Is.EqualTo(8));
@@ -679,6 +679,7 @@ namespace AshesOfRum.Tests
             Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
             yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
             var archers = economy.FriendlyFormations[0];
+            economy.DeployEnemyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 17f));
             var spearmen = economy.EnemyFormations[0];
 
             Assert.That(archers.HasSupportedVisualMaterials(), Is.True);
@@ -1386,8 +1387,8 @@ namespace AshesOfRum.Tests
             economy.CreditSuppliesForAutomation(800);
             Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
             Assert.That(economy.TryQueueFormation(FormationType.Spearmen), Is.True);
-            yield return WaitUntil(() => economy.FriendlyFormations.Count == 2 &&
-                                         economy.EnemyFormations.Count == 1);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 2);
+            economy.DeployEnemyForAutomation(FormationType.Archers, new Vector3(0f, 0f, 17f));
 
             var scout = economy.FriendlyFormations.Single(formation => formation.Type == FormationType.Cavalry);
             var remoteAttacker = economy.FriendlyFormations.Single(formation => formation.Type == FormationType.Spearmen);
@@ -1436,7 +1437,8 @@ namespace AshesOfRum.Tests
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
             economy.CreditSuppliesForAutomation(400);
             Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
-            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 1);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+            economy.DeployEnemyForAutomation(FormationType.Archers, new Vector3(0f, 0f, 26f));
             var cavalry = economy.FriendlyFormations[0];
             var archers = economy.EnemyFormations[0];
             economy.FogOfWar.RefreshNow();
@@ -1450,6 +1452,7 @@ namespace AshesOfRum.Tests
             economy.SelectOnly(cavalry);
             economy.IssueAttackMoveForSelected(new Vector3(0f, 0f, 22f));
             yield return WaitUntil(() => economy.FogOfWar.IsCurrentlyVisible(archers));
+            yield return null;
             Assert.That(orderText.text, Does.Contain("ENEMY ARCHERS SIGHTED"),
                 "The first current-vision reveal should identify the hostile formation.");
             Assert.That(cavalry.Target, Is.SameAs(archers));
@@ -1460,6 +1463,201 @@ namespace AshesOfRum.Tests
             Assert.That(cavalry.MemberCount, Is.GreaterThanOrEqualTo(4));
             Assert.That(cavalry.transform.position.z, Is.GreaterThan(0f));
             Assert.That(economy.FogOfWar.MinimapColorAt(hostilePosition).r, Is.LessThan(0.9f));
+        }
+
+        [UnityTest]
+        public IEnumerator OpponentEconomy_GathersBuildsAndTrainsWithoutHiddenGrants()
+        {
+            yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
+            yield return null;
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var originalTimeScale = Time.timeScale;
+            try
+            {
+                Time.timeScale = 20f;
+                yield return WaitUntil(() => economy.EnemyBuildings.Any(building => building.IsComplete) &&
+                                             economy.EnemyFormations.Count >= 2);
+                Time.timeScale = 0f;
+
+                var gathered = economy.OpponentCaches.Sum(cache => 400 - cache.Remaining);
+                var accounted = economy.OpponentSupplies + 100 + 400 * 2;
+                Assert.That(gathered + 100, Is.EqualTo(accounted),
+                    "The opponent's wallet, House, and two formations must reconcile to finite gathered Supplies.");
+                Assert.That(economy.OpponentPopulationUsed, Is.EqualTo(20));
+                Assert.That(economy.OpponentPopulationCapacity, Is.EqualTo(20));
+                Assert.That(economy.EnemyWorkers.Count(worker => worker.IsAlive), Is.EqualTo(4));
+                Assert.That(economy.EnemyFormations.Select(formation => formation.Type),
+                    Does.Contain(FormationType.Cavalry));
+                Assert.That(economy.CurrentMatchSummary.hostileSuppliesGathered, Is.EqualTo(gathered));
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator OpponentScript_TransitionsThroughProbePressureAndFinalAssault()
+        {
+            yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
+            yield return null;
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Time.timeScale = 20f;
+            yield return WaitUntil(() => economy.EnemyFormations.Count >= 2);
+            Time.timeScale = 0f;
+
+            economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 180f - economy.MatchElapsedSeconds));
+            yield return null;
+            Assert.That(economy.OpponentPhase, Is.EqualTo(AiPhase.Probe));
+            Assert.That(economy.EnemyFormations.Single(formation => formation.Type == FormationType.Cavalry)
+                .CurrentOrder, Is.EqualTo(FormationOrder.AttackMove));
+
+            economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 360f - economy.MatchElapsedSeconds));
+            yield return null;
+            Assert.That(economy.OpponentPhase, Is.EqualTo(AiPhase.Pressure));
+            Assert.That(economy.EnemyFormations.All(formation =>
+                formation.CurrentOrder == FormationOrder.AttackMove), Is.True);
+
+            economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 600f - economy.MatchElapsedSeconds));
+            yield return null;
+            Assert.That(economy.OpponentPhase, Is.EqualTo(AiPhase.FinalAssault));
+            Assert.That(economy.EnemyFormations.All(formation =>
+                ReferenceEquals(formation.StructureTarget, economy.FriendlyHisar)), Is.True);
+            Assert.That(economy.CurrentMatchSummary.probeAttackSeconds, Is.GreaterThanOrEqualTo(180f));
+            Assert.That(economy.CurrentMatchSummary.pressureAttackSeconds, Is.GreaterThanOrEqualTo(360f));
+            Assert.That(economy.CurrentMatchSummary.finalAssaultSeconds, Is.GreaterThanOrEqualTo(600f));
+            Time.timeScale = 1f;
+        }
+
+        [UnityTest]
+        public IEnumerator OpponentScript_RecallsVisibleFormationsForEarlyBaseDefenseThenResumes()
+        {
+            yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
+            yield return null;
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Time.timeScale = 20f;
+            yield return WaitUntil(() => economy.EnemyFormations.Count >= 1);
+            Time.timeScale = 0f;
+            var threat = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                economy.EnemyHisar.transform.position + Vector3.back * 6f);
+            economy.FogOfWar.RefreshNow();
+            yield return null;
+
+            Assert.That(economy.OpponentIsDefending, Is.True);
+            Assert.That(economy.EnemyFormations.Any(formation => formation.Target == threat), Is.True);
+
+            threat.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, -4f));
+            economy.FogOfWar.RefreshNow();
+            yield return null;
+            yield return null;
+            Assert.That(economy.OpponentIsDefending, Is.False);
+            Assert.That(economy.EnemyFormations.All(formation => formation.Target != threat), Is.True);
+            Time.timeScale = 1f;
+        }
+
+        [UnityTest]
+        public IEnumerator StructureCombat_ResultRestartDefeatAndTelemetryCompleteTheMatchLoop()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var attackers = economy.DeployFriendlyForAutomation(FormationType.Cavalry,
+                economy.EnemyHisar.transform.position + Vector3.back * 7f);
+            economy.FogOfWar.RefreshNow();
+            Assert.That(economy.FogOfWar.IsCurrentlyVisible(economy.EnemyHisar), Is.True);
+            economy.SelectOnly(attackers);
+            var mouse = InputSystem.AddDevice<Mouse>();
+            mouse.MakeCurrent();
+            Camera.main.GetComponent<RtsCameraController>().CenterOn(economy.EnemyHisar.transform.position);
+            yield return null;
+            var hisarCollider = economy.EnemyHisar.GetComponentInChildren<Collider>();
+            var hisarClick = (Vector2)Camera.main.WorldToScreenPoint(hisarCollider.bounds.center);
+            yield return PressMouseButton(economy, mouse, hisarClick, MouseButton.Right, "HandleOrderInput");
+            Assert.That(ReferenceEquals(attackers.StructureTarget, economy.EnemyHisar), Is.True,
+                "A real contextual right click must focus the visible hostile Hisar.");
+            InputSystem.RemoveDevice(mouse);
+            Time.timeScale = 20f;
+            yield return WaitUntil(() => economy.Outcome == MatchOutcome.Victory);
+
+            Assert.That(Time.timeScale, Is.Zero);
+            Assert.That(attackers.CurrentOrder, Is.EqualTo(FormationOrder.Idle));
+            Assert.That(GameObject.Find("Match Result").activeInHierarchy, Is.True);
+            Assert.That(GameObject.Find("Match Result Title").GetComponent<Text>().text, Is.EqualTo("VICTORY"));
+            Assert.That(Resources.FindObjectsOfTypeAll<GameObject>().Single(item => item.name == "Top Bar").activeSelf,
+                Is.False);
+            Assert.That(GameObject.Find("Restart Match").GetComponent<Button>().interactable, Is.True);
+            Assert.That(GameObject.Find("Quit Match").GetComponent<Button>().interactable, Is.True);
+            Assert.That(System.IO.File.Exists(economy.MatchSummaryPath), Is.True);
+            Assert.That(System.IO.File.Exists(economy.MatchEventLogPath), Is.True);
+            var victorySummary = JsonUtility.FromJson<MatchSummary>(
+                System.IO.File.ReadAllText(economy.MatchSummaryPath));
+            Assert.That(victorySummary.outcome, Is.EqualTo(MatchOutcome.Victory.ToString()));
+            Assert.That(victorySummary.destroyedHisar, Is.EqualTo(StartingEconomyController.EnemyHisarObjectName));
+
+            var previous = economy;
+            economy.RestartMatch();
+            yield return WaitUntil(() => Object.FindAnyObjectByType<StartingEconomyController>() != previous);
+            economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SetOpponentEnabledForAutomation(false);
+            Assert.That(economy.Outcome, Is.EqualTo(MatchOutcome.InProgress));
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.FriendlyFormations, Is.Empty);
+            Assert.That(economy.FogOfWar.StateAt(economy.EnemyHisar.transform.position),
+                Is.EqualTo(FogState.Unexplored));
+
+            var invaders = economy.DeployEnemyForAutomation(FormationType.Cavalry,
+                economy.FriendlyHisar.transform.position + Vector3.forward * 7f);
+            Assert.That(invaders.IssueFocus(economy.FriendlyHisar), Is.True);
+            Time.timeScale = 20f;
+            yield return WaitUntil(() => economy.Outcome == MatchOutcome.Defeat);
+            Assert.That(GameObject.Find("Match Result Title").GetComponent<Text>().text, Is.EqualTo("DEFEAT"));
+            economy.RequestQuitForAutomation();
+            Assert.That(economy.QuitRequested, Is.True);
+            Time.timeScale = 1f;
+        }
+
+        [UnityTest]
+        public IEnumerator StructuralVolley_DamagesACompletedBuildingAtTheStandardizedReducedRate()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var attackers = CreateFormationForTest("Structure attackers", FormationType.Spearmen, true, tuning);
+            var root = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var building = root.AddComponent<ConstructibleBuilding>();
+            building.Initialize(BuildingType.Storehouse, 0.1f, 100, Color.red, _ => { }, false);
+            building.Advance(0.1f);
+            try
+            {
+                Assert.That(attackers.ExecuteStructuralVolley(building), Is.True);
+                Assert.That(building.Health, Is.EqualTo(100 - MatchRules.StructuralVolleyDamage(8,
+                    tuning.structuralDamage)));
+                yield return null;
+            }
+            finally
+            {
+                Object.Destroy(attackers.gameObject);
+                Object.Destroy(root);
+                Object.Destroy(tuning);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator HisarSharedQueue_TrainsAWorkerThroughTheRuntimeHud()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectHisar();
+            yield return null;
+            var workerButton = GameObject.Find("Train Worker").GetComponent<Button>();
+            Assert.That(workerButton.gameObject.activeInHierarchy, Is.True);
+            Assert.That(workerButton.GetComponentInChildren<Text>().text, Does.Contain("[Q]"));
+
+            workerButton.onClick.Invoke();
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(economy.PopulationUsed, Is.EqualTo(5));
+            Assert.That(economy.ProductionQueueCount, Is.EqualTo(1));
+            yield return WaitUntil(() => economy.Workers.Count == 5);
+
+            Assert.That(economy.Workers.Last().IsAlive, Is.True);
+            Assert.That(economy.CurrentMatchSummary.friendlyEntitiesProduced, Is.EqualTo(1));
         }
 
         [UnityTest]
@@ -1501,6 +1699,7 @@ namespace AshesOfRum.Tests
         {
             yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
             yield return null;
+            Object.FindAnyObjectByType<StartingEconomyController>()?.SetOpponentEnabledForAutomation(false);
         }
 
         private static IEnumerator WaitUntil(System.Func<bool> condition)
