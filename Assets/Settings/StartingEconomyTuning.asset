@@ -17,3 +17,4 @@ MonoBehaviour:
   gatherBatch: 10
   gatherSeconds: 0.75
   workerSpeed: 5
+  cacheFallbackRadius: 20

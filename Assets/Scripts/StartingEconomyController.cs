@@ -33,6 +33,7 @@ namespace AshesOfRum
         public int StartingSupplies => tuning?.startingSupplies ?? 0;
         public IReadOnlyList<WorkerAgent> Workers => workers;
         public IReadOnlyList<ResourceCache> Caches { get; private set; }
+        public string LastEconomyNotification { get; private set; }
 
         public void Configure(EconomyTuning economyTuning) => tuning = economyTuning;
 
@@ -149,7 +150,7 @@ namespace AshesOfRum
                 CreatePrimitive(PrimitiveType.Cube, "Carried Supplies", workerObject.transform,
                     new Vector3(0f, 1.35f, -0.62f), new Vector3(0.42f, 0.42f, 0.42f), new Color(0.95f, 0.68f, 0.2f));
                 var worker = workerObject.AddComponent<WorkerAgent>();
-                worker.Initialize(tuning, wallet, hisar, i);
+                worker.Initialize(tuning, wallet, hisar, Caches, i, NotifyEconomyState);
                 workers.Add(worker);
             }
         }
@@ -277,6 +278,12 @@ namespace AshesOfRum
         private void SetOrderFeedback(string message)
         {
             if (orderText != null) orderText.text = message.ToUpperInvariant();
+        }
+
+        private void NotifyEconomyState(string message)
+        {
+            LastEconomyNotification = message;
+            SetOrderFeedback(message);
         }
 
         private static GameObject CreatePrimitive(PrimitiveType type, string name, Transform parent,
