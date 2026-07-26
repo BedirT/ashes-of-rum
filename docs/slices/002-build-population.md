@@ -20,8 +20,8 @@ construct it, and see population capacity increase from 12 to 20 when the House 
 - [x] The native macOS development player builds a House during smoke while preserving the
       existing gather-deposit path.
 - [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
-- [ ] A context-free review covers the exact final HEAD.
-- [ ] The merged game remains playable at its current scope.
+- [x] A context-free review covers the exact final HEAD.
+- [x] The merged game remains playable at its current scope.
 
 ## Non-Goals
 
@@ -43,9 +43,12 @@ military formations, combat, enemy AI, fog of war, minimap, and visual polish.
 
 ## Evidence
 
-- Verification: `make verify` passed at implementation HEAD
-  `a7a27c2df99ebddfa00a8c0652e0700854233db5` with 8 EditMode and 11 PlayMode tests,
+- PR: [#4](https://github.com/BedirT/rts-game/pull/4)
+- Verification: `make verify` passed at final reviewed HEAD
+  `f10b5b8e9bd43c3cb08b152425354453d41c378b` with 7 EditMode and 13 PlayMode tests,
   an ARM64 development build, headless smoke, graphical 1920x1080 smoke, and clean logs.
 - Runtime proof: the built player gathered and deposited Supplies, spent 100 Supplies, completed
   one House, raised population capacity from 12 to 20, and resumed the worker's gathering assignment.
-- Review and merge: pending.
+- Review: round 1 required fixer run 1; round 2 reported no blocking findings at the final head.
+- Merge: squash-merged as `dc5ea0a962bbd374c21032eb86881eb3c68017ae`; `make post-merge`
+  passed on merged `main`.
