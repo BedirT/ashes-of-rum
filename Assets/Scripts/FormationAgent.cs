@@ -90,11 +90,7 @@ namespace AshesOfRum
             hasDestination = false;
             CurrentOrder = FormationOrder.Focus;
             StartNavigation(hostile.transform.position);
-            if (hostile.target == null)
-            {
-                hostile.target = this;
-                hostile.CurrentOrder = FormationOrder.Focus;
-            }
+            hostile.TryRetaliate(this);
             return true;
         }
 
@@ -169,11 +165,7 @@ namespace AshesOfRum
             if (CurrentOrder == FormationOrder.AttackMove && target == null)
             {
                 target = FindNearestVisibleHostile();
-                if (target != null && target.target == null)
-                {
-                    target.target = this;
-                    target.CurrentOrder = FormationOrder.Focus;
-                }
+                target?.TryRetaliate(this);
             }
             if (target != null)
             {
@@ -274,6 +266,13 @@ namespace AshesOfRum
         private bool IsValidTarget(FormationAgent candidate) => candidate != null &&
             candidate.IsFriendly != IsFriendly && candidate.MemberCount > 0 &&
             (visibilityPredicate == null || visibilityPredicate(candidate));
+
+        private void TryRetaliate(FormationAgent attacker)
+        {
+            if (target != null || !IsValidTarget(attacker)) return;
+            target = attacker;
+            CurrentOrder = FormationOrder.Focus;
+        }
 
         private static Vector3 Grounded(Vector3 position) => new(position.x, 0f, position.z);
 

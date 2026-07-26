@@ -491,6 +491,7 @@ namespace AshesOfRum
         {
             fogOfWar = gameObject.AddComponent<FogOfWarSystem>();
             fogOfWar.Initialize(tuning.sightRadius, worldCamera.GetComponent<RtsCameraController>(), hudCanvas.transform);
+            fogOfWar.HostileFirstRevealed += HandleHostileFirstRevealed;
             fogOfWar.RegisterFriendly(hisar.transform);
             foreach (var worker in workers) fogOfWar.RegisterFriendly(worker.transform);
             fogOfWar.RefreshNow();
@@ -1123,7 +1124,6 @@ namespace AshesOfRum
             };
             var enemy = CreateFormation(enemyType, false, new Vector3(0f, 0f, 17f));
             enemyFormations.Add(enemy);
-            SetOrderFeedback($"Enemy {enemyType} sighted - {type} counters {enemyType}");
         }
 
         private FormationAgent CreateFormation(FormationType type, bool friendly, Vector3 position)
@@ -1147,10 +1147,26 @@ namespace AshesOfRum
                     SetOrderFeedback(destroyed.IsFriendly ? "Friendly formation lost" : "Enemy formation defeated");
                 },
                 friendly ? () => enemyFormations : () => friendlyFormations,
-                friendly ? candidate => fogOfWar == null || fogOfWar.IsCurrentlyVisible(candidate) : null);
+                friendly ? candidate => fogOfWar == null || fogOfWar.IsCurrentlyVisible(candidate) :
+                IsCurrentlyVisibleToHostileSide);
             if (friendly) fogOfWar?.RegisterFriendly(root.transform);
             else fogOfWar?.RegisterHostileMobile(root);
             return formation;
+        }
+
+        private bool IsCurrentlyVisibleToHostileSide(FormationAgent candidate)
+        {
+            if (candidate == null || candidate.MemberCount == 0) return false;
+            var sightRadiusSquared = tuning.sightRadius * tuning.sightRadius;
+            return enemyFormations.Any(observer => observer != null && observer.MemberCount > 0 &&
+                (observer.transform.position - candidate.transform.position).sqrMagnitude <= sightRadiusSquared);
+        }
+
+        private void HandleHostileFirstRevealed(GameObject target)
+        {
+            var formation = target == null ? null : target.GetComponent<FormationAgent>();
+            if (formation == null || formation.IsFriendly) return;
+            SetOrderFeedback($"Enemy {formation.Type} sighted");
         }
 
         private sealed class ControlGroup

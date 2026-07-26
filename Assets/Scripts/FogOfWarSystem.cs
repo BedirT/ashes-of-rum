@@ -29,6 +29,7 @@ namespace AshesOfRum
 
         public FogOfWarMap Map => map;
         public RawImage MinimapImage => minimapImage;
+        public event Action<GameObject> HostileFirstRevealed;
 
         public void Initialize(float sharedSightRadius, RtsCameraController targetCamera, Transform hudParent)
         {
@@ -82,7 +83,8 @@ namespace AshesOfRum
                     hostileTargets.Remove(pair.Key);
                     continue;
                 }
-                pair.Value.Apply(map.StateAt(pair.Key.transform.position));
+                if (pair.Value.Apply(map.StateAt(pair.Key.transform.position)))
+                    HostileFirstRevealed?.Invoke(pair.Key);
             }
             UpdateFogTexture();
             UpdateMinimapTexture();
@@ -102,7 +104,7 @@ namespace AshesOfRum
             var visibility = target.GetComponent<FogVisibilityTarget>() ?? target.AddComponent<FogVisibilityTarget>();
             visibility.Initialize(remembersWhenExplored);
             hostileTargets.Add(target, visibility);
-            visibility.Apply(map.StateAt(target.transform.position));
+            if (visibility.Apply(map.StateAt(target.transform.position))) HostileFirstRevealed?.Invoke(target);
         }
 
         private static bool IsLivingSource(Transform source)
@@ -229,21 +231,26 @@ namespace AshesOfRum
         private Collider[] colliders;
         private Color[] originalColors;
         private bool remembersWhenExplored;
+        private bool hasEverBeenVisible;
 
         public FogState State { get; private set; } = FogState.Unexplored;
 
         public void Initialize(bool rememberStaticTarget)
         {
             remembersWhenExplored = rememberStaticTarget;
+            hasEverBeenVisible = false;
             renderers = GetComponentsInChildren<Renderer>(true);
             colliders = GetComponentsInChildren<Collider>(true);
             originalColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
         }
 
-        public void Apply(FogState state)
+        public bool Apply(FogState state)
         {
+            var firstReveal = state == FogState.Visible && !hasEverBeenVisible;
+            if (state == FogState.Visible) hasEverBeenVisible = true;
             State = state;
-            var show = state == FogState.Visible || remembersWhenExplored && state == FogState.Explored;
+            var show = state == FogState.Visible ||
+                       remembersWhenExplored && hasEverBeenVisible && state == FogState.Explored;
             for (var index = 0; index < renderers.Length; index++)
             {
                 if (renderers[index] == null) continue;
@@ -255,6 +262,7 @@ namespace AshesOfRum
             }
             foreach (var itemCollider in colliders)
                 if (itemCollider != null) itemCollider.enabled = state == FogState.Visible;
+            return firstReveal;
         }
     }
 

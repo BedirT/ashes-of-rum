@@ -787,6 +787,89 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator FogStaticMemory_RequiresTheTargetToHaveBeenSeen()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var fog = economy.FogOfWar;
+            var targetPosition = new Vector3(0f, 0f, 8f);
+            var scout = new GameObject("Static memory scout");
+            scout.transform.position = targetPosition;
+            fog.RegisterFriendly(scout.transform);
+            fog.RefreshNow();
+            scout.transform.position = new Vector3(-20f, 0f, -10f);
+            fog.RefreshNow();
+            Assert.That(fog.StateAt(targetPosition), Is.EqualTo(FogState.Explored));
+
+            var hiddenBuilding = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            hiddenBuilding.name = "Never seen hostile building";
+            hiddenBuilding.transform.position = targetPosition;
+            fog.RegisterHostileStatic(hiddenBuilding);
+
+            Assert.That(hiddenBuilding.GetComponent<Renderer>().enabled, Is.False,
+                "Explored ground must not reveal a hostile building that was never observed.");
+            Assert.That(hiddenBuilding.GetComponent<Collider>().enabled, Is.False);
+
+            scout.transform.position = targetPosition;
+            fog.RefreshNow();
+            Assert.That(hiddenBuilding.GetComponent<Renderer>().enabled, Is.True);
+            Assert.That(hiddenBuilding.GetComponent<Collider>().enabled, Is.True);
+            var visibleColor = hiddenBuilding.GetComponent<Renderer>().material.color;
+
+            scout.transform.position = new Vector3(-20f, 0f, -10f);
+            fog.RefreshNow();
+            Assert.That(hiddenBuilding.GetComponent<Renderer>().enabled, Is.True,
+                "A previously seen static target should remain as a stale silhouette.");
+            Assert.That(hiddenBuilding.GetComponent<Collider>().enabled, Is.False);
+            Assert.That(hiddenBuilding.GetComponent<Renderer>().material.color.maxColorComponent,
+                Is.LessThan(visibleColor.maxColorComponent));
+
+            Object.Destroy(scout);
+            Object.Destroy(hiddenBuilding);
+        }
+
+        [UnityTest]
+        public IEnumerator HostileFocus_RequiresSideVisionAndDropsAfterTheTargetRetreats()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(800);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            Assert.That(economy.TryQueueFormation(FormationType.Spearmen), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 2 &&
+                                         economy.EnemyFormations.Count == 1);
+
+            var scout = economy.FriendlyFormations.Single(formation => formation.Type == FormationType.Cavalry);
+            var remoteAttacker = economy.FriendlyFormations.Single(formation => formation.Type == FormationType.Spearmen);
+            var hostile = economy.EnemyFormations[0];
+            Assert.That(scout.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, 8f)), Is.True);
+            Assert.That(remoteAttacker.GetComponent<NavMeshAgent>().Warp(new Vector3(-5f, 0f, -5f)), Is.True);
+            Assert.That(hostile.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, 17f)), Is.True);
+            economy.FogOfWar.RefreshNow();
+            Assert.That(economy.FogOfWar.IsCurrentlyVisible(hostile), Is.True,
+                "The nearby scout should reveal the hostile to the player side.");
+
+            Assert.That(remoteAttacker.IssueFocus(hostile), Is.True);
+            Assert.That(hostile.Target, Is.Null,
+                "A scout revealing a hostile must not reveal a remote attacker to the hostile side.");
+            remoteAttacker.IssueStop();
+
+            Assert.That(scout.IssueFocus(hostile), Is.True);
+            Assert.That(hostile.Target, Is.SameAs(scout));
+            scout.IssueMove(new Vector3(-5f, 0f, -5f));
+            Assert.That(scout.GetComponent<NavMeshAgent>().Warp(new Vector3(-5f, 0f, -5f)), Is.True);
+            yield return WaitUntil(() => hostile.Target == null);
+
+            var stoppedPosition = hostile.transform.position;
+            yield return new WaitForSeconds(0.2f);
+            Assert.That(hostile.CurrentOrder, Is.EqualTo(FormationOrder.Idle));
+            Assert.That(Vector3.Distance(stoppedPosition, hostile.transform.position), Is.LessThan(0.15f),
+                "The hostile must stop instead of following a moving target outside current sight.");
+        }
+
+        [UnityTest]
         public IEnumerator AttackMove_RevealsAndAcquiresTheNearestHostileThroughFog()
         {
             yield return LoadEconomy();
@@ -802,10 +885,15 @@ namespace AshesOfRum.Tests
             Assert.That(archers.Type, Is.EqualTo(FormationType.Archers));
             Assert.That(economy.FogOfWar.IsCurrentlyVisible(archers), Is.False);
             Assert.That(archers.GetComponentsInChildren<Renderer>(true).Any(item => item.enabled), Is.False);
+            var orderText = GameObject.Find("Order").GetComponent<Text>();
+            Assert.That(orderText.text, Does.Not.Contain("ENEMY ARCHERS SIGHTED"),
+                "Training feedback must not identify an enemy that remains hidden by fog.");
 
             economy.SelectOnly(cavalry);
             economy.IssueAttackMoveForSelected(new Vector3(0f, 0f, 22f));
             yield return WaitUntil(() => economy.FogOfWar.IsCurrentlyVisible(archers));
+            Assert.That(orderText.text, Does.Contain("ENEMY ARCHERS SIGHTED"),
+                "The first current-vision reveal should identify the hostile formation.");
             Assert.That(cavalry.Target, Is.SameAs(archers));
             Assert.That(archers.Target, Is.SameAs(cavalry));
             var hostilePosition = archers.transform.position;
