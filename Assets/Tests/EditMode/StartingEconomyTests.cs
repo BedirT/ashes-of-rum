@@ -41,6 +41,47 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void Population_ReserveAndReleaseTracksAvailableCapacity()
+        {
+            var population = new PopulationLedger(4, 12, 60);
+
+            Assert.That(population.TryReserve(8), Is.True);
+            Assert.That(population.TryReserve(1), Is.False);
+            population.Release(3);
+
+            Assert.That(population.Used, Is.EqualTo(9));
+        }
+
+        [Test]
+        public void FormationQueue_SpendsReservesCompletesAndCancelsDeterministically()
+        {
+            var wallet = new EconomyWallet(800);
+            var population = new PopulationLedger(4, 20, 60);
+            var queue = new FormationProductionQueue(wallet, population, 400, 8, 3f);
+
+            Assert.That(queue.TryEnqueue(FormationType.Archers), Is.True);
+            Assert.That(queue.TryEnqueue(FormationType.Cavalry), Is.True);
+            Assert.That(wallet.Supplies, Is.Zero);
+            Assert.That(population.Used, Is.EqualTo(20));
+            Assert.That(queue.Advance(2.9f), Is.Null);
+            Assert.That(queue.Advance(0.1f), Is.EqualTo(FormationType.Archers));
+            Assert.That(queue.CancelActive(), Is.True);
+
+            Assert.That(wallet.Supplies, Is.EqualTo(400));
+            Assert.That(population.Used, Is.EqualTo(12));
+            Assert.That(queue.Count, Is.Zero);
+        }
+
+        [Test]
+        public void Combat_ExplicitCounterTriangleAppliesOnlyToWinningMatchup()
+        {
+            Assert.That(CombatRules.Damage(FormationType.Archers, FormationType.Spearmen, 10, 2f), Is.EqualTo(20));
+            Assert.That(CombatRules.Damage(FormationType.Spearmen, FormationType.Archers, 10, 2f), Is.EqualTo(10));
+            Assert.That(CombatRules.Damage(FormationType.Spearmen, FormationType.Cavalry, 10, 2f), Is.EqualTo(20));
+            Assert.That(CombatRules.Damage(FormationType.Cavalry, FormationType.Archers, 10, 2f), Is.EqualTo(20));
+        }
+
+        [Test]
         public void HousePlacement_SnapsAndChecksBuildableBounds()
         {
             var snapped = HousePlacementRules.Snap(new Vector3(7.4f, 2f, 9.6f));

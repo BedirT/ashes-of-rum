@@ -243,12 +243,47 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator HisarQueue_TrainsFormationAndArchersWinReadableCounterFight()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(300);
+            economy.SelectHisar();
+            yield return null;
+
+            Assert.That(GameObject.Find("Train Archers").activeInHierarchy, Is.True);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            Assert.That(economy.Supplies, Is.Zero);
+            Assert.That(economy.PopulationUsed, Is.EqualTo(12));
+            Assert.That(economy.CancelActiveTraining(), Is.True);
+            Assert.That(economy.Supplies, Is.EqualTo(400));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(4));
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 1);
+            var archers = economy.FriendlyFormations[0];
+            var spearmen = economy.EnemyFormations[0];
+            Assert.That(archers.MemberCount, Is.EqualTo(8));
+            Assert.That(spearmen.MemberCount, Is.EqualTo(8));
+            Assert.That(economy.IssueFocusForSmoke(archers, spearmen), Is.True);
+
+            yield return WaitUntil(() => economy.EnemyFormations.Count == 0);
+
+            Assert.That(archers.MemberCount, Is.GreaterThanOrEqualTo(4));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(4 + archers.MemberCount));
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("ENEMY FORMATION DEFEATED"));
+        }
+
+        [UnityTest]
         public IEnumerator Hud_ShowsPopulationAndClickableBuildCommands()
         {
             yield return LoadEconomy();
 
             Assert.That(GameObject.Find("Population").GetComponent<UnityEngine.UI.Text>().text,
                 Is.EqualTo("POPULATION   4 / 12"));
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectOnly(economy.Workers[0]);
             Assert.That(GameObject.Find("Build House").GetComponent<UnityEngine.UI.Button>(), Is.Not.Null);
             Assert.That(GameObject.Find("EventSystem").GetComponents<MonoBehaviour>()
                 .Any(component => component.GetType().Name == "InputSystemUIInputModule"), Is.True);
@@ -257,7 +292,15 @@ namespace AshesOfRum.Tests
             Assert.That(GameObject.Find("Cancel Build").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("[X]"));
 
-            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectHisar();
+            yield return null;
+            Assert.That(GameObject.Find("Train Spearmen").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[S]"));
+            Assert.That(GameObject.Find("Train Archers").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[A]"));
+            Assert.That(GameObject.Find("Train Cavalry").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[C]"));
+
             economy.SelectOnly(economy.Workers[0]);
             GameObject.Find("Build House").GetComponent<UnityEngine.UI.Button>().onClick.Invoke();
             Assert.That(economy.IsHousePlacementActive, Is.True);

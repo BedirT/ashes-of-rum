@@ -11,6 +11,7 @@ namespace AshesOfRum
         private const float ScreenshotTimeoutSeconds = 15f;
         private const float EconomyTimeoutSeconds = 20f;
         private const float ConstructionTimeoutSeconds = 20f;
+        private const float CombatTimeoutSeconds = 20f;
 
         [Serializable]
         private sealed class SmokeResult
@@ -58,6 +59,22 @@ namespace AshesOfRum
             }
             var houseCompleted = houseStarted && economy.PopulationCapacity == 20 &&
                                  economy.Houses.Count == 1 && economy.Houses[0].IsComplete;
+            var trainingStarted = false;
+            var combatWon = false;
+            if (houseCompleted)
+            {
+                economy.CreditSuppliesForAutomation(400);
+                trainingStarted = economy.TryQueueFormation(FormationType.Archers);
+                var combatDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                while (economy.FriendlyFormations.Count == 0 && Time.realtimeSinceStartup < combatDeadline)
+                    yield return null;
+                if (economy.FriendlyFormations.Count > 0 && economy.EnemyFormations.Count > 0)
+                    economy.IssueFocusForSmoke(economy.FriendlyFormations[0], economy.EnemyFormations[0]);
+                while (economy.EnemyFormations.Count > 0 && Time.realtimeSinceStartup < combatDeadline)
+                    yield return null;
+                combatWon = economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 0 &&
+                            economy.FriendlyFormations[0].MemberCount >= 4;
+            }
             yield return null;
 
             if (graphical)
@@ -83,6 +100,8 @@ namespace AshesOfRum
                     "Worker gather deposit completed",
                     "House construction completed",
                     "Population capacity increased",
+                    "Archer formation trained",
+                    "Counter fight won",
                     "1920x1080 window configured",
                     "Graphical frame captured"
                 }
@@ -94,7 +113,9 @@ namespace AshesOfRum
                     "Starting economy available",
                     "Worker gather deposit completed",
                     "House construction completed",
-                    "Population capacity increased"
+                    "Population capacity increased",
+                    "Archer formation trained",
+                    "Counter fight won"
                 };
             var result = new SmokeResult
             {
@@ -111,10 +132,12 @@ namespace AshesOfRum
                 Require(economyCompleted, $"{checks[4]} within {EconomyTimeoutSeconds} seconds");
                 Require(houseCompleted, $"{checks[5]} within {ConstructionTimeoutSeconds} seconds");
                 Require(economy.PopulationCapacity == 20, checks[6]);
+                Require(trainingStarted, checks[7]);
+                Require(combatWon, $"{checks[8]} within {CombatTimeoutSeconds} seconds");
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[7]);
-                    Require(HasContent(screenshotPath), $"{checks[8]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[9]);
+                    Require(HasContent(screenshotPath), $"{checks[10]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;

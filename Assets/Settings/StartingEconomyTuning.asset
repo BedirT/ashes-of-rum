@@ -23,3 +23,12 @@ MonoBehaviour:
   startingPopulationCap: 12
   housePopulationCapacity: 8
   hardPopulationCap: 60
+  formationCost: 400
+  formationPopulation: 8
+  formationTrainSeconds: 3
+  memberHealth: 20
+  baseDamage: 10
+  counterMultiplier: 2
+  attackSeconds: 0.75
+  projectileSeconds: 0.35
+  footSpeed: 3.5

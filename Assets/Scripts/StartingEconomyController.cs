@@ -20,6 +20,8 @@ namespace AshesOfRum
         private readonly List<WorkerAgent> workers = new();
         private readonly List<WorkerAgent> selectedWorkers = new();
         private readonly List<HouseBuilding> houses = new();
+        private readonly List<FormationAgent> friendlyFormations = new();
+        private readonly List<FormationAgent> enemyFormations = new();
         [SerializeField] private EconomyTuning tuning;
         private EconomyWallet wallet;
         private Hisar hisar;
@@ -35,6 +37,15 @@ namespace AshesOfRum
         private PopulationLedger population;
         private Button buildHouseButton;
         private Button cancelBuildButton;
+        private Button trainSpearmenButton;
+        private Button trainArchersButton;
+        private Button trainCavalryButton;
+        private Button cancelTrainingButton;
+        private Text queueText;
+        private FormationProductionQueue productionQueue;
+        private FormationAgent selectedFormation;
+        private bool hisarSelected;
+        private bool firstEnemyDeployed;
         private GameObject placementPreview;
         private WorkerAgent placementWorker;
         private bool placementValid;
@@ -54,6 +65,9 @@ namespace AshesOfRum
         public bool IsHousePlacementActive => placementWorker != null;
         public IReadOnlyList<WorkerAgent> Workers => workers;
         public IReadOnlyList<HouseBuilding> Houses => houses;
+        public IReadOnlyList<FormationAgent> FriendlyFormations => friendlyFormations;
+        public IReadOnlyList<FormationAgent> EnemyFormations => enemyFormations;
+        public int ProductionQueueCount => productionQueue?.Count ?? 0;
         public IReadOnlyList<ResourceCache> Caches { get; private set; }
         public string LastEconomyNotification { get; private set; }
 
@@ -71,6 +85,8 @@ namespace AshesOfRum
             worldCamera = Camera.main;
             wallet = new EconomyWallet(tuning.startingSupplies);
             population = new PopulationLedger(WorkerCount, tuning.startingPopulationCap, tuning.hardPopulationCap);
+            productionQueue = new FormationProductionQueue(wallet, population, tuning.formationCost,
+                tuning.formationPopulation, tuning.formationTrainSeconds);
             BuildNavMesh();
             hisar = CreateHisar();
             Caches = new[]
@@ -89,6 +105,8 @@ namespace AshesOfRum
             HandleBuildInput();
             HandleSelectionInput();
             HandleOrderInput();
+            var completed = productionQueue.Advance(Time.deltaTime);
+            if (completed.HasValue) CompleteFormation(completed.Value);
         }
 
         public void SelectOnly(WorkerAgent worker)
@@ -97,6 +115,7 @@ namespace AshesOfRum
             if (worker == null) return;
             selectedWorkers.Add(worker);
             worker.SetSelected(true);
+            UpdateHud();
         }
 
         public void IssueGatherForSmoke(ResourceCache cache)
@@ -105,6 +124,56 @@ namespace AshesOfRum
             SelectOnly(worker);
             worker.IssueGather(cache);
             SetOrderFeedback("Gathering Supplies");
+        }
+
+        public void CreditSuppliesForAutomation(int amount)
+        {
+            wallet.Deposit(amount);
+        }
+
+        public bool TryQueueFormation(FormationType type)
+        {
+            if (!productionQueue.TryEnqueue(type))
+            {
+                SetOrderFeedback(Supplies < tuning.formationCost
+                    ? $"Need {tuning.formationCost} Supplies"
+                    : $"Population blocked - need {tuning.formationPopulation} free");
+                return false;
+            }
+            SetOrderFeedback($"{type} queued");
+            return true;
+        }
+
+        public bool CancelActiveTraining()
+        {
+            if (!productionQueue.CancelActive()) return false;
+            SetOrderFeedback($"Training cancelled - {tuning.formationCost} Supplies refunded");
+            return true;
+        }
+
+        public void SelectHisar()
+        {
+            ClearSelection();
+            hisarSelected = true;
+            SetOrderFeedback("Hisar selected - train a formation");
+            UpdateHud();
+        }
+
+        public void SelectOnly(FormationAgent formation)
+        {
+            ClearSelection();
+            if (formation == null || !formation.IsFriendly) return;
+            selectedFormation = formation;
+            formation.SetSelected(true);
+            UpdateHud();
+        }
+
+        public bool IssueFocusForSmoke(FormationAgent friendly, FormationAgent hostile)
+        {
+            SelectOnly(friendly);
+            var issued = friendly.IssueFocus(hostile);
+            if (issued) SetOrderFeedback($"Focus {hostile.Type}");
+            return issued;
         }
 
         public bool TryPlaceHouse(WorkerAgent worker, Vector3 position)
@@ -223,17 +292,27 @@ namespace AshesOfRum
             scaler.referenceResolution = new Vector2(1920f, 1080f);
 
             CreatePanel(canvas.transform, "Top Bar", new Vector2(0.02f, 0.91f), new Vector2(0.34f, 0.98f));
+            CreatePanel(canvas.transform, "Controls Bar", new Vector2(0.64f, 0.91f), new Vector2(0.98f, 0.98f));
             suppliesText = CreateText(canvas.transform, "Supplies", new Vector2(0.035f, 0.925f), new Vector2(0.32f, 0.97f), 28, TextAnchor.MiddleLeft);
             populationText = CreateText(canvas.transform, "Population", new Vector2(0.20f, 0.925f), new Vector2(0.40f, 0.97f), 28, TextAnchor.MiddleLeft);
+            CreateText(canvas.transform, "Controls", new Vector2(0.66f, 0.915f), new Vector2(0.96f, 0.975f), 14, TextAnchor.MiddleRight).text =
+                "LEFT CLICK / DRAG Select   SHIFT Modify   RIGHT CLICK Order\nWASD / EDGE / MIDDLE DRAG Pan   WHEEL Zoom";
             CreatePanel(canvas.transform, "Bottom Panel", new Vector2(0.02f, 0.025f), new Vector2(0.98f, 0.15f));
             selectionText = CreateText(canvas.transform, "Selection", new Vector2(0.04f, 0.045f), new Vector2(0.34f, 0.13f), 22, TextAnchor.MiddleLeft);
             orderText = CreateText(canvas.transform, "Order", new Vector2(0.35f, 0.075f), new Vector2(0.57f, 0.13f), 20, TextAnchor.MiddleCenter);
+            queueText = CreateText(canvas.transform, "Production Queue", new Vector2(0.35f, 0.04f), new Vector2(0.57f, 0.075f), 15, TextAnchor.MiddleCenter);
             buildHouseButton = CreateButton(canvas.transform, "Build House", new Vector2(0.59f, 0.05f), new Vector2(0.70f, 0.125f),
                 "BUILD HOUSE  [H]", BeginHousePlacement);
             cancelBuildButton = CreateButton(canvas.transform, "Cancel Build", new Vector2(0.71f, 0.05f), new Vector2(0.82f, 0.125f),
                 "CANCEL BUILD  [X]", CancelSelectedConstruction);
-            CreateText(canvas.transform, "Controls", new Vector2(0.83f, 0.045f), new Vector2(0.96f, 0.13f), 16, TextAnchor.MiddleRight).text =
-                "LEFT CLICK / DRAG  Select\nSHIFT  Add/remove   RIGHT CLICK  Move / Gather\nWASD / EDGE / MIDDLE DRAG  Pan   WHEEL  Zoom";
+            trainSpearmenButton = CreateButton(canvas.transform, "Train Spearmen", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
+                $"SPEARMEN {tuning.formationCost} [S]", () => TryQueueFormation(FormationType.Spearmen));
+            trainArchersButton = CreateButton(canvas.transform, "Train Archers", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
+                $"ARCHERS {tuning.formationCost} [A]", () => TryQueueFormation(FormationType.Archers));
+            trainCavalryButton = CreateButton(canvas.transform, "Train Cavalry", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
+                $"CAVALRY {tuning.formationCost} [C]", () => TryQueueFormation(FormationType.Cavalry));
+            cancelTrainingButton = CreateButton(canvas.transform, "Cancel Training", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
+                "CANCEL [X]", () => CancelActiveTraining());
 
             var boxObject = new GameObject("Selection Box", typeof(RectTransform), typeof(Image));
             boxObject.transform.SetParent(canvas.transform, false);
@@ -271,7 +350,19 @@ namespace AshesOfRum
         {
             if (placementWorker != null) return;
             var mouse = Mouse.current;
-            if (mouse == null || !mouse.rightButton.wasPressedThisFrame || selectedWorkers.Count == 0) return;
+            if (mouse == null || !mouse.rightButton.wasPressedThisFrame) return;
+            if (selectedFormation != null)
+            {
+                if (!Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var formationHit, 200f)) return;
+                var hostile = formationHit.collider.GetComponentInParent<FormationAgent>();
+                if (selectedFormation.IssueFocus(hostile))
+                {
+                    SetOrderFeedback($"Focus {hostile.Type}");
+                    CreateOrderMarker(hostile.transform.position, new Color(1f, 0.22f, 0.1f));
+                }
+                return;
+            }
+            if (selectedWorkers.Count == 0) return;
             var availableWorkers = selectedWorkers.Where(worker => worker.CurrentConstruction == null).ToList();
             if (availableWorkers.Count == 0)
             {
@@ -304,6 +395,20 @@ namespace AshesOfRum
             {
                 if (Physics.Raycast(worldCamera.ScreenPointToRay(end), out var hit, 200f))
                 {
+                    var clickedFormation = hit.collider.GetComponentInParent<FormationAgent>();
+                    if (clickedFormation != null && clickedFormation.IsFriendly)
+                    {
+                        selectedFormation = clickedFormation;
+                        clickedFormation.SetSelected(true);
+                        SetOrderFeedback($"Selected {clickedFormation.Type}");
+                        return;
+                    }
+                    if (hit.collider.GetComponentInParent<Hisar>() != null)
+                    {
+                        hisarSelected = true;
+                        SetOrderFeedback("Hisar selected - train a formation");
+                        return;
+                    }
                     var worker = hit.collider.GetComponentInParent<WorkerAgent>();
                     if (worker != null) ToggleSelection(worker, modify);
                 }
@@ -315,8 +420,17 @@ namespace AshesOfRum
                     var screen = worldCamera.WorldToScreenPoint(worker.transform.position);
                     if (screen.z > 0f && dragRect.Contains(screen)) AddSelection(worker);
                 }
+                foreach (var formation in friendlyFormations)
+                {
+                    var screen = worldCamera.WorldToScreenPoint(formation.transform.position);
+                    if (screen.z <= 0f || !dragRect.Contains(screen)) continue;
+                    selectedFormation = formation;
+                    formation.SetSelected(true);
+                    break;
+                }
             }
-            SetOrderFeedback(selectedWorkers.Count == 0 ? "No workers selected" : $"Selected {selectedWorkers.Count} worker(s)");
+            if (selectedFormation == null && !hisarSelected)
+                SetOrderFeedback(selectedWorkers.Count == 0 ? "No selection" : $"Selected {selectedWorkers.Count} worker(s)");
         }
 
         private void ToggleSelection(WorkerAgent worker, bool modify)
@@ -336,6 +450,9 @@ namespace AshesOfRum
         {
             foreach (var worker in selectedWorkers) worker.SetSelected(false);
             selectedWorkers.Clear();
+            if (selectedFormation != null) selectedFormation.SetSelected(false);
+            selectedFormation = null;
+            hisarSelected = false;
         }
 
         private void UpdateHud()
@@ -343,14 +460,32 @@ namespace AshesOfRum
             if (suppliesText == null) return;
             suppliesText.text = $"SUPPLIES   {Supplies}";
             if (populationText != null) populationText.text = $"POPULATION   {PopulationUsed} / {PopulationCapacity}";
-            selectionText.text = selectedWorkers.Count == 0
-                ? "No workers selected"
-                : $"{selectedWorkers.Count} WORKER{(selectedWorkers.Count == 1 ? string.Empty : "S")}\n" +
-                  string.Join("  |  ", selectedWorkers.GroupBy(worker => worker.CurrentActivity)
-                      .Select(group => $"{group.Key}: {group.Count()}"));
+            selectionText.text = selectedFormation != null
+                ? $"{selectedFormation.Type.ToString().ToUpperInvariant()}\n{selectedFormation.MemberCount} / 8 MEMBERS"
+                : hisarSelected
+                    ? "KARASUNGUR HISAR\nSHARED PRODUCTION QUEUE"
+                    : selectedWorkers.Count == 0
+                        ? "No selection"
+                        : $"{selectedWorkers.Count} WORKER{(selectedWorkers.Count == 1 ? string.Empty : "S")}\n" +
+                          string.Join("  |  ", selectedWorkers.GroupBy(worker => worker.CurrentActivity)
+                              .Select(group => $"{group.Key}: {group.Count()}"));
+            queueText.text = productionQueue.Active.HasValue
+                ? $"QUEUE: {productionQueue.Active.Value.ToString().ToUpperInvariant()} {productionQueue.Progress:P0}  +{productionQueue.Count - 1}"
+                : "QUEUE: EMPTY";
             buildHouseButton.interactable = selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
                                             selectedWorkers[0].CurrentConstruction == null;
             cancelBuildButton.interactable = selectedWorkers.Any(worker => worker.CurrentConstruction != null);
+            buildHouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
+            cancelBuildButton.gameObject.SetActive(selectedWorkers.Count > 0);
+            trainSpearmenButton.gameObject.SetActive(hisarSelected);
+            trainArchersButton.gameObject.SetActive(hisarSelected);
+            trainCavalryButton.gameObject.SetActive(hisarSelected);
+            cancelTrainingButton.gameObject.SetActive(hisarSelected);
+            var canTrain = Supplies >= tuning.formationCost && PopulationCapacity - PopulationUsed >= tuning.formationPopulation;
+            trainSpearmenButton.interactable = canTrain;
+            trainArchersButton.interactable = canTrain;
+            trainCavalryButton.interactable = canTrain;
+            cancelTrainingButton.interactable = productionQueue.Count > 0;
         }
 
         private void HandleBuildInput()
@@ -361,6 +496,14 @@ namespace AshesOfRum
 
             if (placementWorker == null)
             {
+                if (hisarSelected)
+                {
+                    if (keyboard.sKey.wasPressedThisFrame) TryQueueFormation(FormationType.Spearmen);
+                    if (keyboard.aKey.wasPressedThisFrame) TryQueueFormation(FormationType.Archers);
+                    if (keyboard.cKey.wasPressedThisFrame) TryQueueFormation(FormationType.Cavalry);
+                    if (keyboard.xKey.wasPressedThisFrame) CancelActiveTraining();
+                    return;
+                }
                 if (keyboard.hKey.wasPressedThisFrame) BeginHousePlacement();
                 if (keyboard.xKey.wasPressedThisFrame) CancelSelectedConstruction();
                 return;
@@ -541,6 +684,35 @@ namespace AshesOfRum
         {
             population.AddCapacity(tuning.housePopulationCapacity);
             SetOrderFeedback($"House complete - population cap {PopulationCapacity}");
+        }
+
+        private void CompleteFormation(FormationType type)
+        {
+            var friendly = CreateFormation(type, true, new Vector3(-5f + friendlyFormations.Count * 5f, 0f, -1f));
+            friendlyFormations.Add(friendly);
+            SetOrderFeedback($"{type} ready - {friendly.MemberCount} members");
+            if (firstEnemyDeployed) return;
+            firstEnemyDeployed = true;
+            var enemy = CreateFormation(FormationType.Spearmen, false, new Vector3(0f, 0f, 17f));
+            enemyFormations.Add(enemy);
+            SetOrderFeedback($"Enemy Spearmen sighted - Archers counter Spearmen");
+        }
+
+        private FormationAgent CreateFormation(FormationType type, bool friendly, Vector3 position)
+        {
+            var root = new GameObject($"{(friendly ? "Karasungur" : "Alazhan")} {type} Formation");
+            root.transform.position = position;
+            var formation = root.AddComponent<FormationAgent>();
+            formation.Initialize(type, friendly, tuning,
+                friendly ? amount => population.Release(amount) : null,
+                destroyed =>
+                {
+                    friendlyFormations.Remove(destroyed);
+                    enemyFormations.Remove(destroyed);
+                    if (selectedFormation == destroyed) selectedFormation = null;
+                    SetOrderFeedback(destroyed.IsFriendly ? "Friendly formation lost" : "Enemy formation defeated");
+                });
+            return formation;
         }
 
         private void TintPreview(Color color)
