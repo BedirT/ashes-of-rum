@@ -39,6 +39,13 @@ namespace AshesOfRum
         private WorkerAgent placementWorker;
         private bool placementValid;
         private Vector3 placementPosition;
+        private NavMeshSurface navMeshSurface;
+        private Vector3 lastRouteCandidate = new(float.PositiveInfinity, 0f, float.PositiveInfinity);
+        private int lastRouteHouseCount = -1;
+        private bool lastRouteResult;
+
+        private static readonly Vector3 RouteStart = new(0f, 0f, -4f);
+        private static readonly Vector3 RouteEnd = new(0f, 0f, 25f);
 
         public int Supplies => wallet?.Supplies ?? 0;
         public int StartingSupplies => tuning?.startingSupplies ?? 0;
@@ -136,10 +143,10 @@ namespace AshesOfRum
         private void BuildNavMesh()
         {
             var ground = GameObject.Find("Bootstrap Ground");
-            var surface = ground.GetComponent<NavMeshSurface>() ?? ground.AddComponent<NavMeshSurface>();
-            surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
-            surface.collectObjects = CollectObjects.All;
-            surface.BuildNavMesh();
+            navMeshSurface = ground.GetComponent<NavMeshSurface>() ?? ground.AddComponent<NavMeshSurface>();
+            navMeshSurface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
+            navMeshSurface.collectObjects = CollectObjects.All;
+            navMeshSurface.BuildNavMesh();
         }
 
         private Hisar CreateHisar()
@@ -437,25 +444,72 @@ namespace AshesOfRum
                 reason = "Invalid - outside buildable ground";
                 return false;
             }
+            var overlaps = Physics.OverlapBox(position + Vector3.up, new Vector3(2f, 0.9f, 2f));
+            if (overlaps.Any(item => item.gameObject.name != "Bootstrap Ground"))
+            {
+                reason = "Invalid - position occupied";
+                return false;
+            }
             if (!worker.CanReach(position + Vector3.back * 2.4f))
             {
                 reason = "Invalid - worker cannot reach";
                 return false;
             }
-            var overlaps = Physics.OverlapBox(position + Vector3.up, new Vector3(2f, 0.9f, 2f));
-            if (overlaps.Any(item => item.gameObject.name != "Bootstrap Ground" &&
-                                     item.GetComponentInParent<WorkerAgent>() == null))
-            {
-                reason = "Invalid - position occupied";
-                return false;
-            }
-            if (!HousePlacementRules.PreservesRoute(houses.Select(house => house.transform.position).ToList(), position))
+            if (!PreservesNavMeshRoute(position))
             {
                 reason = "Invalid - must preserve a route";
                 return false;
             }
             reason = null;
             return true;
+        }
+
+        private bool PreservesNavMeshRoute(Vector3 candidatePosition)
+        {
+            if (candidatePosition == lastRouteCandidate && houses.Count == lastRouteHouseCount)
+                return lastRouteResult;
+
+            var candidate = new GameObject("House Route Validation");
+            candidate.transform.position = candidatePosition;
+            var collider = candidate.AddComponent<BoxCollider>();
+            collider.center = new Vector3(0f, 1f, 0f);
+            collider.size = new Vector3(4f, 2f, 4f);
+
+            var ignoredColliders = workers.SelectMany(worker => worker.GetComponentsInChildren<Collider>())
+                .Concat(Caches.SelectMany(cache => cache.GetComponentsInChildren<Collider>()))
+                .Where(item => item.enabled)
+                .ToList();
+            foreach (var ignoredCollider in ignoredColliders) ignoredCollider.enabled = false;
+
+            try
+            {
+                navMeshSurface.BuildNavMesh();
+                var path = new NavMeshPath();
+                lastRouteResult = TrySampleRouteEndpoint(RouteStart, out var start) &&
+                                  TrySampleRouteEndpoint(RouteEnd, out var end) &&
+                                  NavMesh.CalculatePath(start, end, NavMesh.AllAreas, path) &&
+                                  path.status == NavMeshPathStatus.PathComplete;
+                lastRouteCandidate = candidatePosition;
+                lastRouteHouseCount = houses.Count;
+                return lastRouteResult;
+            }
+            finally
+            {
+                DestroyImmediate(candidate);
+                navMeshSurface.BuildNavMesh();
+                foreach (var ignoredCollider in ignoredColliders) ignoredCollider.enabled = true;
+            }
+        }
+
+        private static bool TrySampleRouteEndpoint(Vector3 position, out Vector3 sampledPosition)
+        {
+            if (NavMesh.SamplePosition(position, out var hit, 3f, NavMesh.AllAreas))
+            {
+                sampledPosition = hit.position;
+                return true;
+            }
+            sampledPosition = default;
+            return false;
         }
 
         private HouseBuilding CreateHouse(Vector3 position)

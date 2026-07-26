@@ -41,30 +41,13 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
-        public void HousePlacement_SnapsAndPreservesAnOpenRoute()
+        public void HousePlacement_SnapsAndChecksBuildableBounds()
         {
             var snapped = HousePlacementRules.Snap(new Vector3(7.4f, 2f, 9.6f));
 
             Assert.That(snapped, Is.EqualTo(new Vector3(7f, 0f, 10f)));
             Assert.That(HousePlacementRules.IsInsidePlayableBounds(snapped), Is.True);
             Assert.That(HousePlacementRules.IsInsidePlayableBounds(new Vector3(21f, 0f, 10f)), Is.False);
-            Assert.That(HousePlacementRules.PreservesRoute(
-                new[] { new Vector3(-8f, 0f, 10f), new Vector3(8f, 0f, 10f) }, snapped), Is.True);
-        }
-
-        [Test]
-        public void HousePlacement_RejectsACompleteWallOff()
-        {
-            var existing = new[]
-            {
-                new Vector3(-20f, 0f, 10f), new Vector3(-16f, 0f, 10f),
-                new Vector3(-12f, 0f, 10f), new Vector3(-8f, 0f, 10f),
-                new Vector3(-4f, 0f, 10f), new Vector3(4f, 0f, 10f),
-                new Vector3(8f, 0f, 10f), new Vector3(12f, 0f, 10f),
-                new Vector3(16f, 0f, 10f), new Vector3(20f, 0f, 10f)
-            };
-
-            Assert.That(HousePlacementRules.PreservesRoute(existing, new Vector3(0f, 0f, 10f)), Is.False);
         }
 
         [Test]

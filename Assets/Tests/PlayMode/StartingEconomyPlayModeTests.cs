@@ -2,6 +2,7 @@ using System.Collections;
 using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
@@ -200,6 +201,48 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator HousePlacement_WorkerOccupiedFootprintsDoNotSpendSupplies()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var assignedWorker = economy.Workers[0];
+            var otherWorker = economy.Workers[1];
+            Assert.That(assignedWorker.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, 4f)), Is.True);
+            Assert.That(otherWorker.GetComponent<NavMeshAgent>().Warp(new Vector3(5f, 0f, 4f)), Is.True);
+            Physics.SyncTransforms();
+
+            Assert.That(economy.TryPlaceHouse(assignedWorker, assignedWorker.transform.position), Is.False);
+            Assert.That(economy.TryPlaceHouse(assignedWorker, otherWorker.transform.position), Is.False);
+
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.Houses, Is.Empty);
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("POSITION OCCUPIED"));
+        }
+
+        [UnityTest]
+        public IEnumerator HousePlacement_LastNavigableRouteIsRejectedByNavMesh()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            CreateRouteBlocker("Left Route Blocker", new Vector3(-13.6f, 1f, 10f), new Vector3(22.8f, 2f, 4f));
+            CreateRouteBlocker("Right Route Blocker", new Vector3(13.6f, 1f, 10f), new Vector3(22.8f, 2f, 4f));
+            yield return null;
+            yield return null;
+
+            var worker = economy.Workers[0];
+            Assert.That(worker.CanReach(new Vector3(0f, 0f, 20f)), Is.True,
+                "The worker must be able to navigate through the final open gap before placement.");
+
+            Assert.That(economy.TryPlaceHouse(worker, new Vector3(0f, 0f, 10f)), Is.False);
+
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.Houses, Is.Empty);
+            Assert.That(GameObject.Find("Order").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("MUST PRESERVE A ROUTE"));
+        }
+
+        [UnityTest]
         public IEnumerator Hud_ShowsPopulationAndClickableBuildCommands()
         {
             yield return LoadEconomy();
@@ -231,6 +274,18 @@ namespace AshesOfRum.Tests
             var deadline = Time.realtimeSinceStartup + TimeoutSeconds;
             while (!condition() && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.That(condition(), Is.True, $"Condition did not become true within {TimeoutSeconds} seconds.");
+        }
+
+        private static void CreateRouteBlocker(string name, Vector3 position, Vector3 scale)
+        {
+            var blocker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            blocker.name = name;
+            blocker.transform.position = position;
+            blocker.transform.localScale = scale;
+            var obstacle = blocker.AddComponent<NavMeshObstacle>();
+            obstacle.shape = NavMeshObstacleShape.Box;
+            obstacle.carving = true;
+            obstacle.carveOnlyStationary = false;
         }
     }
 }
