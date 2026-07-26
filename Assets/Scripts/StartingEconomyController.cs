@@ -287,7 +287,9 @@ namespace AshesOfRum
             if (parent != null) result.transform.SetParent(parent, false);
             result.transform.localPosition = localPosition;
             result.transform.localScale = scale;
-            result.GetComponent<Renderer>().material.color = color;
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            var material = new Material(shader) { color = color };
+            result.GetComponent<Renderer>().sharedMaterial = material;
             return result;
         }
 

@@ -47,6 +47,7 @@ namespace AshesOfRum
                     yield return null;
             }
             var economyCompleted = economyStarted && economy.Supplies > economy.StartingSupplies;
+            yield return null;
 
             if (graphical)
             {
