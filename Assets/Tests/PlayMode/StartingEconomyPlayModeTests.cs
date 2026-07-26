@@ -820,6 +820,48 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator SelectionAndOrderInput_CoalescedClicksAndHudOriginDragRemainLossless()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var mouse = InputSystem.AddDevice<Mouse>();
+            mouse.MakeCurrent();
+            InputSystem.QueueStateEvent(mouse, new MouseState());
+            InputSystem.Update();
+
+            var worker = economy.Workers[0];
+            economy.SelectOnly(worker);
+            var destination = new Vector3(6f, 0f, 1f);
+            var destinationClick = (Vector2)Camera.main.WorldToScreenPoint(destination);
+            QueueCoalescedClick(mouse, destinationClick, MouseButton.Left);
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            Assert.That(worker.IsSelected, Is.False,
+                "A complete click received within one input update must still clear the previous selection.");
+
+            economy.SelectOnly(worker);
+            QueueCoalescedClick(mouse, destinationClick, MouseButton.Right);
+            InvokePrivateMethod(economy, "HandleOrderInput");
+            Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.Moving),
+                "A complete right click received within one input update must still issue its order.");
+
+            var hudOrigin = (Vector2)GameObject.Find("Build House").GetComponent<RectTransform>().position;
+            var battlefieldEnd = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = hudOrigin }.WithButton(MouseButton.Left));
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = battlefieldEnd }.WithButton(MouseButton.Left));
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = battlefieldEnd });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+
+            Assert.That(worker.IsSelected, Is.True,
+                "A press that starts on the HUD must remain consumed after the pointer enters the battlefield.");
+            InputSystem.RemoveDevice(mouse);
+        }
+
+        [UnityTest]
         public IEnumerator FormationGroups_PreserveLayoutRecallAndApplyCommandsTogether()
         {
             yield return LoadEconomy();
@@ -1031,7 +1073,17 @@ namespace AshesOfRum.Tests
             Assert.That(remoteAttacker.IssueFocus(hostile), Is.True);
             Assert.That(hostile.Target, Is.Null,
                 "A scout revealing a hostile must not reveal a remote attacker to the hostile side.");
+
+            var remoteHealth = remoteAttacker.TotalMemberHealth;
+            yield return WaitUntil(() => hostile.Target == remoteAttacker);
+            yield return WaitUntil(() => remoteAttacker.TotalMemberHealth < remoteHealth);
+            Assert.That(hostile.LastAttackMemberCount, Is.GreaterThan(0),
+                "The hostile must retry retaliation after the focused attacker enters its vision and return fire.");
             remoteAttacker.IssueStop();
+            hostile.IssueStop();
+            Assert.That(remoteAttacker.GetComponent<NavMeshAgent>().Warp(new Vector3(-5f, 0f, -5f)), Is.True);
+            Assert.That(hostile.GetComponent<NavMeshAgent>().Warp(new Vector3(0f, 0f, 17f)), Is.True);
+            economy.FogOfWar.RefreshNow();
 
             Assert.That(scout.IssueFocus(hostile), Is.True);
             Assert.That(hostile.Target, Is.SameAs(scout));
@@ -1164,6 +1216,16 @@ namespace AshesOfRum.Tests
             Assert.That(buttonControl.isPressed, Is.False);
             InvokePrivateMethod(economy, handler);
             yield break;
+        }
+
+        private static void QueueCoalescedClick(Mouse mouse, Vector2 position, MouseButton button)
+        {
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = position }.WithButton(button));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = position });
+            InputSystem.Update();
+            Assert.That(Mouse.current, Is.SameAs(mouse));
+            Assert.That(button == MouseButton.Left ? mouse.leftButton.isPressed : mouse.rightButton.isPressed,
+                Is.False);
         }
 
         private static IEnumerator DragBattlefieldSelection(StartingEconomyController economy, Mouse mouse,

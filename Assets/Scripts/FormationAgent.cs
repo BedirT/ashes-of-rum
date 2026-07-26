@@ -169,6 +169,7 @@ namespace AshesOfRum
             }
             if (target != null)
             {
+                target.TryRetaliate(this);
                 MoveOrAttackTarget();
                 return;
             }

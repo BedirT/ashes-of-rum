@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
@@ -27,6 +28,8 @@ namespace AshesOfRum
         private readonly List<FormationAgent> enemyFormations = new();
         private readonly List<FormationAgent> selectedFormations = new();
         private readonly Dictionary<int, ControlGroup> controlGroups = new();
+        private readonly Queue<PointerButtonTransition> selectionTransitions = new();
+        private readonly Queue<PointerPress> orderPresses = new();
         [SerializeField] private EconomyTuning tuning;
         private EconomyWallet wallet;
         private Hisar hisar;
@@ -73,7 +76,6 @@ namespace AshesOfRum
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
         private bool controlGroupKeyHandled;
-        private bool orderButtonHandled;
 
         private static readonly Key[] ControlGroupKeys =
         {
@@ -127,6 +129,7 @@ namespace AshesOfRum
             };
             CreateWorkers();
             CreateHud();
+            InputSystem.onEvent += QueuePointerEvent;
             CreateFogOfWar();
             SetOrderFeedback("Ready - select workers to begin");
         }
@@ -136,10 +139,17 @@ namespace AshesOfRum
             UpdateHud();
             HandleBuildInput();
             HandleControlGroupInput();
-            if (!HandleFormationCommandInput()) HandleSelectionInput();
+            HandleFormationCommandInput();
+            HandleSelectionInput();
             HandleOrderInput();
             var completed = productionQueue.Advance(Time.deltaTime);
             if (completed.HasValue) CompleteFormation(completed.Value);
+        }
+
+        private void OnDestroy()
+        {
+            if (fogOfWar != null) fogOfWar.HostileFirstRevealed -= HandleHostileFirstRevealed;
+            InputSystem.onEvent -= QueuePointerEvent;
         }
 
         public void SelectOnly(WorkerAgent worker)
@@ -501,40 +511,65 @@ namespace AshesOfRum
 
         private void HandleSelectionInput()
         {
-            if (placementWorker != null) return;
-            var mouse = Mouse.current;
-            if (mouse == null) return;
-            var position = mouse.position.ReadValue();
-            if (!selecting)
+            while (selectionTransitions.Count > 0)
             {
-                if (!mouse.leftButton.isPressed || position.y < Screen.height * 0.16f ||
-                    position.y > Screen.height * 0.9f || IsPointerOverHud(position)) return;
-                selecting = true;
-                selectionStart = position;
-                selectionBox.gameObject.SetActive(true);
+                var transition = selectionTransitions.Dequeue();
+                if (transition.Pressed) BeginSelection(transition);
+                else CompleteSelection(transition);
             }
-            if (selecting && mouse.leftButton.isPressed) UpdateSelectionBox(selectionStart, position);
-            if (!selecting || mouse.leftButton.isPressed) return;
+
+            var mouse = Mouse.current;
+            if (!selecting) return;
+            if (mouse != null && mouse.leftButton.isPressed)
+            {
+                UpdateSelectionBox(selectionStart, mouse.position.ReadValue());
+                return;
+            }
             selecting = false;
             selectionBox.gameObject.SetActive(false);
-            if (IsPointerOverHud(position)) return;
-            ApplySelection(selectionStart, position, Keyboard.current?.shiftKey.isPressed == true);
+        }
+
+        private void BeginSelection(PointerButtonTransition transition)
+        {
+            if (selecting)
+            {
+                selecting = false;
+                selectionBox.gameObject.SetActive(false);
+            }
+            var position = transition.Position;
+            if (transition.Blocked || position.y < Screen.height * 0.16f ||
+                position.y > Screen.height * 0.9f || IsPointerOverHud(position)) return;
+            selecting = true;
+            selectionStart = position;
+            selectionBox.gameObject.SetActive(true);
+            UpdateSelectionBox(selectionStart, position);
+        }
+
+        private void CompleteSelection(PointerButtonTransition transition)
+        {
+            if (!selecting) return;
+            selecting = false;
+            selectionBox.gameObject.SetActive(false);
+            if (transition.Blocked || placementWorker != null || awaitingAttackMove ||
+                IsPointerOverHud(transition.Position)) return;
+            ApplySelection(selectionStart, transition.Position, transition.Modify);
         }
 
         private void HandleOrderInput()
         {
-            if (placementWorker != null || awaitingAttackMove) return;
-            var mouse = Mouse.current;
-            if (mouse == null) return;
-            if (!mouse.rightButton.isPressed)
+            while (orderPresses.Count > 0)
             {
-                orderButtonHandled = false;
-                return;
+                var press = orderPresses.Dequeue();
+                if (press.Blocked || placementWorker != null || awaitingAttackMove ||
+                    IsPointerOverHud(press.Position)) continue;
+                ApplyOrder(press.Position);
             }
-            if (orderButtonHandled) return;
-            orderButtonHandled = true;
+        }
+
+        private void ApplyOrder(Vector2 position)
+        {
             if (selectedWorkers.Count == 0 && selectedFormations.Count == 0) return;
-            if (!Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 200f)) return;
+            if (!Physics.Raycast(worldCamera.ScreenPointToRay(position), out var hit, 200f)) return;
             var hostile = hit.collider.GetComponentInParent<FormationAgent>();
             if (hostile != null && !hostile.IsFriendly && selectedFormations.Count > 0)
             {
@@ -560,6 +595,28 @@ namespace AshesOfRum
                 return;
             }
             IssueMoveForSelected(hit.point);
+        }
+
+        private void QueuePointerEvent(InputEventPtr eventPtr, InputDevice device)
+        {
+            if (device is not Mouse mouse ||
+                (!eventPtr.IsA<StateEvent>() && !eventPtr.IsA<DeltaStateEvent>())) return;
+
+            var position = mouse.position.ReadValue();
+            if (mouse.position.ReadValueFromEvent(eventPtr, out var eventPosition)) position = eventPosition;
+            var blocked = placementWorker != null || awaitingAttackMove;
+            if (mouse.leftButton.ReadValueFromEvent(eventPtr, out var leftValue))
+            {
+                var leftPressed = leftValue >= InputSystem.settings.defaultButtonPressPoint;
+                if (!mouse.leftButton.isPressed && leftPressed)
+                    selectionTransitions.Enqueue(new PointerButtonTransition(true, position, false, blocked));
+                else if (mouse.leftButton.isPressed && !leftPressed)
+                    selectionTransitions.Enqueue(new PointerButtonTransition(false, position,
+                        Keyboard.current?.shiftKey.isPressed == true, blocked));
+            }
+            if (mouse.rightButton.ReadValueFromEvent(eventPtr, out var rightValue) &&
+                !mouse.rightButton.isPressed && rightValue >= InputSystem.settings.defaultButtonPressPoint)
+                orderPresses.Enqueue(new PointerPress(position, blocked));
         }
 
         private void ApplySelection(Vector2 start, Vector2 end, bool modify)
@@ -1196,6 +1253,34 @@ namespace AshesOfRum
 
             public List<WorkerAgent> Workers { get; }
             public List<FormationAgent> Formations { get; }
+        }
+
+        private readonly struct PointerButtonTransition
+        {
+            public PointerButtonTransition(bool pressed, Vector2 position, bool modify, bool blocked)
+            {
+                Pressed = pressed;
+                Position = position;
+                Modify = modify;
+                Blocked = blocked;
+            }
+
+            public bool Pressed { get; }
+            public Vector2 Position { get; }
+            public bool Modify { get; }
+            public bool Blocked { get; }
+        }
+
+        private readonly struct PointerPress
+        {
+            public PointerPress(Vector2 position, bool blocked)
+            {
+                Position = position;
+                Blocked = blocked;
+            }
+
+            public Vector2 Position { get; }
+            public bool Blocked { get; }
         }
 
         private void TintPreview(Color color)
