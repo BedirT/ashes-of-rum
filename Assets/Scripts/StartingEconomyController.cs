@@ -25,6 +25,8 @@ namespace AshesOfRum
         private readonly List<ConstructibleBuilding> buildings = new();
         private readonly List<FormationAgent> friendlyFormations = new();
         private readonly List<FormationAgent> enemyFormations = new();
+        private readonly List<FormationAgent> selectedFormations = new();
+        private readonly Dictionary<int, ControlGroup> controlGroups = new();
         [SerializeField] private EconomyTuning tuning;
         private EconomyWallet wallet;
         private Hisar hisar;
@@ -47,9 +49,12 @@ namespace AshesOfRum
         private Button trainArchersButton;
         private Button trainCavalryButton;
         private Button cancelTrainingButton;
+        private Button attackMoveButton;
+        private Button stopFormationsButton;
         private Text queueText;
+        private Canvas hudCanvas;
         private FormationProductionQueue productionQueue;
-        private FormationAgent selectedFormation;
+        private FogOfWarSystem fogOfWar;
         private ConstructibleBuilding selectedBuilding;
         private bool hisarSelected;
         private bool firstEnemyDeployed;
@@ -64,6 +69,19 @@ namespace AshesOfRum
         private int lastRouteVersion = -1;
         private bool lastRouteResult;
         private ConstructibleBuilding demolitionCandidate;
+        private bool awaitingAttackMove;
+        private FormationAgent lastClickedFormation;
+        private float lastFormationClickTime = float.NegativeInfinity;
+        private bool controlGroupKeyHandled;
+        private float lastControlGroupModifierTime = float.NegativeInfinity;
+
+        private const float ControlGroupModifierGraceSeconds = 0.75f;
+
+        private static readonly Key[] ControlGroupKeys =
+        {
+            Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5,
+            Key.Digit6, Key.Digit7, Key.Digit8, Key.Digit9
+        };
 
         private static readonly Vector3 RouteStart = new(0f, 0f, -4f);
         private static readonly Vector3 RouteEnd = new(0f, 0f, 25f);
@@ -80,6 +98,8 @@ namespace AshesOfRum
         public IReadOnlyList<ConstructibleBuilding> Watchtowers => watchtowers;
         public IReadOnlyList<FormationAgent> FriendlyFormations => friendlyFormations;
         public IReadOnlyList<FormationAgent> EnemyFormations => enemyFormations;
+        public IReadOnlyList<FormationAgent> SelectedFormations => selectedFormations;
+        public FogOfWarSystem FogOfWar => fogOfWar;
         public int ProductionQueueCount => productionQueue?.Count ?? 0;
         public IReadOnlyList<ResourceCache> Caches { get; private set; }
         public string LastEconomyNotification { get; private set; }
@@ -109,6 +129,7 @@ namespace AshesOfRum
             };
             CreateWorkers();
             CreateHud();
+            CreateFogOfWar();
             SetOrderFeedback("Ready - select workers to begin");
         }
 
@@ -116,7 +137,8 @@ namespace AshesOfRum
         {
             UpdateHud();
             HandleBuildInput();
-            HandleSelectionInput();
+            HandleControlGroupInput();
+            if (!HandleFormationCommandInput()) HandleSelectionInput();
             HandleOrderInput();
             var completed = productionQueue.Advance(Time.deltaTime);
             if (completed.HasValue) CompleteFormation(completed.Value);
@@ -176,9 +198,59 @@ namespace AshesOfRum
         {
             ClearSelection();
             if (formation == null || !formation.IsFriendly) return;
-            selectedFormation = formation;
-            formation.SetSelected(true);
+            AddSelectedFormation(formation);
             UpdateHud();
+        }
+
+        public void SelectFormationsForAutomation(IEnumerable<FormationAgent> formations)
+        {
+            ClearSelection();
+            foreach (var formation in formations) AddSelectedFormation(formation);
+            UpdateHud();
+        }
+
+        public void AssignControlGroup(int number)
+        {
+            if (number < 1 || number > 9) return;
+            controlGroups[number] = new ControlGroup(selectedWorkers, selectedFormations);
+            SetOrderFeedback($"Control group {number} assigned - {selectedWorkers.Count} workers, " +
+                             $"{selectedFormations.Count} formations");
+        }
+
+        public bool RecallControlGroup(int number)
+        {
+            if (!controlGroups.TryGetValue(number, out var group))
+            {
+                SetOrderFeedback($"Control group {number} is empty");
+                return false;
+            }
+            ClearSelection();
+            foreach (var worker in group.Workers.Where(worker => worker != null && workers.Contains(worker)))
+                AddSelection(worker);
+            foreach (var formation in group.Formations.Where(formation => formation != null &&
+                         formation.MemberCount > 0 && friendlyFormations.Contains(formation)))
+                AddSelectedFormation(formation);
+            SetOrderFeedback($"Control group {number} recalled - {selectedWorkers.Count} workers, " +
+                             $"{selectedFormations.Count} formations");
+            UpdateHud();
+            return selectedWorkers.Count > 0 || selectedFormations.Count > 0;
+        }
+
+        public int ControlGroupSize(int number) => controlGroups.TryGetValue(number, out var group)
+            ? group.Workers.Count(worker => worker != null && workers.Contains(worker)) +
+              group.Formations.Count(formation => formation != null && formation.MemberCount > 0 &&
+                                                  friendlyFormations.Contains(formation))
+            : 0;
+
+        public void IssueMoveForSelected(Vector3 destination) => IssueFormationGroupOrder(destination, false);
+
+        public void IssueAttackMoveForSelected(Vector3 destination) => IssueFormationGroupOrder(destination, true);
+
+        public void StopSelectedFormations()
+        {
+            foreach (var formation in selectedFormations) formation.IssueStop();
+            awaitingAttackMove = false;
+            SetOrderFeedback($"Stop - {selectedFormations.Count} formation(s)");
         }
 
         public bool IssueFocusForSmoke(FormationAgent friendly, FormationAgent hostile)
@@ -187,6 +259,13 @@ namespace AshesOfRum
             var issued = friendly.IssueFocus(hostile);
             if (issued) SetOrderFeedback($"Focus {hostile.Type}");
             return issued;
+        }
+
+        public FormationAgent DeployEnemyForAutomation(FormationType type, Vector3 position)
+        {
+            var enemy = CreateFormation(type, false, position);
+            enemyFormations.Add(enemy);
+            return enemy;
         }
 
         public bool TryPlaceHouse(WorkerAgent worker, Vector3 position)
@@ -340,43 +419,47 @@ namespace AshesOfRum
         {
             var canvasObject = new GameObject("RTS HUD", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasObject.transform.SetParent(transform);
-            var canvas = canvasObject.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            hudCanvas = canvasObject.GetComponent<Canvas>();
+            hudCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
             var scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
 
-            CreatePanel(canvas.transform, "Top Bar", new Vector2(0.02f, 0.91f), new Vector2(0.34f, 0.98f));
-            CreatePanel(canvas.transform, "Controls Bar", new Vector2(0.64f, 0.91f), new Vector2(0.98f, 0.98f));
-            suppliesText = CreateText(canvas.transform, "Supplies", new Vector2(0.035f, 0.925f), new Vector2(0.32f, 0.97f), 28, TextAnchor.MiddleLeft);
-            populationText = CreateText(canvas.transform, "Population", new Vector2(0.20f, 0.925f), new Vector2(0.40f, 0.97f), 28, TextAnchor.MiddleLeft);
-            CreateText(canvas.transform, "Controls", new Vector2(0.66f, 0.915f), new Vector2(0.96f, 0.975f), 14, TextAnchor.MiddleRight).text =
-                "LEFT CLICK / DRAG Select   SHIFT Modify   RIGHT CLICK Order\nWASD / EDGE / MIDDLE DRAG Pan   WHEEL Zoom";
-            CreatePanel(canvas.transform, "Bottom Panel", new Vector2(0.02f, 0.025f), new Vector2(0.98f, 0.15f));
-            selectionText = CreateText(canvas.transform, "Selection", new Vector2(0.04f, 0.045f), new Vector2(0.34f, 0.13f), 22, TextAnchor.MiddleLeft);
-            orderText = CreateText(canvas.transform, "Order", new Vector2(0.35f, 0.075f), new Vector2(0.57f, 0.13f), 20, TextAnchor.MiddleCenter);
-            queueText = CreateText(canvas.transform, "Production Queue", new Vector2(0.35f, 0.04f), new Vector2(0.57f, 0.075f), 15, TextAnchor.MiddleCenter);
-            buildHouseButton = CreateButton(canvas.transform, "Build House", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
+            CreatePanel(hudCanvas.transform, "Top Bar", new Vector2(0.02f, 0.91f), new Vector2(0.34f, 0.98f));
+            CreatePanel(hudCanvas.transform, "Controls Bar", new Vector2(0.64f, 0.91f), new Vector2(0.98f, 0.98f));
+            suppliesText = CreateText(hudCanvas.transform, "Supplies", new Vector2(0.035f, 0.925f), new Vector2(0.32f, 0.97f), 28, TextAnchor.MiddleLeft);
+            populationText = CreateText(hudCanvas.transform, "Population", new Vector2(0.20f, 0.925f), new Vector2(0.40f, 0.97f), 28, TextAnchor.MiddleLeft);
+            CreateText(hudCanvas.transform, "Controls", new Vector2(0.66f, 0.915f), new Vector2(0.96f, 0.975f), 14, TextAnchor.MiddleRight).text =
+                "LEFT CLICK / DRAG Select   SHIFT Modify   CTRL+1-9 Group   1-9 Recall\nRIGHT CLICK Order   WASD / EDGE / MIDDLE DRAG Pan   WHEEL Zoom";
+            CreatePanel(hudCanvas.transform, "Bottom Panel", new Vector2(0.02f, 0.025f), new Vector2(0.98f, 0.15f));
+            selectionText = CreateText(hudCanvas.transform, "Selection", new Vector2(0.04f, 0.045f), new Vector2(0.34f, 0.13f), 22, TextAnchor.MiddleLeft);
+            orderText = CreateText(hudCanvas.transform, "Order", new Vector2(0.35f, 0.075f), new Vector2(0.57f, 0.13f), 20, TextAnchor.MiddleCenter);
+            queueText = CreateText(hudCanvas.transform, "Production Queue", new Vector2(0.35f, 0.04f), new Vector2(0.57f, 0.075f), 15, TextAnchor.MiddleCenter);
+            buildHouseButton = CreateButton(hudCanvas.transform, "Build House", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
                 $"HOUSE {tuning.houseCost} [H]", () => BeginBuildingPlacement(BuildingType.House));
-            buildStorehouseButton = CreateButton(canvas.transform, "Build Storehouse", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
+            buildStorehouseButton = CreateButton(hudCanvas.transform, "Build Storehouse", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
                 $"STOREHOUSE {tuning.storehouseCost} [R]", () => BeginBuildingPlacement(BuildingType.Storehouse));
-            buildWatchtowerButton = CreateButton(canvas.transform, "Build Watchtower", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
+            buildWatchtowerButton = CreateButton(hudCanvas.transform, "Build Watchtower", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
                 $"WATCHTOWER {tuning.watchtowerCost} [T]", () => BeginBuildingPlacement(BuildingType.Watchtower));
-            cancelBuildButton = CreateButton(canvas.transform, "Cancel Build", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
+            cancelBuildButton = CreateButton(hudCanvas.transform, "Cancel Build", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
                 "CANCEL BUILD  [X]", CancelSelectedConstruction);
-            demolishButton = CreateButton(canvas.transform, "Demolish Building", new Vector2(0.78f, 0.05f), new Vector2(0.98f, 0.125f),
+            demolishButton = CreateButton(hudCanvas.transform, "Demolish Building", new Vector2(0.78f, 0.05f), new Vector2(0.98f, 0.125f),
                 "DEMOLISH [X]", () => RequestDemolition());
-            trainSpearmenButton = CreateButton(canvas.transform, "Train Spearmen", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
+            trainSpearmenButton = CreateButton(hudCanvas.transform, "Train Spearmen", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
                 $"SPEARMEN {tuning.formationCost} [S]", () => TryQueueFormation(FormationType.Spearmen));
-            trainArchersButton = CreateButton(canvas.transform, "Train Archers", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
+            trainArchersButton = CreateButton(hudCanvas.transform, "Train Archers", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
                 $"ARCHERS {tuning.formationCost} [A]", () => TryQueueFormation(FormationType.Archers));
-            trainCavalryButton = CreateButton(canvas.transform, "Train Cavalry", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
+            trainCavalryButton = CreateButton(hudCanvas.transform, "Train Cavalry", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
                 $"CAVALRY {tuning.formationCost} [C]", () => TryQueueFormation(FormationType.Cavalry));
-            cancelTrainingButton = CreateButton(canvas.transform, "Cancel Training", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
+            cancelTrainingButton = CreateButton(hudCanvas.transform, "Cancel Training", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
                 "CANCEL [X]", () => CancelActiveTraining());
+            attackMoveButton = CreateButton(hudCanvas.transform, "Attack Move", new Vector2(0.68f, 0.05f), new Vector2(0.83f, 0.125f),
+                "ATTACK-MOVE [F]", BeginAttackMoveTargeting);
+            stopFormationsButton = CreateButton(hudCanvas.transform, "Stop Formations", new Vector2(0.83f, 0.05f), new Vector2(0.98f, 0.125f),
+                "STOP [G]", StopSelectedFormations);
 
             var boxObject = new GameObject("Selection Box", typeof(RectTransform), typeof(Image));
-            boxObject.transform.SetParent(canvas.transform, false);
+            boxObject.transform.SetParent(hudCanvas.transform, false);
             selectionBox = boxObject.GetComponent<Image>();
             selectionBox.color = new Color(0.15f, 0.65f, 1f, 0.22f);
             selectionBoxTransform = boxObject.GetComponent<RectTransform>();
@@ -385,6 +468,15 @@ namespace AshesOfRum
             var eventSystemObject = new GameObject("EventSystem", typeof(EventSystem));
             eventSystemObject.transform.SetParent(transform);
             eventSystemObject.AddComponent<InputSystemUIInputModule>().AssignDefaultActions();
+        }
+
+        private void CreateFogOfWar()
+        {
+            fogOfWar = gameObject.AddComponent<FogOfWarSystem>();
+            fogOfWar.Initialize(tuning.sightRadius, worldCamera.GetComponent<RtsCameraController>(), hudCanvas.transform);
+            fogOfWar.RegisterFriendly(hisar.transform);
+            foreach (var worker in workers) fogOfWar.RegisterFriendly(worker.transform);
+            fogOfWar.RefreshNow();
         }
 
         private void HandleSelectionInput()
@@ -409,20 +501,21 @@ namespace AshesOfRum
 
         private void HandleOrderInput()
         {
-            if (placementWorker != null) return;
+            if (placementWorker != null || awaitingAttackMove) return;
             var mouse = Mouse.current;
             if (mouse == null || !mouse.rightButton.wasPressedThisFrame) return;
-            if (selectedFormation != null)
+            if (selectedWorkers.Count == 0 && selectedFormations.Count == 0) return;
+            if (!Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 200f)) return;
+            var hostile = hit.collider.GetComponentInParent<FormationAgent>();
+            if (hostile != null && !hostile.IsFriendly && selectedFormations.Count > 0)
             {
-                if (!Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var formationHit, 200f)) return;
-                var hostile = formationHit.collider.GetComponentInParent<FormationAgent>();
-                if (selectedFormation.IssueFocus(hostile))
-                {
-                    SetOrderFeedback($"Focus {hostile.Type}");
-                    CreateOrderMarker(hostile.transform.position, new Color(1f, 0.22f, 0.1f));
-                }
+                foreach (var formation in selectedFormations) formation.IssueFocus(hostile);
+                SetOrderFeedback($"Focus {hostile.Type} - {selectedFormations.Count} formation(s)");
+                CreateOrderMarker(hostile.transform.position, new Color(1f, 0.22f, 0.1f));
                 return;
             }
+
+            if (selectedFormations.Count > 0) IssueFormationGroupOrder(hit.point, false);
             if (selectedWorkers.Count == 0) return;
             var availableWorkers = selectedWorkers.Where(worker => worker.CurrentConstruction == null).ToList();
             if (availableWorkers.Count == 0)
@@ -430,7 +523,6 @@ namespace AshesOfRum
                 SetOrderFeedback("Cancel construction before issuing another order");
                 return;
             }
-            if (!Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 200f)) return;
             var cache = hit.collider.GetComponentInParent<ResourceCache>();
             if (cache != null)
             {
@@ -439,6 +531,7 @@ namespace AshesOfRum
                 CreateOrderMarker(cache.transform.position, new Color(0.95f, 0.68f, 0.2f));
                 return;
             }
+            if (selectedFormations.Count > 0) return;
             for (var i = 0; i < availableWorkers.Count; i++)
             {
                 var offset = FormationOffset(i, availableWorkers.Count);
@@ -459,9 +552,14 @@ namespace AshesOfRum
                     var clickedFormation = hit.collider.GetComponentInParent<FormationAgent>();
                     if (clickedFormation != null && clickedFormation.IsFriendly)
                     {
-                        selectedFormation = clickedFormation;
-                        clickedFormation.SetSelected(true);
-                        SetOrderFeedback($"Selected {clickedFormation.Type}");
+                        if (modify && selectedFormations.Remove(clickedFormation)) clickedFormation.SetSelected(false);
+                        else if (clickedFormation == lastClickedFormation &&
+                                 Time.unscaledTime - lastFormationClickTime <= 0.35f)
+                            SelectVisibleFormationsOfType(clickedFormation.Type);
+                        else AddSelectedFormation(clickedFormation);
+                        lastClickedFormation = clickedFormation;
+                        lastFormationClickTime = Time.unscaledTime;
+                        SetOrderFeedback($"Selected {selectedFormations.Count} formation(s)");
                         return;
                     }
                     var clickedBuilding = hit.collider.GetComponentInParent<ConstructibleBuilding>();
@@ -493,12 +591,10 @@ namespace AshesOfRum
                 {
                     var screen = worldCamera.WorldToScreenPoint(formation.transform.position);
                     if (screen.z <= 0f || !dragRect.Contains(screen)) continue;
-                    selectedFormation = formation;
-                    formation.SetSelected(true);
-                    break;
+                    AddSelectedFormation(formation);
                 }
             }
-            if (selectedFormation == null && !hisarSelected)
+            if (selectedFormations.Count == 0 && !hisarSelected)
                 SetOrderFeedback(selectedWorkers.Count == 0 ? "No selection" : $"Selected {selectedWorkers.Count} worker(s)");
         }
 
@@ -515,16 +611,35 @@ namespace AshesOfRum
             worker.SetSelected(true);
         }
 
+        private void AddSelectedFormation(FormationAgent formation)
+        {
+            if (formation == null || !formation.IsFriendly || selectedFormations.Contains(formation)) return;
+            selectedFormations.Add(formation);
+            formation.SetSelected(true);
+        }
+
+        private void SelectVisibleFormationsOfType(FormationType type)
+        {
+            foreach (var formation in friendlyFormations)
+            {
+                if (formation.Type != type) continue;
+                var viewport = worldCamera.WorldToViewportPoint(formation.transform.position);
+                if (viewport.z > 0f && viewport.x >= 0f && viewport.x <= 1f && viewport.y >= 0f && viewport.y <= 1f)
+                    AddSelectedFormation(formation);
+            }
+        }
+
         private void ClearSelection()
         {
             foreach (var worker in selectedWorkers) worker.SetSelected(false);
             selectedWorkers.Clear();
-            if (selectedFormation != null) selectedFormation.SetSelected(false);
-            selectedFormation = null;
+            foreach (var formation in selectedFormations) formation.SetSelected(false);
+            selectedFormations.Clear();
             if (selectedBuilding != null) selectedBuilding.SetSelected(false);
             selectedBuilding = null;
             demolitionCandidate = null;
             hisarSelected = false;
+            awaitingAttackMove = false;
         }
 
         private void UpdateHud()
@@ -532,8 +647,10 @@ namespace AshesOfRum
             if (suppliesText == null) return;
             suppliesText.text = $"SUPPLIES   {Supplies}";
             if (populationText != null) populationText.text = $"POPULATION   {PopulationUsed} / {PopulationCapacity}";
-            selectionText.text = selectedFormation != null
-                ? $"{selectedFormation.Type.ToString().ToUpperInvariant()}\n{selectedFormation.MemberCount} / 8 MEMBERS"
+            selectionText.text = selectedFormations.Count > 0
+                ? $"{selectedFormations.Count} FORMATION{(selectedFormations.Count == 1 ? string.Empty : "S")}\n" +
+                  string.Join("  |  ", selectedFormations.GroupBy(formation => formation.Type)
+                      .Select(group => $"{group.Key}: {group.Count()}"))
                 : selectedBuilding != null
                     ? $"{selectedBuilding.Type.ToString().ToUpperInvariant()}\n" +
                       $"HEALTH {selectedBuilding.Health} / {selectedBuilding.MaxHealth}"
@@ -571,6 +688,10 @@ namespace AshesOfRum
             trainArchersButton.interactable = canTrain;
             trainCavalryButton.interactable = canTrain;
             cancelTrainingButton.interactable = productionQueue.Count > 0;
+            attackMoveButton.gameObject.SetActive(selectedFormations.Count > 0);
+            stopFormationsButton.gameObject.SetActive(selectedFormations.Count > 0);
+            attackMoveButton.interactable = !awaitingAttackMove;
+            stopFormationsButton.interactable = selectedFormations.Count > 0;
         }
 
         private void HandleBuildInput()
@@ -592,6 +713,12 @@ namespace AshesOfRum
                 if (selectedBuilding != null)
                 {
                     if (keyboard.xKey.wasPressedThisFrame) RequestDemolition();
+                    return;
+                }
+                if (selectedFormations.Count > 0)
+                {
+                    if (keyboard.fKey.wasPressedThisFrame) BeginAttackMoveTargeting();
+                    if (keyboard.gKey.wasPressedThisFrame) StopSelectedFormations();
                     return;
                 }
                 if (keyboard.hKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.House);
@@ -674,6 +801,83 @@ namespace AshesOfRum
             placementWorker = null;
             placementValid = false;
             if (!string.IsNullOrEmpty(feedback)) SetOrderFeedback(feedback);
+        }
+
+        private void BeginAttackMoveTargeting()
+        {
+            if (selectedFormations.Count == 0) return;
+            awaitingAttackMove = true;
+            SetOrderFeedback("Attack-move - left click ground / right click cancel");
+        }
+
+        private bool HandleFormationCommandInput()
+        {
+            if (!awaitingAttackMove) return false;
+            var mouse = Mouse.current;
+            var keyboard = Keyboard.current;
+            if (mouse == null) return true;
+            if (mouse.rightButton.wasPressedThisFrame || keyboard?.escapeKey.wasPressedThisFrame == true)
+            {
+                awaitingAttackMove = false;
+                SetOrderFeedback("Attack-move cancelled");
+                return true;
+            }
+            if (!mouse.leftButton.wasPressedThisFrame) return true;
+            var pointer = mouse.position.ReadValue();
+            if (IsPointerOverHud(pointer)) return true;
+            if (!Physics.Raycast(worldCamera.ScreenPointToRay(pointer), out var hit, 200f)) return true;
+            IssueFormationGroupOrder(hit.point, true);
+            CreateOrderMarker(hit.point, new Color(1f, 0.55f, 0.12f));
+            awaitingAttackMove = false;
+            return true;
+        }
+
+        private void HandleControlGroupInput()
+        {
+            if (placementWorker != null || awaitingAttackMove) return;
+            var keyboard = Keyboard.current;
+            if (keyboard == null) return;
+            var modifierActive = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed ||
+                                 keyboard.leftCtrlKey.wasPressedThisFrame || keyboard.rightCtrlKey.wasPressedThisFrame ||
+                                 keyboard.leftCtrlKey.wasReleasedThisFrame || keyboard.rightCtrlKey.wasReleasedThisFrame ||
+                                 keyboard.leftMetaKey.isPressed || keyboard.rightMetaKey.isPressed ||
+                                 keyboard.leftMetaKey.wasPressedThisFrame || keyboard.rightMetaKey.wasPressedThisFrame ||
+                                 keyboard.leftMetaKey.wasReleasedThisFrame || keyboard.rightMetaKey.wasReleasedThisFrame;
+            if (modifierActive) lastControlGroupModifierTime = Time.unscaledTime;
+            var assigning = Time.unscaledTime - lastControlGroupModifierTime <= ControlGroupModifierGraceSeconds;
+            var anyNumberHeld = false;
+            for (var index = 0; index < ControlGroupKeys.Length; index++)
+            {
+                var key = keyboard[ControlGroupKeys[index]];
+                anyNumberHeld |= key.isPressed;
+                if (!key.wasPressedThisFrame && (!key.isPressed || controlGroupKeyHandled)) continue;
+                var groupNumber = index + 1;
+                var hasSelection = selectedWorkers.Count > 0 || selectedFormations.Count > 0;
+                if (assigning || (ControlGroupSize(groupNumber) == 0 && hasSelection))
+                    AssignControlGroup(groupNumber);
+                else RecallControlGroup(groupNumber);
+                controlGroupKeyHandled = true;
+                return;
+            }
+            if (!anyNumberHeld) controlGroupKeyHandled = false;
+        }
+
+        private void IssueFormationGroupOrder(Vector3 destination, bool attackMove)
+        {
+            var live = selectedFormations.Where(formation => formation != null && formation.MemberCount > 0).ToList();
+            if (live.Count == 0) return;
+            var center = Vector3.zero;
+            foreach (var formation in live) center += formation.transform.position;
+            center /= live.Count;
+            foreach (var formation in live)
+            {
+                var offset = formation.transform.position - center;
+                var formationDestination = destination + new Vector3(offset.x, 0f, offset.z);
+                if (attackMove) formation.IssueAttackMove(formationDestination);
+                else formation.IssueMove(formationDestination);
+            }
+            SetOrderFeedback($"{(attackMove ? "Attack-move" : "Move")} - {live.Count} formation(s)");
+            if (!attackMove) CreateOrderMarker(destination, new Color(0.2f, 0.78f, 1f));
         }
 
         private static bool IsPointerOverHud(Vector2 screenPosition)
@@ -797,8 +1001,10 @@ namespace AshesOfRum
             };
             building.Initialize(type, BuildingDuration(type), tuning.buildingHealth, completeColor,
                 DestroyCompletedBuilding);
+            fogOfWar?.RegisterFriendly(root.transform);
             if (type == BuildingType.Watchtower)
-                root.AddComponent<WatchtowerAttack>().Initialize(tuning, () => enemyFormations);
+                root.AddComponent<WatchtowerAttack>().Initialize(tuning,
+                    () => enemyFormations.Where(formation => fogOfWar == null || fogOfWar.IsCurrentlyVisible(formation)));
             return building;
         }
 
@@ -906,15 +1112,26 @@ namespace AshesOfRum
             SetOrderFeedback($"{type} ready - {friendly.MemberCount} members");
             if (firstEnemyDeployed) return;
             firstEnemyDeployed = true;
-            var enemy = CreateFormation(FormationType.Spearmen, false, new Vector3(0f, 0f, 17f));
+            var enemyType = type switch
+            {
+                FormationType.Cavalry => FormationType.Archers,
+                FormationType.Spearmen => FormationType.Cavalry,
+                _ => FormationType.Spearmen
+            };
+            var enemy = CreateFormation(enemyType, false, new Vector3(0f, 0f, 17f));
             enemyFormations.Add(enemy);
-            SetOrderFeedback($"Enemy Spearmen sighted - Archers counter Spearmen");
+            SetOrderFeedback($"Enemy {enemyType} sighted - {type} counters {enemyType}");
         }
 
         private FormationAgent CreateFormation(FormationType type, bool friendly, Vector3 position)
         {
             var root = new GameObject($"{(friendly ? "Karasungur" : "Alazhan")} {type} Formation");
             root.transform.position = position;
+            var navAgent = root.AddComponent<NavMeshAgent>();
+            navAgent.radius = 0.9f;
+            navAgent.height = 2f;
+            navAgent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
+            navAgent.avoidancePriority = friendly ? 40 + friendlyFormations.Count : 60 + enemyFormations.Count;
             var formation = root.AddComponent<FormationAgent>();
             formation.Initialize(type, friendly, tuning,
                 friendly ? amount => population.Release(amount) : null,
@@ -922,10 +1139,27 @@ namespace AshesOfRum
                 {
                     friendlyFormations.Remove(destroyed);
                     enemyFormations.Remove(destroyed);
-                    if (selectedFormation == destroyed) selectedFormation = null;
+                    selectedFormations.Remove(destroyed);
+                    if (!destroyed.IsFriendly) fogOfWar?.UnregisterHostile(destroyed.gameObject);
                     SetOrderFeedback(destroyed.IsFriendly ? "Friendly formation lost" : "Enemy formation defeated");
-                });
+                },
+                friendly ? () => enemyFormations : () => friendlyFormations,
+                friendly ? candidate => fogOfWar == null || fogOfWar.IsCurrentlyVisible(candidate) : null);
+            if (friendly) fogOfWar?.RegisterFriendly(root.transform);
+            else fogOfWar?.RegisterHostileMobile(root);
             return formation;
+        }
+
+        private sealed class ControlGroup
+        {
+            public ControlGroup(IEnumerable<WorkerAgent> workers, IEnumerable<FormationAgent> formations)
+            {
+                Workers = workers.ToList();
+                Formations = formations.ToList();
+            }
+
+            public List<WorkerAgent> Workers { get; }
+            public List<FormationAgent> Formations { get; }
         }
 
         private void TintPreview(Color color)

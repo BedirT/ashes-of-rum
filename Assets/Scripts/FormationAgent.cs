@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace AshesOfRum
 {
@@ -11,10 +12,15 @@ namespace AshesOfRum
         private readonly List<int> memberHealth = new();
         private EconomyTuning tuning;
         private FormationAgent target;
+        private System.Func<IEnumerable<FormationAgent>> hostileProvider;
+        private System.Func<FormationAgent, bool> visibilityPredicate;
         private Action<int> casualtyCallback;
         private Action<FormationAgent> destroyedCallback;
+        private NavMeshAgent navAgent;
         private int nextHitMemberIndex;
         private float attackRemaining;
+        private Vector3 destination;
+        private bool hasDestination;
 
         private static readonly Color FriendlyColor = new(0.1f, 0.38f, 0.9f);
         private static readonly Color HostileColor = new(0.8f, 0.16f, 0.08f);
@@ -27,6 +33,10 @@ namespace AshesOfRum
         public int MemberCount => members.Count;
         public bool IsSelected { get; private set; }
         public FormationAgent Target => target;
+        public FormationOrder CurrentOrder { get; private set; }
+        public Vector3 Destination => destination;
+        public bool HasDestination => hasDestination;
+        public float MoveSpeed => Type == FormationType.Cavalry ? tuning.cavalrySpeed : tuning.footSpeed;
         public int TotalMemberHealth
         {
             get
@@ -39,13 +49,26 @@ namespace AshesOfRum
         public int LastAttackMemberCount { get; private set; }
 
         public void Initialize(FormationType type, bool friendly, EconomyTuning combatTuning,
-            Action<int> onCasualty = null, Action<FormationAgent> onDestroyed = null)
+            Action<int> onCasualty = null, Action<FormationAgent> onDestroyed = null,
+            System.Func<IEnumerable<FormationAgent>> availableHostiles = null,
+            System.Func<FormationAgent, bool> isTargetVisible = null)
         {
             Type = type;
             IsFriendly = friendly;
             tuning = combatTuning;
             casualtyCallback = onCasualty;
             destroyedCallback = onDestroyed;
+            hostileProvider = availableHostiles;
+            visibilityPredicate = isTargetVisible;
+            navAgent = GetComponent<NavMeshAgent>();
+            if (navAgent != null)
+            {
+                navAgent.speed = MoveSpeed;
+                navAgent.angularSpeed = 360f;
+                navAgent.acceleration = 20f;
+                navAgent.stoppingDistance = 0.15f;
+                navAgent.updateRotation = false;
+            }
             for (var i = 0; i < 8; i++)
             {
                 members.Add(CreateMember(i));
@@ -62,10 +85,43 @@ namespace AshesOfRum
 
         public bool IssueFocus(FormationAgent hostile)
         {
-            if (hostile == null || hostile.IsFriendly == IsFriendly || hostile.MemberCount == 0) return false;
+            if (!IsValidTarget(hostile)) return false;
             target = hostile;
-            if (hostile.target == null) hostile.target = this;
+            hasDestination = false;
+            CurrentOrder = FormationOrder.Focus;
+            StartNavigation(hostile.transform.position);
+            if (hostile.target == null)
+            {
+                hostile.target = this;
+                hostile.CurrentOrder = FormationOrder.Focus;
+            }
             return true;
+        }
+
+        public void IssueMove(Vector3 position)
+        {
+            target = null;
+            destination = Grounded(position);
+            hasDestination = true;
+            CurrentOrder = FormationOrder.Move;
+            StartNavigation(destination);
+        }
+
+        public void IssueAttackMove(Vector3 position)
+        {
+            target = null;
+            destination = Grounded(position);
+            hasDestination = true;
+            CurrentOrder = FormationOrder.AttackMove;
+            StartNavigation(destination);
+        }
+
+        public void IssueStop()
+        {
+            target = null;
+            hasDestination = false;
+            CurrentOrder = FormationOrder.Idle;
+            StopNavigation();
         }
 
         public void ApplyDeterministicHit(FormationType attackerType)
@@ -94,24 +150,62 @@ namespace AshesOfRum
             ReForm();
             if (members.Count != 0) return;
             target = null;
+            StopNavigation();
             destroyedCallback?.Invoke(this);
             Destroy(gameObject, 0.25f);
         }
 
         private void Update()
         {
-            if (target == null || target.MemberCount == 0) return;
+            if (!IsValidTarget(target))
+            {
+                target = null;
+                if (CurrentOrder == FormationOrder.Focus)
+                {
+                    CurrentOrder = FormationOrder.Idle;
+                    StopNavigation();
+                }
+            }
+            if (CurrentOrder == FormationOrder.AttackMove && target == null)
+            {
+                target = FindNearestVisibleHostile();
+                if (target != null && target.target == null)
+                {
+                    target.target = this;
+                    target.CurrentOrder = FormationOrder.Focus;
+                }
+            }
+            if (target != null)
+            {
+                MoveOrAttackTarget();
+                return;
+            }
+            if (!hasDestination) return;
+
+            var delta = destination - transform.position;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= 0.09f)
+            {
+                hasDestination = false;
+                CurrentOrder = FormationOrder.Idle;
+                StopNavigation();
+                return;
+            }
+            MoveAndFace(delta);
+        }
+
+        private void MoveOrAttackTarget()
+        {
             var delta = target.transform.position - transform.position;
             delta.y = 0f;
-            var range = Type == FormationType.Archers ? 7f : 1.7f;
+            var range = Type == FormationType.Archers ? 7f : 2.2f;
             if (delta.sqrMagnitude > range * range)
             {
-                transform.position += delta.normalized * (tuning.footSpeed * Time.deltaTime);
-                transform.rotation = Quaternion.RotateTowards(transform.rotation,
-                    Quaternion.LookRotation(delta.normalized), 360f * Time.deltaTime);
+                MoveAndFace(delta);
                 return;
             }
 
+            StopNavigation();
             if (delta.sqrMagnitude > 0.01f)
                 transform.rotation = Quaternion.RotateTowards(transform.rotation,
                     Quaternion.LookRotation(delta.normalized), 360f * Time.deltaTime);
@@ -120,6 +214,68 @@ namespace AshesOfRum
             attackRemaining = tuning.attackSeconds;
             ExecuteAttackVolley(target);
         }
+
+        private void MoveAndFace(Vector3 delta)
+        {
+            var direction = delta.normalized;
+            if (CanUseNavigation())
+            {
+                navAgent.speed = MoveSpeed;
+                navAgent.isStopped = false;
+                navAgent.SetDestination(transform.position + delta);
+                var facing = navAgent.desiredVelocity.sqrMagnitude > 0.01f
+                    ? navAgent.desiredVelocity.normalized
+                    : direction;
+                transform.rotation = Quaternion.RotateTowards(transform.rotation,
+                    Quaternion.LookRotation(facing), 360f * Time.deltaTime);
+                return;
+            }
+            var distance = Mathf.Min(delta.magnitude, MoveSpeed * Time.deltaTime);
+            transform.position += direction * distance;
+            transform.rotation = Quaternion.RotateTowards(transform.rotation,
+                Quaternion.LookRotation(direction), 360f * Time.deltaTime);
+        }
+
+        private void StartNavigation(Vector3 targetPosition)
+        {
+            if (!CanUseNavigation()) return;
+            navAgent.speed = MoveSpeed;
+            navAgent.isStopped = false;
+            navAgent.SetDestination(Grounded(targetPosition));
+        }
+
+        private void StopNavigation()
+        {
+            if (!CanUseNavigation()) return;
+            navAgent.isStopped = true;
+            navAgent.ResetPath();
+            navAgent.velocity = Vector3.zero;
+            navAgent.nextPosition = transform.position;
+        }
+
+        private bool CanUseNavigation() => navAgent != null && navAgent.enabled && navAgent.isOnNavMesh;
+
+        private FormationAgent FindNearestVisibleHostile()
+        {
+            if (hostileProvider == null) return null;
+            FormationAgent nearest = null;
+            var nearestDistance = tuning.sightRadius * tuning.sightRadius;
+            foreach (var hostile in hostileProvider())
+            {
+                if (!IsValidTarget(hostile)) continue;
+                var distance = (hostile.transform.position - transform.position).sqrMagnitude;
+                if (distance > nearestDistance) continue;
+                nearest = hostile;
+                nearestDistance = distance;
+            }
+            return nearest;
+        }
+
+        private bool IsValidTarget(FormationAgent candidate) => candidate != null &&
+            candidate.IsFriendly != IsFriendly && candidate.MemberCount > 0 &&
+            (visibilityPredicate == null || visibilityPredicate(candidate));
+
+        private static Vector3 Grounded(Vector3 position) => new(position.x, 0f, position.z);
 
         public bool ExecuteAttackVolley(FormationAgent intendedTarget)
         {

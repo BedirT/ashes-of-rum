@@ -498,7 +498,10 @@ namespace AshesOfRum.Tests
             var spearmen = economy.EnemyFormations[0];
             Assert.That(archers.MemberCount, Is.EqualTo(8));
             Assert.That(spearmen.MemberCount, Is.EqualTo(8));
-            Assert.That(economy.IssueFocusForSmoke(archers, spearmen), Is.True);
+            Assert.That(economy.FogOfWar.IsCurrentlyVisible(spearmen), Is.False);
+            economy.SelectOnly(archers);
+            economy.IssueAttackMoveForSelected(spearmen.transform.position);
+            yield return WaitUntil(() => economy.FogOfWar.IsCurrentlyVisible(spearmen));
 
             yield return WaitUntil(() => economy.EnemyFormations.Count == 0);
 
@@ -576,6 +579,192 @@ namespace AshesOfRum.Tests
             Object.Destroy(fullTarget.gameObject);
             Object.Destroy(reducedTarget.gameObject);
             Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator Cavalry_MovesFasterStopsAndWinsItsArcherCounterFight()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var cavalry = CreateFormationForTest("Moving Cavalry", FormationType.Cavalry, true, tuning);
+            var spearmen = CreateFormationForTest("Moving Spearmen", FormationType.Spearmen, true, tuning);
+            var archers = CreateFormationForTest("Target Archers", FormationType.Archers, false, tuning);
+            cavalry.transform.position = new Vector3(-2f, 0f, 0f);
+            spearmen.transform.position = new Vector3(2f, 0f, 0f);
+            archers.transform.position = new Vector3(-2f, 0f, 12f);
+            cavalry.IssueMove(new Vector3(-2f, 0f, 20f));
+            spearmen.IssueMove(new Vector3(2f, 0f, 20f));
+
+            yield return new WaitForSeconds(0.5f);
+            Assert.That(cavalry.transform.position.z, Is.GreaterThan(spearmen.transform.position.z + 0.7f));
+            cavalry.IssueStop();
+            var stoppedPosition = cavalry.transform.position;
+            yield return new WaitForSeconds(0.2f);
+            Assert.That(cavalry.transform.position, Is.EqualTo(stoppedPosition));
+            Assert.That(cavalry.CurrentOrder, Is.EqualTo(FormationOrder.Idle));
+
+            Assert.That(cavalry.IssueFocus(archers), Is.True);
+            yield return WaitUntil(() => archers.MemberCount == 0);
+            Assert.That(cavalry.MemberCount, Is.GreaterThanOrEqualTo(4));
+
+            Object.Destroy(cavalry.gameObject);
+            Object.Destroy(spearmen.gameObject);
+            Object.Destroy(archers.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator FormationGroups_PreserveLayoutRecallWithHotkeyAndApplyCommandsTogether()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(800);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 2);
+            var archers = economy.FriendlyFormations.Single(formation => formation.Type == FormationType.Archers);
+            var cavalry = economy.FriendlyFormations.Single(formation => formation.Type == FormationType.Cavalry);
+            Assert.That(archers.GetComponent<UnityEngine.AI.NavMeshAgent>().isOnNavMesh, Is.True);
+            Assert.That(cavalry.GetComponent<UnityEngine.AI.NavMeshAgent>().isOnNavMesh, Is.True);
+            archers.GetComponent<UnityEngine.AI.NavMeshAgent>().Warp(new Vector3(-4f, 0f, 0f));
+            cavalry.GetComponent<UnityEngine.AI.NavMeshAgent>().Warp(new Vector3(4f, 0f, 0f));
+            economy.SelectFormationsForAutomation(new[] { archers });
+            economy.AssignControlGroup(1);
+            economy.SelectFormationsForAutomation(new[] { archers, cavalry });
+
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            keyboard.MakeCurrent();
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.LeftCtrl));
+            InputSystem.Update();
+            Assert.That(keyboard.leftCtrlKey.isPressed, Is.True);
+            var handleControlGroupInput = typeof(StartingEconomyController).GetMethod("HandleControlGroupInput",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            handleControlGroupInput?.Invoke(economy, null);
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+            handleControlGroupInput?.Invoke(economy, null);
+            InputSystem.Update();
+            handleControlGroupInput?.Invoke(economy, null);
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.Digit1));
+            InputSystem.Update();
+            handleControlGroupInput?.Invoke(economy, null);
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+            handleControlGroupInput?.Invoke(economy, null);
+            InputSystem.RemoveDevice(keyboard);
+            Assert.That(economy.ControlGroupSize(1), Is.EqualTo(2));
+            economy.SelectHisar();
+            Assert.That(economy.SelectedFormations, Is.Empty);
+
+            Assert.That(economy.RecallControlGroup(1), Is.True);
+            Assert.That(economy.SelectedFormations, Is.EquivalentTo(new[] { archers, cavalry }));
+
+            economy.IssueMoveForSelected(new Vector3(0f, 0f, 10f));
+            Assert.That(archers.CurrentOrder, Is.EqualTo(FormationOrder.Move));
+            Assert.That(cavalry.CurrentOrder, Is.EqualTo(FormationOrder.Move));
+            Assert.That(cavalry.Destination.x - archers.Destination.x, Is.EqualTo(8f).Within(0.01f));
+            yield return new WaitForSeconds(0.25f);
+            economy.StopSelectedFormations();
+            var archersStoppedAt = archers.transform.position;
+            var cavalryStoppedAt = cavalry.transform.position;
+            yield return new WaitForSeconds(0.25f);
+            Assert.That(archers.CurrentOrder, Is.EqualTo(FormationOrder.Idle));
+            Assert.That(cavalry.CurrentOrder, Is.EqualTo(FormationOrder.Idle));
+            Assert.That(Vector3.Distance(archersStoppedAt, archers.transform.position), Is.LessThan(0.15f));
+            Assert.That(Vector3.Distance(cavalryStoppedAt, cavalry.transform.position), Is.LessThan(0.15f));
+            Assert.That(GameObject.Find("Attack Move").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[F]"));
+            Assert.That(GameObject.Find("Stop Formations").GetComponentInChildren<UnityEngine.UI.Text>().text,
+                Does.Contain("[G]"));
+        }
+
+        [UnityTest]
+        public IEnumerator FogAndMinimap_HideMobilesRememberStaticsAndNavigateExploredGround()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var fog = economy.FogOfWar;
+            Assert.That(fog, Is.Not.Null);
+            Assert.That(GameObject.Find("Battlefield Fog"), Is.Not.Null);
+            Assert.That(GameObject.Find("Fog Minimap"), Is.Not.Null);
+            Assert.That(fog.StateAt(new Vector3(0f, 0f, 25f)), Is.EqualTo(FogState.Unexplored));
+
+            var scout = new GameObject("Fog test scout");
+            scout.transform.position = new Vector3(0f, 0f, 8f);
+            fog.RegisterFriendly(scout.transform);
+            var mobile = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            mobile.name = "Fog test mobile";
+            mobile.transform.position = new Vector3(2f, 0f, 8f);
+            fog.RegisterHostileMobile(mobile);
+            var remembered = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            remembered.name = "Fog test remembered building";
+            remembered.transform.position = new Vector3(-2f, 0f, 8f);
+            fog.RegisterHostileStatic(remembered);
+            fog.RefreshNow();
+
+            Assert.That(fog.StateAt(mobile.transform.position), Is.EqualTo(FogState.Visible));
+            Assert.That(mobile.GetComponent<Renderer>().enabled, Is.True);
+            Assert.That(mobile.GetComponent<Collider>().enabled, Is.True);
+            var visibleEnemyMarker = fog.MinimapColorAt(mobile.transform.position);
+            Assert.That(visibleEnemyMarker.r, Is.GreaterThan(visibleEnemyMarker.b));
+            var rememberedColor = remembered.GetComponent<Renderer>().material.color;
+
+            scout.transform.position = new Vector3(-20f, 0f, -10f);
+            fog.RefreshNow();
+
+            Assert.That(fog.StateAt(mobile.transform.position), Is.EqualTo(FogState.Explored));
+            Assert.That(mobile.GetComponent<Renderer>().enabled, Is.False);
+            Assert.That(mobile.GetComponent<Collider>().enabled, Is.False);
+            Assert.That(remembered.GetComponent<Renderer>().enabled, Is.True);
+            Assert.That(remembered.GetComponent<Collider>().enabled, Is.False);
+            Assert.That(remembered.GetComponent<Renderer>().material.color.maxColorComponent,
+                Is.LessThan(rememberedColor.maxColorComponent));
+            var hiddenEnemyMarker = fog.MinimapColorAt(mobile.transform.position);
+            Assert.That(hiddenEnemyMarker.r, Is.LessThan(visibleEnemyMarker.r));
+
+            yield return null;
+            var clickHandler = GameObject.Find("Fog Minimap").GetComponent<MinimapClickHandler>();
+            var minimapRect = clickHandler.GetComponent<RectTransform>();
+            var pointer = new PointerEventData(EventSystem.current) { position = minimapRect.position };
+            clickHandler.OnPointerClick(pointer);
+            var cameraController = Object.FindAnyObjectByType<RtsCameraController>();
+            Assert.That(cameraController.LastRequestedCenter.x, Is.EqualTo(0f).Within(1f));
+            Assert.That(cameraController.LastRequestedCenter.z, Is.EqualTo(8f).Within(1f));
+
+            Object.Destroy(scout);
+            Object.Destroy(mobile);
+            Object.Destroy(remembered);
+        }
+
+        [UnityTest]
+        public IEnumerator AttackMove_RevealsAndAcquiresTheNearestHostileThroughFog()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(400);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 1);
+            var cavalry = economy.FriendlyFormations[0];
+            var archers = economy.EnemyFormations[0];
+            economy.FogOfWar.RefreshNow();
+            Assert.That(archers.Type, Is.EqualTo(FormationType.Archers));
+            Assert.That(economy.FogOfWar.IsCurrentlyVisible(archers), Is.False);
+            Assert.That(archers.GetComponentsInChildren<Renderer>(true).Any(item => item.enabled), Is.False);
+
+            economy.SelectOnly(cavalry);
+            economy.IssueAttackMoveForSelected(new Vector3(0f, 0f, 22f));
+            yield return WaitUntil(() => economy.FogOfWar.IsCurrentlyVisible(archers));
+            Assert.That(cavalry.Target, Is.SameAs(archers));
+            Assert.That(archers.Target, Is.SameAs(cavalry));
+            var hostilePosition = archers.transform.position;
+            yield return WaitUntil(() => economy.EnemyFormations.Count == 0);
+
+            Assert.That(cavalry.MemberCount, Is.GreaterThanOrEqualTo(4));
+            Assert.That(cavalry.transform.position.z, Is.GreaterThan(0f));
+            Assert.That(economy.FogOfWar.MinimapColorAt(hostilePosition).r, Is.LessThan(0.9f));
         }
 
         [UnityTest]

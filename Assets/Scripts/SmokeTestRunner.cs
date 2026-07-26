@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -106,6 +107,13 @@ namespace AshesOfRum
             var supportedFormationMaterials = false;
             var supportedArrowMaterial = false;
             var nonlethalHitFeedback = false;
+            var cavalryTrained = false;
+            var controlGroupRecalled = false;
+            var formationGroupStopped = false;
+            var hostileHiddenByFog = false;
+            var hostileRevealedByMovement = false;
+            var contactLostUnderFog = false;
+            var cavalryCounterWon = false;
             if (defensiveBuildingsCompleted && storehouseDropOffUsed)
             {
                 economy.CreditSuppliesForAutomation(400);
@@ -137,6 +145,65 @@ namespace AshesOfRum
                 }
                 combatWon = economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 0 &&
                             economy.FriendlyFormations[0].MemberCount >= 4;
+            }
+
+            if (combatWon)
+            {
+                economy.CreditSuppliesForAutomation(400);
+                var cavalryTrainingStarted = economy.TryQueueFormation(FormationType.Cavalry);
+                var contestDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                while (economy.FriendlyFormations.Count < 2 && Time.realtimeSinceStartup < contestDeadline)
+                    yield return null;
+                cavalryTrained = cavalryTrainingStarted && economy.FriendlyFormations.Count == 2 &&
+                                  economy.FriendlyFormations.Any(formation =>
+                                      formation.Type == FormationType.Cavalry && formation.MemberCount == 8);
+                if (cavalryTrained)
+                {
+                    economy.SelectFormationsForAutomation(economy.FriendlyFormations);
+                    economy.AssignControlGroup(1);
+                    economy.SelectHisar();
+                    controlGroupRecalled = economy.RecallControlGroup(1) &&
+                                           economy.SelectedFormations.Count == 2 &&
+                                           economy.ControlGroupSize(1) == 2;
+
+                    economy.IssueMoveForSelected(new Vector3(0f, 0f, 8f));
+                    yield return new WaitForSeconds(0.35f);
+                    economy.StopSelectedFormations();
+                    var stoppedPositions = economy.SelectedFormations
+                        .Select(formation => formation.transform.position).ToArray();
+                    yield return new WaitForSeconds(0.25f);
+                    formationGroupStopped = economy.SelectedFormations.All(formation =>
+                        formation.CurrentOrder == FormationOrder.Idle && !formation.HasDestination);
+                    for (var index = 0; index < stoppedPositions.Length; index++)
+                        formationGroupStopped &= Vector3.Distance(stoppedPositions[index],
+                            economy.SelectedFormations[index].transform.position) < 0.15f;
+
+                    var hostileArcher = economy.DeployEnemyForAutomation(FormationType.Archers,
+                        new Vector3(0f, 0f, 26f));
+                    economy.FogOfWar.RefreshNow();
+                    hostileHiddenByFog = !economy.FogOfWar.IsCurrentlyVisible(hostileArcher);
+
+                    economy.IssueMoveForSelected(new Vector3(0f, 0f, 18f));
+                    while (!economy.FogOfWar.IsCurrentlyVisible(hostileArcher) &&
+                           Time.realtimeSinceStartup < contestDeadline)
+                        yield return null;
+                    hostileRevealedByMovement = economy.FogOfWar.IsCurrentlyVisible(hostileArcher);
+
+                    economy.IssueMoveForSelected(new Vector3(0f, 0f, 1f));
+                    while (economy.FogOfWar.IsCurrentlyVisible(hostileArcher) &&
+                           Time.realtimeSinceStartup < contestDeadline)
+                        yield return null;
+                    contactLostUnderFog = !economy.FogOfWar.IsCurrentlyVisible(hostileArcher) &&
+                                          economy.FogOfWar.StateAt(hostileArcher.transform.position) ==
+                                          FogState.Explored;
+
+                    economy.IssueAttackMoveForSelected(new Vector3(0f, 0f, 26f));
+                    while (economy.EnemyFormations.Count > 0 && Time.realtimeSinceStartup < contestDeadline)
+                        yield return null;
+                    cavalryCounterWon = economy.EnemyFormations.Count == 0 &&
+                                        economy.FriendlyFormations.Any(formation =>
+                                            formation.Type == FormationType.Cavalry && formation.MemberCount > 0);
+                }
             }
             yield return null;
 
@@ -172,6 +239,13 @@ namespace AshesOfRum
                     "Arrows use a supported material",
                     "Nonlethal hits show visible feedback",
                     "Counter fight won",
+                    "Cavalry formation trained",
+                    "Two-formation control group assigned and recalled",
+                    "Stop halts the selected formation group",
+                    "Hostile mobile formation starts hidden by fog",
+                    "Formation movement reveals hostile contact",
+                    "Moving away loses contact while preserving explored ground",
+                    "Cavalry wins its Archer counter fight",
                     "1920x1080 window configured",
                     "Graphical frame captured"
                 }
@@ -192,7 +266,14 @@ namespace AshesOfRum
                     "Formation visuals use supported faction materials",
                     "Arrows use a supported material",
                     "Nonlethal hits show visible feedback",
-                    "Counter fight won"
+                    "Counter fight won",
+                    "Cavalry formation trained",
+                    "Two-formation control group assigned and recalled",
+                    "Stop halts the selected formation group",
+                    "Hostile mobile formation starts hidden by fog",
+                    "Formation movement reveals hostile contact",
+                    "Moving away loses contact while preserving explored ground",
+                    "Cavalry wins its Archer counter fight"
                 };
             var result = new SmokeResult
             {
@@ -218,10 +299,17 @@ namespace AshesOfRum
                 Require(supportedArrowMaterial, checks[13]);
                 Require(nonlethalHitFeedback, checks[14]);
                 Require(combatWon, $"{checks[15]} within {CombatTimeoutSeconds} seconds");
+                Require(cavalryTrained, $"{checks[16]} within {CombatTimeoutSeconds} seconds");
+                Require(controlGroupRecalled, checks[17]);
+                Require(formationGroupStopped, checks[18]);
+                Require(hostileHiddenByFog, checks[19]);
+                Require(hostileRevealedByMovement, $"{checks[20]} within {CombatTimeoutSeconds} seconds");
+                Require(contactLostUnderFog, $"{checks[21]} within {CombatTimeoutSeconds} seconds");
+                Require(cavalryCounterWon, $"{checks[22]} within {CombatTimeoutSeconds} seconds");
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[16]);
-                    Require(HasContent(screenshotPath), $"{checks[17]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[23]);
+                    Require(HasContent(screenshotPath), $"{checks[24]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;

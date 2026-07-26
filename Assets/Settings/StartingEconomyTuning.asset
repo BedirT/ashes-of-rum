@@ -40,3 +40,5 @@ MonoBehaviour:
   attackSeconds: 0.75
   projectileSeconds: 0.35
   footSpeed: 3.5
+  cavalrySpeed: 5.25
+  sightRadius: 10

@@ -33,5 +33,7 @@ namespace AshesOfRum
         [Min(0.1f)] public float attackSeconds = 0.75f;
         [Min(0.1f)] public float projectileSeconds = 0.35f;
         [Min(0.1f)] public float footSpeed = 3.5f;
+        [Min(0.1f)] public float cavalrySpeed = 5.25f;
+        [Min(0.1f)] public float sightRadius = 10f;
     }
 }
