@@ -73,9 +73,6 @@ namespace AshesOfRum
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
         private bool controlGroupKeyHandled;
-        private float lastControlGroupModifierTime = float.NegativeInfinity;
-
-        private const float ControlGroupModifierGraceSeconds = 0.75f;
 
         private static readonly Key[] ControlGroupKeys =
         {
@@ -242,7 +239,27 @@ namespace AshesOfRum
                                                   friendlyFormations.Contains(formation))
             : 0;
 
-        public void IssueMoveForSelected(Vector3 destination) => IssueFormationGroupOrder(destination, false);
+        public void IssueMoveForSelected(Vector3 destination)
+        {
+            if (selectedFormations.Count > 0) IssueFormationGroupOrder(destination, false);
+            if (selectedWorkers.Count == 0) return;
+            var availableWorkers = selectedWorkers.Where(worker => worker.CurrentConstruction == null).ToList();
+            if (availableWorkers.Count == 0)
+            {
+                SetOrderFeedback("Cancel construction before issuing another order");
+                return;
+            }
+            for (var i = 0; i < availableWorkers.Count; i++)
+            {
+                var offset = FormationOffset(i, availableWorkers.Count);
+                availableWorkers[i].IssueMove(destination + offset);
+            }
+            SetOrderFeedback(selectedFormations.Count > 0
+                ? $"Move - {selectedFormations.Count} formation(s), {availableWorkers.Count} worker(s)"
+                : "Move");
+            if (selectedFormations.Count == 0)
+                CreateOrderMarker(destination, new Color(0.2f, 0.78f, 1f));
+        }
 
         public void IssueAttackMoveForSelected(Vector3 destination) => IssueFormationGroupOrder(destination, true);
 
@@ -485,9 +502,10 @@ namespace AshesOfRum
             var mouse = Mouse.current;
             if (mouse == null) return;
             var position = mouse.position.ReadValue();
-            if (!selecting && (position.y < Screen.height * 0.16f || position.y > Screen.height * 0.9f)) return;
-            if (mouse.leftButton.wasPressedThisFrame)
+            if (!selecting)
             {
+                if (!mouse.leftButton.wasPressedThisFrame || position.y < Screen.height * 0.16f ||
+                    position.y > Screen.height * 0.9f || IsPointerOverHud(position)) return;
                 selecting = true;
                 selectionStart = position;
                 selectionBox.gameObject.SetActive(true);
@@ -496,6 +514,7 @@ namespace AshesOfRum
             if (!selecting || !mouse.leftButton.wasReleasedThisFrame) return;
             selecting = false;
             selectionBox.gameObject.SetActive(false);
+            if (IsPointerOverHud(position)) return;
             ApplySelection(selectionStart, position, Keyboard.current?.shiftKey.isPressed == true);
         }
 
@@ -515,30 +534,22 @@ namespace AshesOfRum
                 return;
             }
 
-            if (selectedFormations.Count > 0) IssueFormationGroupOrder(hit.point, false);
-            if (selectedWorkers.Count == 0) return;
-            var availableWorkers = selectedWorkers.Where(worker => worker.CurrentConstruction == null).ToList();
-            if (availableWorkers.Count == 0)
-            {
-                SetOrderFeedback("Cancel construction before issuing another order");
-                return;
-            }
             var cache = hit.collider.GetComponentInParent<ResourceCache>();
-            if (cache != null)
+            if (cache != null && selectedWorkers.Count > 0)
             {
+                if (selectedFormations.Count > 0) IssueFormationGroupOrder(hit.point, false);
+                var availableWorkers = selectedWorkers.Where(worker => worker.CurrentConstruction == null).ToList();
+                if (availableWorkers.Count == 0)
+                {
+                    SetOrderFeedback("Cancel construction before issuing another order");
+                    return;
+                }
                 foreach (var worker in availableWorkers) worker.IssueGather(cache);
                 SetOrderFeedback($"Gather {cache.name}");
                 CreateOrderMarker(cache.transform.position, new Color(0.95f, 0.68f, 0.2f));
                 return;
             }
-            if (selectedFormations.Count > 0) return;
-            for (var i = 0; i < availableWorkers.Count; i++)
-            {
-                var offset = FormationOffset(i, availableWorkers.Count);
-                availableWorkers[i].IssueMove(hit.point + offset);
-            }
-            SetOrderFeedback("Move");
-            CreateOrderMarker(hit.point, new Color(0.2f, 0.78f, 1f));
+            IssueMoveForSelected(hit.point);
         }
 
         private void ApplySelection(Vector2 start, Vector2 end, bool modify)
@@ -837,24 +848,16 @@ namespace AshesOfRum
             if (placementWorker != null || awaitingAttackMove) return;
             var keyboard = Keyboard.current;
             if (keyboard == null) return;
-            var modifierActive = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed ||
-                                 keyboard.leftCtrlKey.wasPressedThisFrame || keyboard.rightCtrlKey.wasPressedThisFrame ||
-                                 keyboard.leftCtrlKey.wasReleasedThisFrame || keyboard.rightCtrlKey.wasReleasedThisFrame ||
-                                 keyboard.leftMetaKey.isPressed || keyboard.rightMetaKey.isPressed ||
-                                 keyboard.leftMetaKey.wasPressedThisFrame || keyboard.rightMetaKey.wasPressedThisFrame ||
-                                 keyboard.leftMetaKey.wasReleasedThisFrame || keyboard.rightMetaKey.wasReleasedThisFrame;
-            if (modifierActive) lastControlGroupModifierTime = Time.unscaledTime;
-            var assigning = Time.unscaledTime - lastControlGroupModifierTime <= ControlGroupModifierGraceSeconds;
+            var assigning = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed ||
+                            keyboard.leftMetaKey.isPressed || keyboard.rightMetaKey.isPressed;
             var anyNumberHeld = false;
             for (var index = 0; index < ControlGroupKeys.Length; index++)
             {
                 var key = keyboard[ControlGroupKeys[index]];
                 anyNumberHeld |= key.isPressed;
-                if (!key.wasPressedThisFrame && (!key.isPressed || controlGroupKeyHandled)) continue;
+                if (!key.isPressed || controlGroupKeyHandled) continue;
                 var groupNumber = index + 1;
-                var hasSelection = selectedWorkers.Count > 0 || selectedFormations.Count > 0;
-                if (assigning || (ControlGroupSize(groupNumber) == 0 && hasSelection))
-                    AssignControlGroup(groupNumber);
+                if (assigning) AssignControlGroup(groupNumber);
                 else RecallControlGroup(groupNumber);
                 controlGroupKeyHandled = true;
                 return;

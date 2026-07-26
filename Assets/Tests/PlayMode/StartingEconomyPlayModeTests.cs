@@ -613,7 +613,37 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
-        public IEnumerator FormationGroups_PreserveLayoutRecallWithHotkeyAndApplyCommandsTogether()
+        public IEnumerator ControlGroupHotkeys_BareDigitsRecallOnlyAndModifiedDigitsAssign()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var firstWorker = economy.Workers[0];
+            var secondWorker = economy.Workers[1];
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            keyboard.MakeCurrent();
+
+            economy.SelectOnly(firstWorker);
+            PressControlGroupHotkey(economy, keyboard, Key.Digit2);
+            Assert.That(economy.ControlGroupSize(2), Is.Zero,
+                "A bare digit must not assign the current selection to an empty group.");
+            Assert.That(firstWorker.IsSelected, Is.True);
+
+            PressControlGroupHotkey(economy, keyboard, Key.LeftCtrl, Key.Digit1);
+            Assert.That(economy.ControlGroupSize(1), Is.EqualTo(1));
+
+            economy.SelectOnly(secondWorker);
+            PressControlGroupHotkey(economy, keyboard, Key.LeftCtrl);
+            PressControlGroupHotkey(economy, keyboard, Key.Digit1);
+            Assert.That(economy.ControlGroupSize(1), Is.EqualTo(1),
+                "A bare recall after another modifier action must not overwrite the populated group.");
+            Assert.That(firstWorker.IsSelected, Is.True);
+            Assert.That(secondWorker.IsSelected, Is.False);
+
+            InputSystem.RemoveDevice(keyboard);
+        }
+
+        [UnityTest]
+        public IEnumerator FormationGroups_PreserveLayoutRecallAndApplyCommandsTogether()
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
@@ -629,30 +659,8 @@ namespace AshesOfRum.Tests
             Assert.That(cavalry.GetComponent<UnityEngine.AI.NavMeshAgent>().isOnNavMesh, Is.True);
             archers.GetComponent<UnityEngine.AI.NavMeshAgent>().Warp(new Vector3(-4f, 0f, 0f));
             cavalry.GetComponent<UnityEngine.AI.NavMeshAgent>().Warp(new Vector3(4f, 0f, 0f));
-            economy.SelectFormationsForAutomation(new[] { archers });
-            economy.AssignControlGroup(1);
             economy.SelectFormationsForAutomation(new[] { archers, cavalry });
-
-            var keyboard = InputSystem.AddDevice<Keyboard>();
-            keyboard.MakeCurrent();
-            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.LeftCtrl));
-            InputSystem.Update();
-            Assert.That(keyboard.leftCtrlKey.isPressed, Is.True);
-            var handleControlGroupInput = typeof(StartingEconomyController).GetMethod("HandleControlGroupInput",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            handleControlGroupInput?.Invoke(economy, null);
-            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
-            InputSystem.Update();
-            handleControlGroupInput?.Invoke(economy, null);
-            InputSystem.Update();
-            handleControlGroupInput?.Invoke(economy, null);
-            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.Digit1));
-            InputSystem.Update();
-            handleControlGroupInput?.Invoke(economy, null);
-            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
-            InputSystem.Update();
-            handleControlGroupInput?.Invoke(economy, null);
-            InputSystem.RemoveDevice(keyboard);
+            economy.AssignControlGroup(1);
             Assert.That(economy.ControlGroupSize(1), Is.EqualTo(2));
             economy.SelectHisar();
             Assert.That(economy.SelectedFormations, Is.Empty);
@@ -677,6 +685,27 @@ namespace AshesOfRum.Tests
                 Does.Contain("[F]"));
             Assert.That(GameObject.Find("Stop Formations").GetComponentInChildren<UnityEngine.UI.Text>().text,
                 Does.Contain("[G]"));
+        }
+
+        [UnityTest]
+        public IEnumerator MixedSelection_GroundMoveCommandMovesWorkersAndFormations()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], new Vector3(12f, 0f, -1f)), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(400);
+            Assert.That(economy.TryQueueFormation(FormationType.Archers), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+            var worker = economy.Workers[1];
+            var formation = economy.FriendlyFormations[0];
+            economy.SelectOnly(worker);
+            InvokePrivateMethod(economy, "AddSelectedFormation", formation);
+            var destination = new Vector3(-15f, 0f, 10f);
+            economy.IssueMoveForSelected(destination);
+
+            Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.Moving));
+            Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.Move));
         }
 
         [UnityTest]
@@ -724,13 +753,33 @@ namespace AshesOfRum.Tests
             Assert.That(hiddenEnemyMarker.r, Is.LessThan(visibleEnemyMarker.r));
 
             yield return null;
+            var selectedWorker = economy.Workers[0];
+            economy.SelectOnly(selectedWorker);
+            economy.AssignControlGroup(1);
+            economy.SelectHisar();
+            Assert.That(economy.RecallControlGroup(1), Is.True);
+
             var clickHandler = GameObject.Find("Fog Minimap").GetComponent<MinimapClickHandler>();
             var minimapRect = clickHandler.GetComponent<RectTransform>();
             var pointer = new PointerEventData(EventSystem.current) { position = minimapRect.position };
-            clickHandler.OnPointerClick(pointer);
+            var mouse = InputSystem.AddDevice<Mouse>();
+            mouse.MakeCurrent();
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = pointer.position }
+                .WithButton(MouseButton.Left));
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            ExecuteEvents.Execute(clickHandler.gameObject, pointer, ExecuteEvents.pointerClickHandler);
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = pointer.position });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleSelectionInput");
+            InputSystem.RemoveDevice(mouse);
+
             var cameraController = Object.FindAnyObjectByType<RtsCameraController>();
             Assert.That(cameraController.LastRequestedCenter.x, Is.EqualTo(0f).Within(1f));
             Assert.That(cameraController.LastRequestedCenter.z, Is.EqualTo(8f).Within(1f));
+            Assert.That(selectedWorker.IsSelected, Is.True,
+                "Minimap navigation must not leak into battlefield selection and clear the recalled group.");
+            Assert.That(economy.ControlGroupSize(1), Is.EqualTo(1));
 
             Object.Destroy(scout);
             Object.Destroy(mobile);
@@ -824,6 +873,17 @@ namespace AshesOfRum.Tests
 
         private static void InvokePrivateMethod(object target, string methodName, params object[] arguments) =>
             target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(target, arguments);
+
+        private static void PressControlGroupHotkey(StartingEconomyController economy, Keyboard keyboard,
+            params Key[] keys)
+        {
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(keys));
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleControlGroupInput");
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "HandleControlGroupInput");
+        }
 
         private static FormationAgent CreateFormationForTest(string name, FormationType type, bool friendly,
             EconomyTuning tuning)
