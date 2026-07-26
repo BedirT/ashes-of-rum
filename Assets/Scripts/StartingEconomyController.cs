@@ -855,7 +855,7 @@ namespace AshesOfRum
             {
                 var key = keyboard[ControlGroupKeys[index]];
                 anyNumberHeld |= key.isPressed;
-                if (!key.isPressed || controlGroupKeyHandled) continue;
+                if ((!key.wasPressedThisFrame && !key.isPressed) || controlGroupKeyHandled) continue;
                 var groupNumber = index + 1;
                 if (assigning) AssignControlGroup(groupNumber);
                 else RecallControlGroup(groupNumber);
