@@ -1205,6 +1205,58 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator MixedSelection_BuildingUsesAnIdleWorkerRegardlessOfSelectionOrder()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var busyWorker = economy.Workers[0];
+            var idleWorker = economy.Workers[1];
+            economy.CreditSuppliesForAutomation(400);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+            Assert.That(economy.TryPlaceHouse(busyWorker, VisibleHouseSite), Is.True);
+            economy.CreditSuppliesForAutomation(100);
+            Assert.That(busyWorker.CurrentConstruction, Is.Not.Null);
+            Assert.That(idleWorker.CurrentConstruction, Is.Null);
+
+            economy.SelectOnly(busyWorker);
+            InvokePrivateMethod(economy, "AddSelection", idleWorker);
+            InvokePrivateMethod(economy, "AddSelectedFormation", economy.FriendlyFormations[0]);
+            InvokePrivateMethod(economy, "UpdateHud");
+            var houseButton = GameObject.Find("Build House").GetComponent<Button>();
+            Assert.That(houseButton.interactable, Is.True,
+                "An idle selected worker must keep building actions available even when selected after a busy worker.");
+
+            houseButton.onClick.Invoke();
+            Assert.That(economy.IsBuildingPlacementActive, Is.True);
+            Assert.That(GetPrivateField<WorkerAgent>(economy, "placementWorker"), Is.SameAs(idleWorker));
+        }
+
+        [UnityTest]
+        public IEnumerator MinimapCentering_TracksTheRequestedGroundPointAtEveryZoomLevel()
+        {
+            yield return LoadEconomy();
+            var controller = Object.FindAnyObjectByType<RtsCameraController>();
+            var camera = controller.GetComponent<Camera>();
+            var ground = new Plane(Vector3.up, Vector3.zero);
+            var target = new Vector3(3f, 0f, 8f);
+
+            foreach (var height in new[] { 10f, 22f })
+            {
+                var position = controller.transform.position;
+                position.y = height;
+                controller.transform.position = position;
+                controller.CenterOn(target);
+                var centerRay = camera.ViewportPointToRay(new Vector3(0.5f, 0.5f));
+                Assert.That(ground.Raycast(centerRay, out var distance), Is.True);
+                var focusedPoint = centerRay.GetPoint(distance);
+                Assert.That(focusedPoint.x, Is.EqualTo(target.x).Within(0.05f));
+                Assert.That(focusedPoint.z, Is.EqualTo(target.z).Within(0.05f),
+                    $"Minimap focus drifted at camera height {height}.");
+            }
+        }
+
+        [UnityTest]
         public IEnumerator FogAndMinimap_HideMobilesRememberStaticsAndNavigateExploredGround()
         {
             yield return LoadEconomy();
@@ -1464,6 +1516,9 @@ namespace AshesOfRum.Tests
 
         private static void SetPrivateField<T>(object target, string fieldName, T value) =>
             target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(target, value);
+
+        private static T GetPrivateField<T>(object target, string fieldName) =>
+            (T)target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(target);
 
         private static void InvokePrivateMethod(object target, string methodName, params object[] arguments) =>
             target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(target, arguments);

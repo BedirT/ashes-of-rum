@@ -126,6 +126,7 @@ if HARNESS_PR_HEAD="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" PATH="$contract_tm
   exit 1
 fi
 grep -F 'does not match local HEAD' "$contract_tmp/stale-head.log" >/dev/null
+scripts/harness scan-log-self-test
 if PLAYER_TIMEOUT_SECONDS=1 scripts/harness watchdog-self-test >"$contract_tmp/watchdog.log" 2>&1; then
   printf 'Player watchdog self-test unexpectedly passed\n' >&2
   exit 1

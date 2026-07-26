@@ -9,7 +9,6 @@ namespace AshesOfRum
         private const float PanSpeed = 18f;
         private const float EdgeSize = 12f;
         private const float DragScale = 0.025f;
-        private const float GroundFocusOffset = 17f;
         private Vector2 previousMousePosition;
 
         public Vector3 LastRequestedCenter { get; private set; }
@@ -18,8 +17,12 @@ namespace AshesOfRum
         {
             LastRequestedCenter = worldPosition;
             var position = transform.position;
-            position.x = Mathf.Clamp(worldPosition.x, -20f, 20f);
-            position.z = Mathf.Clamp(worldPosition.z - GroundFocusOffset, -25f, 12f);
+            var forward = transform.forward;
+            var groundOffset = forward.y < -0.01f
+                ? forward * (position.y / -forward.y)
+                : Vector3.zero;
+            position.x = Mathf.Clamp(worldPosition.x - groundOffset.x, -20f, 20f);
+            position.z = Mathf.Clamp(worldPosition.z - groundOffset.z, -25f, 12f);
             transform.position = position;
         }
 

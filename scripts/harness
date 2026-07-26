@@ -66,7 +66,7 @@ verify_fast() {
 
 scan_log() {
   local log="$1"
-  local severity_lines unexpected_severity
+  local severity_lines unexpected_severity licensing_failure_line licensing_recovery_line
   [[ -f "$log" ]] || fail "Expected log not found: $log"
   if grep -E "(^|[^A-Za-z])(NullReferenceException|MissingReferenceException|Assertion failed|Crash!!!|Scripts have compiler errors|Compilation failed|Player build failed)([^A-Za-z]|$)" "$log" >/dev/null; then
     fail "Runtime or compiler failure found in $log"
@@ -78,11 +78,36 @@ scan_log() {
     | grep -Fv '[Licensing::Module] Error: Licensing initialization failed after' \
     | grep -Fv '[Licensing::Module] Error: The connection with the Unity Licensing Client has been lost. Attempting to reconnect.' || true)"
   [[ -z "$unexpected_severity" ]] || fail "Unexpected error-severity log entry in $log: $unexpected_severity"
-  if grep -E '(HandshakeResponse reported an error:|Licensing initialization failed after|connection with the Unity Licensing Client has been lost)' "$log" >/dev/null; then
+  licensing_failure_line="$(grep -nE '(HandshakeResponse reported an error:|Failed to handshake to channel:|Licensing initialization failed after|connection with the Unity Licensing Client has been lost)' "$log" \
+    | tail -n 1 | cut -d: -f1 || true)"
+  if [[ -n "$licensing_failure_line" ]]; then
     # Unity can first contact an older shared LicensingClient, then relaunch its versioned client.
-    grep -F '[Licensing::Module] Successfully connected to LicensingClient on channel:' "$log" >/dev/null \
-      || fail "Licensing fallback did not reconnect successfully in $log"
+    licensing_recovery_line="$(grep -nF '[Licensing::Module] Successfully connected to LicensingClient on channel:' "$log" \
+      | tail -n 1 | cut -d: -f1 || true)"
+    [[ -n "$licensing_recovery_line" && "$licensing_recovery_line" -gt "$licensing_failure_line" ]] \
+      || fail "Licensing fallback did not reconnect after the final failure in $log"
   fi
+}
+
+scan_log_self_test() {
+  local fixture_dir
+  fixture_dir="$(mktemp -d)"
+  printf '%s\n' \
+    '[Licensing::Module] Successfully connected to LicensingClient on channel: initial' \
+    '[Licensing::Module] Error: The connection with the Unity Licensing Client has been lost. Attempting to reconnect.' \
+    > "$fixture_dir/unrecovered.log"
+  if (scan_log "$fixture_dir/unrecovered.log") >"$fixture_dir/unrecovered-result.log" 2>&1; then
+    fail "Licensing success-before-failure fixture unexpectedly passed"
+  fi
+  grep -F 'did not reconnect after the final failure' "$fixture_dir/unrecovered-result.log" >/dev/null \
+    || fail "Licensing failure fixture did not report the expected order-sensitive error"
+
+  printf '%s\n' \
+    '[Licensing::Module] Error: Failed to handshake to channel: initial' \
+    '[Licensing::Module] Successfully connected to LicensingClient on channel: recovered' \
+    > "$fixture_dir/recovered.log"
+  scan_log "$fixture_dir/recovered.log"
+  rm -rf "$fixture_dir"
 }
 
 validate_json() {
@@ -301,6 +326,7 @@ case "${1:-}" in
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
   head-freshness-self-test) head_freshness_self_test ;;
+  scan-log-self-test) scan_log_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
   *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

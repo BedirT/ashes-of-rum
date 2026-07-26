@@ -895,12 +895,11 @@ namespace AshesOfRum
             queueText.text = productionQueue.Active.HasValue
                 ? $"QUEUE: {productionQueue.Active.Value.ToString().ToUpperInvariant()} {productionQueue.Progress:P0}  +{productionQueue.Count - 1}"
                 : "QUEUE: EMPTY";
-            buildHouseButton.interactable = placementWorker == null && !awaitingAttackMove && selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
-                                            selectedWorkers[0].CurrentConstruction == null;
-            buildStorehouseButton.interactable = placementWorker == null && !awaitingAttackMove && selectedWorkers.Count > 0 && Supplies >= tuning.storehouseCost &&
-                                                 selectedWorkers[0].CurrentConstruction == null;
-            buildWatchtowerButton.interactable = placementWorker == null && !awaitingAttackMove && selectedWorkers.Count > 0 && Supplies >= tuning.watchtowerCost &&
-                                                 selectedWorkers[0].CurrentConstruction == null;
+            var canBuild = placementWorker == null && !awaitingAttackMove &&
+                           selectedWorkers.Any(worker => worker.CurrentConstruction == null);
+            buildHouseButton.interactable = canBuild && Supplies >= tuning.houseCost;
+            buildStorehouseButton.interactable = canBuild && Supplies >= tuning.storehouseCost;
+            buildWatchtowerButton.interactable = canBuild && Supplies >= tuning.watchtowerCost;
             cancelBuildButton.interactable = selectedWorkers.Any(worker => worker.CurrentConstruction != null);
             buildHouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
             buildStorehouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
@@ -994,14 +993,15 @@ namespace AshesOfRum
                 SetOrderFeedback($"Need {cost} Supplies");
                 return;
             }
-            if (selectedWorkers[0].CurrentConstruction != null)
+            var worker = selectedWorkers.FirstOrDefault(candidate => candidate.CurrentConstruction == null);
+            if (worker == null)
             {
-                SetOrderFeedback("Worker is already constructing");
+                SetOrderFeedback("Selected workers are already constructing");
                 return;
             }
             if (placementPreview != null) Destroy(placementPreview);
             CancelSelectionGesture();
-            placementWorker = selectedWorkers[0];
+            placementWorker = worker;
             placementType = type;
             placementPreview = CreateBuildingVisual(type, $"{type} Placement Preview", Vector3.zero);
             foreach (var itemCollider in placementPreview.GetComponentsInChildren<Collider>())
