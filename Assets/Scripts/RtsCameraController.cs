@@ -25,10 +25,10 @@ namespace AshesOfRum
             if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) move += Vector3.right;
 
             var mousePosition = mouse.position.ReadValue();
-            if (mousePosition.x <= EdgeSize) move += Vector3.left;
-            if (mousePosition.x >= Screen.width - EdgeSize) move += Vector3.right;
-            if (mousePosition.y <= EdgeSize) move += Vector3.back;
-            if (mousePosition.y >= Screen.height - EdgeSize) move += Vector3.forward;
+            if (mousePosition.x > 0f && mousePosition.x <= EdgeSize) move += Vector3.left;
+            if (mousePosition.x < Screen.width && mousePosition.x >= Screen.width - EdgeSize) move += Vector3.right;
+            if (mousePosition.y > 0f && mousePosition.y <= EdgeSize) move += Vector3.back;
+            if (mousePosition.y < Screen.height && mousePosition.y >= Screen.height - EdgeSize) move += Vector3.forward;
 
             if (mouse.middleButton.wasPressedThisFrame) previousMousePosition = mousePosition;
             if (mouse.middleButton.isPressed)
