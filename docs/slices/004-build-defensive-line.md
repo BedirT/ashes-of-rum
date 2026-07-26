@@ -8,26 +8,26 @@ the nearest hostile formation in range.
 
 ## Acceptance
 
-- [ ] A selected worker exposes clickable House, Storehouse, and Watchtower commands with visible
+- [x] A selected worker exposes clickable House, Storehouse, and Watchtower commands with visible
       fixed hotkeys and the approved 1:2:3 relative Supply costs.
-- [ ] Storehouse and Watchtower placement uses the existing snapped, reachable, unoccupied,
+- [x] Storehouse and Watchtower placement uses the existing snapped, reachable, unoccupied,
       in-bounds, route-preserving construction path.
-- [ ] One assigned worker completes each building, resumes its prior gathering assignment, and can
+- [x] One assigned worker completes each building, resumes its prior gathering assignment, and can
       cancel unfinished construction for a full refund.
-- [ ] A completed Storehouse becomes an available drop-off and workers carrying Supplies choose it
+- [x] A completed Storehouse becomes an available drop-off and workers carrying Supplies choose it
       when it is closer than the Hisar.
-- [ ] A completed Watchtower automatically targets the nearest hostile formation in range, fires a
+- [x] A completed Watchtower automatically targets the nearest hostile formation in range, fires a
       visible deterministic projectile, and supports the defense without resolving a moving assault
       by itself.
-- [ ] Completed friendly buildings can be selected and deliberately demolished only after visible
+- [x] Completed friendly buildings can be selected and deliberately demolished only after visible
       confirmation, with no refund.
-- [ ] Focused EditMode and PlayMode coverage protects building costs, placement, completion,
+- [x] Focused EditMode and PlayMode coverage protects building costs, placement, completion,
       cancellation, nearest drop-off selection, tower targeting, damage, and demolition.
-- [ ] The native macOS development player exercises both new buildings while preserving gathering,
+- [x] The native macOS development player exercises both new buildings while preserving gathering,
       House construction, formation training, and counter combat.
-- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
-- [ ] A context-free review covers the exact final HEAD.
-- [ ] The merged game remains playable at its current scope.
+- [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
+- [x] A context-free review covers the exact final HEAD.
+- [x] The merged game remains playable at its current scope.
 
 ## Non-Goals
 
@@ -56,5 +56,15 @@ minimap, control groups, complete AI, victory or defeat, audio, and visual polis
 
 ## Evidence
 
-Record the PR, final reviewed HEAD, verification summary, review round, fixer count, and merge result
-before closing the slice.
+- PR: [#8](https://github.com/BedirT/rts-game/pull/8)
+- Verification: `make verify` passed at final reviewed HEAD
+  `1bdc35999b87219974c5a1e44dabc6866fe49698` with 14 EditMode and 22 PlayMode tests,
+  an ARM64 development build, headless smoke, graphical 1920x1080 smoke, and clean logs.
+- Runtime proof: the exact-HEAD built player constructed and cancelled a Storehouse and Watchtower,
+  deposited Supplies at the nearer Storehouse, used supporting Watchtower fire against a moving
+  formation, deliberately demolished a completed building, and preserved gathering, House
+  construction, formation training, and counter combat.
+- Review: round 1 reported three blocking findings and required fixer run 1; round 2 reported no
+  blocking findings at the final head.
+- Merge: squash-merged as `45f5dabb529690d33fc78875ea55a2b7ff6cfd8e`; `make post-merge`
+  passed on merged `main` with the same test, build, smoke, and log checks.
