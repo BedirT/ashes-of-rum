@@ -118,11 +118,11 @@ namespace AshesOfRum
                     var friendly = economy.FriendlyFormations[0];
                     var hostile = economy.EnemyFormations[0];
                     var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
+                    supportedFormationMaterials = friendly.HasSupportedVisualMaterials() &&
+                                                  hostile.HasSupportedVisualMaterials();
                     while (hostile.MemberCount == 8 && Time.realtimeSinceStartup < combatDeadline)
                         yield return null;
                     watchtowerFired = tower.ShotsFired > 0 && hostile.MemberCount < 8;
-                    supportedFormationMaterials = friendly.HasSupportedVisualMaterials() &&
-                                                  hostile.HasSupportedVisualMaterials();
                     hostile.ApplyDeterministicHit(FormationType.Spearmen);
                     foreach (var visual in hostile.GetComponentsInChildren<FormationMemberVisual>())
                         nonlethalHitFeedback |= visual.IsShowingHitFeedback;
