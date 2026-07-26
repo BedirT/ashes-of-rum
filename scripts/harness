@@ -142,6 +142,8 @@ verify() {
     --no-tail
   scan_log "$EVIDENCE/build.log"
   smoke
+  [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
+    || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
   publish_status success "EditMode, PlayMode, macOS build, and smoke passed"
   trap - ERR

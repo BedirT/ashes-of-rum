@@ -11,7 +11,7 @@ machine-readable result. This is project and delivery infrastructure, not gamepl
 - [x] The approved Unity 6000.5.5f1 URP project exists in the repository.
 - [x] A neutral bootstrap scene opens without gameplay content.
 - [x] EditMode and PlayMode tests protect harness and scene contracts.
-- [ ] A native macOS build runs a deterministic scene smoke and exits itself.
+- [x] A native macOS build runs a deterministic scene smoke and exits itself.
 - [ ] Evidence is keyed to the exact commit and published as `unity-local/verify`.
 - [ ] A context-free review covers the exact final PR HEAD.
 - [ ] The reviewed PR is squash-merged and post-merge proof passes on `main`.
