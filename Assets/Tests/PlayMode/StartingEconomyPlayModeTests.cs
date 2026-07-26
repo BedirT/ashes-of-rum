@@ -929,6 +929,57 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator AttackMoveMode_CoalescedActivationClicksAreConsumed()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
+            yield return WaitUntil(() => economy.PopulationCapacity == 20);
+            economy.CreditSuppliesForAutomation(400);
+            Assert.That(economy.TryQueueFormation(FormationType.Cavalry), Is.True);
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+
+            var formation = economy.FriendlyFormations[0];
+            economy.SelectOnly(formation);
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+            var mouse = InputSystem.AddDevice<Mouse>();
+            keyboard.MakeCurrent();
+            mouse.MakeCurrent();
+            var groundClick = (Vector2)Camera.main.WorldToScreenPoint(new Vector3(4f, 0f, 6f));
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.F));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = groundClick }.WithButton(MouseButton.Left));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = groundClick });
+            InputSystem.Update();
+            Assert.That(Keyboard.current, Is.SameAs(keyboard));
+            Assert.That(keyboard.fKey.isPressed, Is.True);
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.AttackMove),
+                GameObject.Find("Order").GetComponent<Text>().text);
+            Assert.That(formation.IsSelected, Is.True,
+                "The click that resolves attack-move must not leak into normal selection.");
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState());
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = groundClick });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "Update");
+            formation.IssueStop();
+            economy.SelectOnly(formation);
+
+            InputSystem.QueueStateEvent(keyboard, new KeyboardState(Key.F));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = groundClick }.WithButton(MouseButton.Right));
+            InputSystem.QueueStateEvent(mouse, new MouseState { position = groundClick });
+            InputSystem.Update();
+            InvokePrivateMethod(economy, "Update");
+            Assert.That(formation.CurrentOrder, Is.EqualTo(FormationOrder.Idle),
+                "The click that cancels attack-move must not leak into a normal contextual order.");
+            Assert.That(formation.IsSelected, Is.True);
+
+            InputSystem.RemoveDevice(mouse);
+            InputSystem.RemoveDevice(keyboard);
+        }
+
+        [UnityTest]
         public IEnumerator FormationGroups_PreserveLayoutRecallAndApplyCommandsTogether()
         {
             yield return LoadEconomy();

@@ -75,6 +75,9 @@ namespace AshesOfRum
         private bool lastRouteResult;
         private ConstructibleBuilding demolitionCandidate;
         private bool awaitingAttackMove;
+        private bool escapePressed;
+        private bool attackMovePressed;
+        private bool stopPressed;
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
 
@@ -140,9 +143,15 @@ namespace AshesOfRum
             UpdateHud();
             HandleBuildInput();
             HandleControlGroupInput();
-            HandleFormationCommandInput();
-            HandleSelectionInput();
-            HandleOrderInput();
+            if (HandleFormationCommandInput()) CancelSelectionGesture();
+            else
+            {
+                HandleSelectionInput();
+                HandleOrderInput();
+            }
+            escapePressed = false;
+            attackMovePressed = false;
+            stopPressed = false;
             var completed = productionQueue.Advance(Time.deltaTime);
             if (completed.HasValue) CompleteFormation(completed.Value);
         }
@@ -546,6 +555,13 @@ namespace AshesOfRum
             UpdateSelectionBox(selectionStart, position);
         }
 
+        private void CancelSelectionGesture()
+        {
+            if (!selecting) return;
+            selecting = false;
+            selectionBox.gameObject.SetActive(false);
+        }
+
         private void CompleteSelection(PointerButtonTransition transition)
         {
             if (!selecting) return;
@@ -626,6 +642,9 @@ namespace AshesOfRum
 
         private void QueueControlGroupEvent(InputEventPtr eventPtr, Keyboard keyboard)
         {
+            escapePressed |= WasPressedInEvent(keyboard.escapeKey, eventPtr);
+            attackMovePressed |= WasPressedInEvent(keyboard.fKey, eventPtr);
+            stopPressed |= WasPressedInEvent(keyboard.gKey, eventPtr);
             var assigning = IsPressedInEvent(keyboard.leftCtrlKey, eventPtr) ||
                             IsPressedInEvent(keyboard.rightCtrlKey, eventPtr) ||
                             IsPressedInEvent(keyboard.leftMetaKey, eventPtr) ||
@@ -646,6 +665,12 @@ namespace AshesOfRum
             return button.ReadValueFromEvent(eventPtr, out var value)
                 ? value >= InputSystem.settings.defaultButtonPressPoint
                 : button.isPressed;
+        }
+
+        private static bool WasPressedInEvent(ButtonControl button, InputEventPtr eventPtr)
+        {
+            return button.ReadValueFromEvent(eventPtr, out var value) && !button.isPressed &&
+                   value >= InputSystem.settings.defaultButtonPressPoint;
         }
 
         private void ApplySelection(Vector2 start, Vector2 end, bool modify)
@@ -824,8 +849,8 @@ namespace AshesOfRum
                 }
                 if (selectedFormations.Count > 0)
                 {
-                    if (keyboard.fKey.wasPressedThisFrame) BeginAttackMoveTargeting();
-                    if (keyboard.gKey.wasPressedThisFrame) StopSelectedFormations();
+                    if (attackMovePressed || keyboard.fKey.wasPressedThisFrame) BeginAttackMoveTargeting();
+                    if (stopPressed || keyboard.gKey.wasPressedThisFrame) StopSelectedFormations();
                     return;
                 }
                 if (keyboard.hKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.House);
@@ -920,17 +945,27 @@ namespace AshesOfRum
         private bool HandleFormationCommandInput()
         {
             if (!awaitingAttackMove) return false;
-            var mouse = Mouse.current;
-            var keyboard = Keyboard.current;
-            if (mouse == null) return true;
-            if (mouse.rightButton.wasPressedThisFrame || keyboard?.escapeKey.wasPressedThisFrame == true)
+            if (orderPresses.Count > 0 || escapePressed)
             {
+                orderPresses.Clear();
+                selectionTransitions.Clear();
                 awaitingAttackMove = false;
                 SetOrderFeedback("Attack-move cancelled");
                 return true;
             }
-            if (!mouse.leftButton.wasPressedThisFrame) return true;
-            var pointer = mouse.position.ReadValue();
+            PointerButtonTransition press = default;
+            var foundPress = false;
+            while (selectionTransitions.Count > 0)
+            {
+                var transition = selectionTransitions.Dequeue();
+                if (!transition.Pressed) continue;
+                press = transition;
+                foundPress = true;
+                break;
+            }
+            if (!foundPress) return true;
+            selectionTransitions.Clear();
+            var pointer = press.Position;
             if (IsPointerOverHud(pointer)) return true;
             if (!Physics.Raycast(worldCamera.ScreenPointToRay(pointer), out var hit, 200f)) return true;
             IssueFormationGroupOrder(hit.point, true);
