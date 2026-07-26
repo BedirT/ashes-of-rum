@@ -699,6 +699,7 @@ namespace AshesOfRum
                     new Vector3(-5f + enemyFormations.Count * 5f, 0f, 22f)),
                 CreateOpponentBuilding,
                 () => friendlyFormations,
+                IsCurrentlyVisibleToHostileSide,
                 () => MatchElapsedSeconds,
                 (phase, elapsed) =>
                 {
@@ -747,6 +748,10 @@ namespace AshesOfRum
         private void DestroyOpponentBuilding(ConstructibleBuilding building)
         {
             if (building == null) return;
+            if (!building.IsComplete)
+                foreach (var worker in enemyWorkers.Where(worker => worker != null &&
+                             ReferenceEquals(worker.CurrentConstruction, building)))
+                    worker.CancelConstruction();
             opponent?.NotifyBuildingDestroyed(building);
             enemyBuildings.Remove(building);
             fogOfWar?.UnregisterHostile(building.gameObject);
@@ -1497,7 +1502,7 @@ namespace AshesOfRum
                 _ => new Color(0.08f, 0.32f, 0.66f)
             };
             building.Initialize(type, BuildingDuration(type), tuning.buildingHealth, completeColor,
-                DestroyCompletedBuilding);
+                DestroyFriendlyBuilding);
             fogOfWar?.RegisterFriendly(root.transform);
             if (type == BuildingType.Watchtower)
                 root.AddComponent<WatchtowerAttack>().Initialize(tuning,
@@ -1588,10 +1593,16 @@ namespace AshesOfRum
             _ => tuning.watchtowerBuildSeconds
         };
 
-        private void DestroyCompletedBuilding(ConstructibleBuilding building)
+        private void DestroyFriendlyBuilding(ConstructibleBuilding building)
         {
+            if (building == null) return;
             var type = building.Type;
-            if (type == BuildingType.House) population.RemoveCapacity(tuning.housePopulationCapacity);
+            if (!building.IsComplete)
+                foreach (var worker in workers.Where(worker => worker != null &&
+                             ReferenceEquals(worker.CurrentConstruction, building)))
+                    worker.CancelConstruction();
+            if (building.IsComplete && type == BuildingType.House)
+                population.RemoveCapacity(tuning.housePopulationCapacity);
             RemoveBuildingFromLists(building);
             if (selectedBuilding == building) selectedBuilding = null;
             demolitionCandidate = null;

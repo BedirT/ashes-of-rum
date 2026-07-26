@@ -434,9 +434,14 @@ namespace AshesOfRum
 
         private void TryRetaliate(FormationAgent attacker)
         {
-            if (target != null || !IsValidTarget(attacker)) return;
+            var hasExplicitFocus = CurrentOrder == FormationOrder.Focus && HasCombatTarget;
+            if (target != null || hasExplicitFocus || !IsValidTarget(attacker)) return;
             target = attacker;
+            workerTarget = null;
+            structureTargetComponent = null;
+            hasDestination = false;
             CurrentOrder = FormationOrder.Focus;
+            StartNavigation(attacker.transform.position);
         }
 
         private static Vector3 Grounded(Vector3 position) => new(position.x, 0f, position.z);

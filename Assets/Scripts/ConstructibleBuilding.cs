@@ -12,11 +12,12 @@ namespace AshesOfRum
         private Color completeColor;
         private Action<ConstructibleBuilding> destroyedCallback;
         private Coroutine hitRoutine;
+        private static readonly Color ConstructionColor = new(0.42f, 0.55f, 0.68f);
 
         public BuildingType Type { get; private set; }
         public Component TargetComponent => this;
         public bool IsFriendly { get; private set; } = true;
-        public bool IsAttackable => IsComplete && !IsDestroyed;
+        public bool IsAttackable => !IsDestroyed;
         public bool IsComplete { get; private set; }
         public bool IsDestroyed { get; private set; }
         public bool WasDemolished { get; private set; }
@@ -40,7 +41,7 @@ namespace AshesOfRum
             completeColor = finishedColor;
             destroyedCallback = onDestroyed;
             renderers = GetComponentsInChildren<Renderer>();
-            SetColor(new Color(0.42f, 0.55f, 0.68f));
+            SetColor(ConstructionColor);
             SetSelected(false);
         }
 
@@ -63,7 +64,7 @@ namespace AshesOfRum
 
         public bool ApplyDamage(int amount)
         {
-            if (!IsComplete || IsDestroyed || amount <= 0) return false;
+            if (IsDestroyed || amount <= 0) return false;
             Health = Mathf.Max(0, Health - amount);
             if (Health == 0)
             {
@@ -95,9 +96,10 @@ namespace AshesOfRum
 
         private IEnumerator FlashHit()
         {
-            SetColor(Color.Lerp(completeColor, Color.white, 0.75f));
+            var baseColor = IsComplete ? completeColor : ConstructionColor;
+            SetColor(Color.Lerp(baseColor, Color.white, 0.75f));
             yield return new WaitForSeconds(0.16f);
-            if (!IsDestroyed) SetColor(completeColor);
+            if (!IsDestroyed) SetColor(IsComplete ? completeColor : ConstructionColor);
             hitRoutine = null;
         }
 
@@ -109,6 +111,7 @@ namespace AshesOfRum
                 if (itemRenderer.GetComponent<BuildingSelectionRing>() == null)
                     itemRenderer.material.color = color;
             }
+            GetComponent<FogVisibilityTarget>()?.RefreshColors();
         }
     }
 

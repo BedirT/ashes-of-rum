@@ -254,6 +254,13 @@ namespace AshesOfRum
             originalColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
         }
 
+        public void RefreshColors()
+        {
+            if (renderers == null) return;
+            originalColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            Apply(State);
+        }
+
         public bool Apply(FogState state)
         {
             var firstReveal = state == FogState.Visible && !hasEverBeenVisible;

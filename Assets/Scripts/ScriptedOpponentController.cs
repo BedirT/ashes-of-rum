@@ -25,6 +25,7 @@ namespace AshesOfRum
         private Func<FormationType, FormationAgent> createFormation;
         private Func<BuildingType, Vector3, ConstructibleBuilding> createBuilding;
         private Func<IEnumerable<FormationAgent>> playerFormationProvider;
+        private Func<FormationAgent, bool> playerFormationVisibility;
         private Func<float> elapsedProvider;
         private Action<AiPhase, float> attackStarted;
         private Action<bool, string> entityProduced;
@@ -37,6 +38,7 @@ namespace AshesOfRum
         private bool workerQueued;
         private bool started;
         private bool suspended;
+        private readonly HashSet<AiPhase> dispatchedAttacks = new();
 
         public EconomyWallet Wallet { get; private set; }
         public PopulationLedger Population { get; private set; }
@@ -49,7 +51,8 @@ namespace AshesOfRum
             IList<ConstructibleBuilding> buildingList, IReadOnlyList<ResourceCache> knownCaches,
             Func<int, WorkerAgent> workerFactory, Func<FormationType, FormationAgent> formationFactory,
             Func<BuildingType, Vector3, ConstructibleBuilding> buildingFactory,
-            Func<IEnumerable<FormationAgent>> hostileFormationProvider, Func<float> matchElapsedProvider,
+            Func<IEnumerable<FormationAgent>> hostileFormationProvider,
+            Func<FormationAgent, bool> isHostileFormationVisible, Func<float> matchElapsedProvider,
             Action<AiPhase, float> onAttackStarted, Action<bool, string> onEntityProduced,
             Action<bool, string> onBuildingConstructed)
         {
@@ -64,6 +67,7 @@ namespace AshesOfRum
             createFormation = formationFactory;
             createBuilding = buildingFactory;
             playerFormationProvider = hostileFormationProvider;
+            playerFormationVisibility = isHostileFormationVisible;
             elapsedProvider = matchElapsedProvider;
             attackStarted = onAttackStarted;
             entityProduced = onEntityProduced;
@@ -96,7 +100,13 @@ namespace AshesOfRum
 
         public void NotifyBuildingDestroyed(ConstructibleBuilding building)
         {
-            if (building == null || building.Type != BuildingType.House || completedHouses <= 0) return;
+            if (building == null) return;
+            if (!building.IsComplete)
+            {
+                NotifyConstructionAbandoned(building);
+                return;
+            }
+            if (building.Type != BuildingType.House || completedHouses <= 0) return;
             completedHouses--;
             Population.RemoveCapacity(tuning.housePopulationCapacity);
         }
@@ -181,7 +191,7 @@ namespace AshesOfRum
             var formation = createFormation(item.ToFormationType());
             formations.Add(formation);
             entityProduced?.Invoke(false, item.ToString());
-            ApplyCurrentPhaseOrder(formation);
+            if (ApplyCurrentPhaseOrder(formation)) RecordCurrentPhaseAttack();
         }
 
         private void UpdatePhase()
@@ -191,14 +201,14 @@ namespace AshesOfRum
                 tuning.aiFinalAssaultSeconds);
             if (current == Phase) return;
             Phase = current;
-            attackStarted?.Invoke(current, elapsed);
             if (!IsDefending) ApplyCurrentPhaseOrders();
         }
 
         private void UpdateDefense()
         {
             var threat = playerFormationProvider()
-                .Where(candidate => candidate != null && candidate.MemberCount > 0)
+                .Where(candidate => candidate != null && candidate.MemberCount > 0 &&
+                                    (playerFormationVisibility == null || playerFormationVisibility(candidate)))
                 .OrderBy(candidate => (candidate.transform.position - ownHisar.transform.position).sqrMagnitude)
                 .FirstOrDefault(candidate => IsThreateningBase(candidate.transform.position));
             if (threat != null)
@@ -224,26 +234,35 @@ namespace AshesOfRum
 
         private void ApplyCurrentPhaseOrders()
         {
+            var orderDispatched = false;
             foreach (var formation in formations.Where(item => item != null && item.MemberCount > 0))
-                ApplyCurrentPhaseOrder(formation);
+                orderDispatched |= ApplyCurrentPhaseOrder(formation);
+            if (orderDispatched) RecordCurrentPhaseAttack();
         }
 
-        private void ApplyCurrentPhaseOrder(FormationAgent formation)
+        private bool ApplyCurrentPhaseOrder(FormationAgent formation)
         {
-            if (formation == null || IsDefending) return;
+            if (formation == null || IsDefending) return false;
             switch (Phase)
             {
                 case AiPhase.Probe:
-                    if (formation.Type == FormationType.Cavalry)
-                        formation.IssueAttackMove(new Vector3(0f, 0f, -1f));
-                    break;
+                    if (formation.Type != FormationType.Cavalry) return false;
+                    formation.IssueAttackMove(new Vector3(0f, 0f, -1f));
+                    return true;
                 case AiPhase.Pressure:
                     formation.IssueAttackMove(new Vector3(0f, 0f, -4f));
-                    break;
+                    return true;
                 case AiPhase.FinalAssault:
-                    formation.IssueFocus(playerHisar);
-                    break;
+                    return formation.IssueFocus(playerHisar);
+                default:
+                    return false;
             }
+        }
+
+        private void RecordCurrentPhaseAttack()
+        {
+            if (Phase == AiPhase.Preparing || !dispatchedAttacks.Add(Phase)) return;
+            attackStarted?.Invoke(Phase, elapsedProvider());
         }
     }
 }
