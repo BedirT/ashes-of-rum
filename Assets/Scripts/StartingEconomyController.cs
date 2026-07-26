@@ -20,6 +20,9 @@ namespace AshesOfRum
         private readonly List<WorkerAgent> workers = new();
         private readonly List<WorkerAgent> selectedWorkers = new();
         private readonly List<HouseBuilding> houses = new();
+        private readonly List<ConstructibleBuilding> storehouses = new();
+        private readonly List<ConstructibleBuilding> watchtowers = new();
+        private readonly List<ConstructibleBuilding> buildings = new();
         private readonly List<FormationAgent> friendlyFormations = new();
         private readonly List<FormationAgent> enemyFormations = new();
         [SerializeField] private EconomyTuning tuning;
@@ -36,7 +39,10 @@ namespace AshesOfRum
         private RectTransform selectionBoxTransform;
         private PopulationLedger population;
         private Button buildHouseButton;
+        private Button buildStorehouseButton;
+        private Button buildWatchtowerButton;
         private Button cancelBuildButton;
+        private Button demolishButton;
         private Button trainSpearmenButton;
         private Button trainArchersButton;
         private Button trainCavalryButton;
@@ -44,16 +50,20 @@ namespace AshesOfRum
         private Text queueText;
         private FormationProductionQueue productionQueue;
         private FormationAgent selectedFormation;
+        private ConstructibleBuilding selectedBuilding;
         private bool hisarSelected;
         private bool firstEnemyDeployed;
         private GameObject placementPreview;
         private WorkerAgent placementWorker;
+        private BuildingType placementType;
         private bool placementValid;
         private Vector3 placementPosition;
         private NavMeshSurface navMeshSurface;
         private Vector3 lastRouteCandidate = new(float.PositiveInfinity, 0f, float.PositiveInfinity);
-        private int lastRouteHouseCount = -1;
+        private int buildingRouteVersion;
+        private int lastRouteVersion = -1;
         private bool lastRouteResult;
+        private ConstructibleBuilding demolitionCandidate;
 
         private static readonly Vector3 RouteStart = new(0f, 0f, -4f);
         private static readonly Vector3 RouteEnd = new(0f, 0f, 25f);
@@ -63,8 +73,11 @@ namespace AshesOfRum
         public int PopulationUsed => population?.Used ?? 0;
         public int PopulationCapacity => population?.Capacity ?? 0;
         public bool IsHousePlacementActive => placementWorker != null;
+        public bool IsBuildingPlacementActive => placementWorker != null;
         public IReadOnlyList<WorkerAgent> Workers => workers;
         public IReadOnlyList<HouseBuilding> Houses => houses;
+        public IReadOnlyList<ConstructibleBuilding> Storehouses => storehouses;
+        public IReadOnlyList<ConstructibleBuilding> Watchtowers => watchtowers;
         public IReadOnlyList<FormationAgent> FriendlyFormations => friendlyFormations;
         public IReadOnlyList<FormationAgent> EnemyFormations => enemyFormations;
         public int ProductionQueueCount => productionQueue?.Count ?? 0;
@@ -177,24 +190,65 @@ namespace AshesOfRum
         }
 
         public bool TryPlaceHouse(WorkerAgent worker, Vector3 position)
+            => TryPlaceBuilding(worker, BuildingType.House, position);
+
+        public bool TryPlaceStorehouse(WorkerAgent worker, Vector3 position)
+            => TryPlaceBuilding(worker, BuildingType.Storehouse, position);
+
+        public bool TryPlaceWatchtower(WorkerAgent worker, Vector3 position)
+            => TryPlaceBuilding(worker, BuildingType.Watchtower, position);
+
+        public void SelectOnly(ConstructibleBuilding building)
+        {
+            ClearSelection();
+            if (building == null || !building.IsComplete || building.IsDestroyed) return;
+            selectedBuilding = building;
+            building.SetSelected(true);
+            SetOrderFeedback($"{building.Type} selected");
+            UpdateHud();
+        }
+
+        public bool RequestDemolition()
+        {
+            if (selectedBuilding == null || !selectedBuilding.IsComplete || selectedBuilding.IsDestroyed)
+                return false;
+            if (demolitionCandidate != selectedBuilding)
+            {
+                demolitionCandidate = selectedBuilding;
+                SetOrderFeedback($"Confirm demolish {selectedBuilding.Type} - no refund");
+                UpdateHud();
+                return false;
+            }
+
+            var building = selectedBuilding;
+            demolitionCandidate = null;
+            return building.Demolish();
+        }
+
+        private bool TryPlaceBuilding(WorkerAgent worker, BuildingType type, Vector3 position)
         {
             if (worker == null) return false;
             var snapped = HousePlacementRules.Snap(position);
-            if (!CanPlaceHouse(worker, snapped, out var reason))
+            if (!CanPlaceBuilding(worker, snapped, out var reason))
             {
                 SetOrderFeedback(reason);
                 return false;
             }
-            if (!wallet.TrySpend(tuning.houseCost))
+            var cost = BuildingCost(type);
+            if (!wallet.TrySpend(cost))
             {
-                SetOrderFeedback($"Need {tuning.houseCost} Supplies");
+                SetOrderFeedback($"Need {cost} Supplies");
                 return false;
             }
 
-            var house = CreateHouse(snapped);
-            houses.Add(house);
-            worker.IssueConstruct(house, CompleteHouse);
-            SetOrderFeedback($"House placed - {tuning.houseCost} Supplies spent");
+            var building = CreateBuilding(type, snapped);
+            buildings.Add(building);
+            buildingRouteVersion++;
+            if (type == BuildingType.House) houses.Add((HouseBuilding)building);
+            else if (type == BuildingType.Storehouse) storehouses.Add(building);
+            else watchtowers.Add(building);
+            worker.IssueConstruct(building, CompleteBuilding);
+            SetOrderFeedback($"{type} placed - {cost} Supplies spent");
             return true;
         }
 
@@ -202,10 +256,11 @@ namespace AshesOfRum
         {
             var building = worker?.CurrentConstruction;
             if (building == null || !worker.CancelConstruction()) return false;
-            houses.Remove(building);
+            RemoveBuildingFromLists(building);
             Destroy(building.gameObject);
-            wallet.Refund(tuning.houseCost);
-            SetOrderFeedback($"House cancelled - {tuning.houseCost} Supplies refunded");
+            var cost = BuildingCost(building.Type);
+            wallet.Refund(cost);
+            SetOrderFeedback($"{building.Type} cancelled - {cost} Supplies refunded");
             return true;
         }
 
@@ -276,7 +331,7 @@ namespace AshesOfRum
                 CreatePrimitive(PrimitiveType.Cube, "Carried Supplies", workerObject.transform,
                     new Vector3(0f, 1.35f, -0.62f), new Vector3(0.42f, 0.42f, 0.42f), new Color(0.95f, 0.68f, 0.2f));
                 var worker = workerObject.AddComponent<WorkerAgent>();
-                worker.Initialize(tuning, wallet, hisar, Caches, i, NotifyEconomyState);
+                worker.Initialize(tuning, wallet, hisar, Caches, i, NotifyEconomyState, FindNearestDropOff);
                 workers.Add(worker);
             }
         }
@@ -301,10 +356,16 @@ namespace AshesOfRum
             selectionText = CreateText(canvas.transform, "Selection", new Vector2(0.04f, 0.045f), new Vector2(0.34f, 0.13f), 22, TextAnchor.MiddleLeft);
             orderText = CreateText(canvas.transform, "Order", new Vector2(0.35f, 0.075f), new Vector2(0.57f, 0.13f), 20, TextAnchor.MiddleCenter);
             queueText = CreateText(canvas.transform, "Production Queue", new Vector2(0.35f, 0.04f), new Vector2(0.57f, 0.075f), 15, TextAnchor.MiddleCenter);
-            buildHouseButton = CreateButton(canvas.transform, "Build House", new Vector2(0.59f, 0.05f), new Vector2(0.70f, 0.125f),
-                "BUILD HOUSE  [H]", BeginHousePlacement);
-            cancelBuildButton = CreateButton(canvas.transform, "Cancel Build", new Vector2(0.71f, 0.05f), new Vector2(0.82f, 0.125f),
+            buildHouseButton = CreateButton(canvas.transform, "Build House", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
+                $"HOUSE {tuning.houseCost} [H]", () => BeginBuildingPlacement(BuildingType.House));
+            buildStorehouseButton = CreateButton(canvas.transform, "Build Storehouse", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
+                $"STOREHOUSE {tuning.storehouseCost} [R]", () => BeginBuildingPlacement(BuildingType.Storehouse));
+            buildWatchtowerButton = CreateButton(canvas.transform, "Build Watchtower", new Vector2(0.78f, 0.05f), new Vector2(0.88f, 0.125f),
+                $"WATCHTOWER {tuning.watchtowerCost} [T]", () => BeginBuildingPlacement(BuildingType.Watchtower));
+            cancelBuildButton = CreateButton(canvas.transform, "Cancel Build", new Vector2(0.88f, 0.05f), new Vector2(0.98f, 0.125f),
                 "CANCEL BUILD  [X]", CancelSelectedConstruction);
+            demolishButton = CreateButton(canvas.transform, "Demolish Building", new Vector2(0.78f, 0.05f), new Vector2(0.98f, 0.125f),
+                "DEMOLISH [X]", () => RequestDemolition());
             trainSpearmenButton = CreateButton(canvas.transform, "Train Spearmen", new Vector2(0.58f, 0.05f), new Vector2(0.68f, 0.125f),
                 $"SPEARMEN {tuning.formationCost} [S]", () => TryQueueFormation(FormationType.Spearmen));
             trainArchersButton = CreateButton(canvas.transform, "Train Archers", new Vector2(0.68f, 0.05f), new Vector2(0.78f, 0.125f),
@@ -403,6 +464,14 @@ namespace AshesOfRum
                         SetOrderFeedback($"Selected {clickedFormation.Type}");
                         return;
                     }
+                    var clickedBuilding = hit.collider.GetComponentInParent<ConstructibleBuilding>();
+                    if (clickedBuilding != null && clickedBuilding.IsComplete && !clickedBuilding.IsDestroyed)
+                    {
+                        selectedBuilding = clickedBuilding;
+                        clickedBuilding.SetSelected(true);
+                        SetOrderFeedback($"Selected {clickedBuilding.Type}");
+                        return;
+                    }
                     if (hit.collider.GetComponentInParent<Hisar>() != null)
                     {
                         hisarSelected = true;
@@ -452,6 +521,9 @@ namespace AshesOfRum
             selectedWorkers.Clear();
             if (selectedFormation != null) selectedFormation.SetSelected(false);
             selectedFormation = null;
+            if (selectedBuilding != null) selectedBuilding.SetSelected(false);
+            selectedBuilding = null;
+            demolitionCandidate = null;
             hisarSelected = false;
         }
 
@@ -462,6 +534,9 @@ namespace AshesOfRum
             if (populationText != null) populationText.text = $"POPULATION   {PopulationUsed} / {PopulationCapacity}";
             selectionText.text = selectedFormation != null
                 ? $"{selectedFormation.Type.ToString().ToUpperInvariant()}\n{selectedFormation.MemberCount} / 8 MEMBERS"
+                : selectedBuilding != null
+                    ? $"{selectedBuilding.Type.ToString().ToUpperInvariant()}\n" +
+                      $"HEALTH {selectedBuilding.Health} / {selectedBuilding.MaxHealth}"
                 : hisarSelected
                     ? "KARASUNGUR HISAR\nSHARED PRODUCTION QUEUE"
                     : selectedWorkers.Count == 0
@@ -472,11 +547,21 @@ namespace AshesOfRum
             queueText.text = productionQueue.Active.HasValue
                 ? $"QUEUE: {productionQueue.Active.Value.ToString().ToUpperInvariant()} {productionQueue.Progress:P0}  +{productionQueue.Count - 1}"
                 : "QUEUE: EMPTY";
-            buildHouseButton.interactable = selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
+            buildHouseButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.houseCost &&
                                             selectedWorkers[0].CurrentConstruction == null;
+            buildStorehouseButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.storehouseCost &&
+                                                 selectedWorkers[0].CurrentConstruction == null;
+            buildWatchtowerButton.interactable = placementWorker == null && selectedWorkers.Count > 0 && Supplies >= tuning.watchtowerCost &&
+                                                 selectedWorkers[0].CurrentConstruction == null;
             cancelBuildButton.interactable = selectedWorkers.Any(worker => worker.CurrentConstruction != null);
             buildHouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
+            buildStorehouseButton.gameObject.SetActive(selectedWorkers.Count > 0);
+            buildWatchtowerButton.gameObject.SetActive(selectedWorkers.Count > 0);
             cancelBuildButton.gameObject.SetActive(selectedWorkers.Count > 0);
+            demolishButton.gameObject.SetActive(selectedBuilding != null);
+            demolishButton.GetComponentInChildren<Text>().text = demolitionCandidate == selectedBuilding
+                ? "CONFIRM DEMOLISH [X]"
+                : "DEMOLISH [X]";
             trainSpearmenButton.gameObject.SetActive(hisarSelected);
             trainArchersButton.gameObject.SetActive(hisarSelected);
             trainCavalryButton.gameObject.SetActive(hisarSelected);
@@ -504,41 +589,66 @@ namespace AshesOfRum
                     if (keyboard.xKey.wasPressedThisFrame) CancelActiveTraining();
                     return;
                 }
-                if (keyboard.hKey.wasPressedThisFrame) BeginHousePlacement();
+                if (selectedBuilding != null)
+                {
+                    if (keyboard.xKey.wasPressedThisFrame) RequestDemolition();
+                    return;
+                }
+                if (keyboard.hKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.House);
+                if (keyboard.rKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Storehouse);
+                if (keyboard.tKey.wasPressedThisFrame) BeginBuildingPlacement(BuildingType.Watchtower);
                 if (keyboard.xKey.wasPressedThisFrame) CancelSelectedConstruction();
                 return;
             }
 
             if (keyboard.escapeKey.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame)
             {
-                EndHousePlacement("House placement cancelled");
+                EndBuildingPlacement($"{placementType} placement cancelled");
                 return;
             }
-            if (Physics.Raycast(worldCamera.ScreenPointToRay(mouse.position.ReadValue()), out var hit, 200f))
+            var pointerPosition = mouse.position.ReadValue();
+            if (IsPointerOverHud(pointerPosition))
+            {
+                placementValid = false;
+                SetOrderFeedback($"Place {placementType} on the battlefield");
+                return;
+            }
+            if (Physics.Raycast(worldCamera.ScreenPointToRay(pointerPosition), out var hit, 200f))
             {
                 placementPosition = HousePlacementRules.Snap(hit.point);
                 placementPreview.transform.position = placementPosition;
-                placementValid = CanPlaceHouse(placementWorker, placementPosition, out var reason);
+                placementValid = CanPlaceBuilding(placementWorker, placementPosition, out var reason);
                 TintPreview(placementValid ? new Color(0.2f, 0.8f, 0.35f, 0.55f) : new Color(0.9f, 0.2f, 0.15f, 0.55f));
-                SetOrderFeedback(placementValid ? "Place House - left click" : reason);
+                SetOrderFeedback(placementValid ? $"Place {placementType} - left click" : reason);
+            }
+            else
+            {
+                placementValid = false;
             }
             if (!mouse.leftButton.wasPressedThisFrame || !placementValid) return;
             var worker = placementWorker;
             var position = placementPosition;
-            EndHousePlacement(null);
-            TryPlaceHouse(worker, position);
+            var type = placementType;
+            EndBuildingPlacement(null);
+            TryPlaceBuilding(worker, type, position);
         }
 
-        private void BeginHousePlacement()
+        private void BeginBuildingPlacement(BuildingType type)
         {
+            if (placementWorker != null)
+            {
+                SetOrderFeedback($"Finish or cancel {placementType} placement first");
+                return;
+            }
             if (selectedWorkers.Count == 0)
             {
                 SetOrderFeedback("Select a worker to build");
                 return;
             }
-            if (Supplies < tuning.houseCost)
+            var cost = BuildingCost(type);
+            if (Supplies < cost)
             {
-                SetOrderFeedback($"Need {tuning.houseCost} Supplies");
+                SetOrderFeedback($"Need {cost} Supplies");
                 return;
             }
             if (selectedWorkers[0].CurrentConstruction != null)
@@ -546,22 +656,33 @@ namespace AshesOfRum
                 SetOrderFeedback("Worker is already constructing");
                 return;
             }
+            if (placementPreview != null) Destroy(placementPreview);
             placementWorker = selectedWorkers[0];
-            placementPreview = CreateHouseVisual("House Placement Preview", Vector3.zero);
+            placementType = type;
+            placementPreview = CreateBuildingVisual(type, $"{type} Placement Preview", Vector3.zero);
             foreach (var itemCollider in placementPreview.GetComponentsInChildren<Collider>())
                 itemCollider.enabled = false;
             TintPreview(new Color(0.9f, 0.2f, 0.15f, 0.55f));
             placementValid = false;
-            SetOrderFeedback("Place House - left click / right click cancel");
+            SetOrderFeedback($"Place {type} - left click / right click cancel");
         }
 
-        private void EndHousePlacement(string feedback)
+        private void EndBuildingPlacement(string feedback)
         {
             if (placementPreview != null) Destroy(placementPreview);
             placementPreview = null;
             placementWorker = null;
             placementValid = false;
             if (!string.IsNullOrEmpty(feedback)) SetOrderFeedback(feedback);
+        }
+
+        private static bool IsPointerOverHud(Vector2 screenPosition)
+        {
+            if (EventSystem.current == null) return false;
+            var pointer = new PointerEventData(EventSystem.current) { position = screenPosition };
+            var hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(pointer, hits);
+            return hits.Any(hit => hit.gameObject.GetComponentInParent<Canvas>() != null);
         }
 
         private void CancelSelectedConstruction()
@@ -575,7 +696,7 @@ namespace AshesOfRum
             CancelConstruction(worker);
         }
 
-        private bool CanPlaceHouse(WorkerAgent worker, Vector3 position, out string reason)
+        private bool CanPlaceBuilding(WorkerAgent worker, Vector3 position, out string reason)
         {
             if (worker.CurrentConstruction != null)
             {
@@ -609,10 +730,10 @@ namespace AshesOfRum
 
         private bool PreservesNavMeshRoute(Vector3 candidatePosition)
         {
-            if (candidatePosition == lastRouteCandidate && houses.Count == lastRouteHouseCount)
+            if (candidatePosition == lastRouteCandidate && buildingRouteVersion == lastRouteVersion)
                 return lastRouteResult;
 
-            var candidate = new GameObject("House Route Validation");
+            var candidate = new GameObject("Building Route Validation");
             candidate.transform.position = candidatePosition;
             var collider = candidate.AddComponent<BoxCollider>();
             collider.center = new Vector3(0f, 1f, 0f);
@@ -633,7 +754,7 @@ namespace AshesOfRum
                                   NavMesh.CalculatePath(start, end, NavMesh.AllAreas, path) &&
                                   path.status == NavMeshPathStatus.PathComplete;
                 lastRouteCandidate = candidatePosition;
-                lastRouteHouseCount = houses.Count;
+                lastRouteVersion = buildingRouteVersion;
                 return lastRouteResult;
             }
             finally
@@ -655,35 +776,127 @@ namespace AshesOfRum
             return false;
         }
 
-        private HouseBuilding CreateHouse(Vector3 position)
+        private ConstructibleBuilding CreateBuilding(BuildingType type, Vector3 position)
         {
-            var root = CreateHouseVisual($"House {houses.Count + 1}", position);
+            var count = type == BuildingType.House ? houses.Count :
+                type == BuildingType.Storehouse ? storehouses.Count : watchtowers.Count;
+            var root = CreateBuildingVisual(type, $"{type} {count + 1}", position);
             var obstacle = root.AddComponent<NavMeshObstacle>();
             obstacle.shape = NavMeshObstacleShape.Box;
             obstacle.center = new Vector3(0f, 1f, 0f);
             obstacle.size = new Vector3(4f, 2f, 4f);
             obstacle.carving = true;
-            var house = root.AddComponent<HouseBuilding>();
-            house.Initialize(tuning.houseBuildSeconds);
-            return house;
+            var building = type == BuildingType.House
+                ? root.AddComponent<HouseBuilding>()
+                : root.AddComponent<ConstructibleBuilding>();
+            var completeColor = type switch
+            {
+                BuildingType.House => new Color(0.12f, 0.38f, 0.82f),
+                BuildingType.Storehouse => new Color(0.16f, 0.46f, 0.7f),
+                _ => new Color(0.08f, 0.32f, 0.66f)
+            };
+            building.Initialize(type, BuildingDuration(type), tuning.buildingHealth, completeColor,
+                DestroyCompletedBuilding);
+            if (type == BuildingType.Watchtower)
+                root.AddComponent<WatchtowerAttack>().Initialize(tuning, () => enemyFormations);
+            return building;
         }
 
-        private static GameObject CreateHouseVisual(string name, Vector3 position)
+        private static GameObject CreateBuildingVisual(BuildingType type, string name, Vector3 position)
         {
             var root = new GameObject(name);
             root.transform.position = position;
-            CreatePrimitive(PrimitiveType.Cube, "House Walls", root.transform,
-                new Vector3(0f, 0.8f, 0f), new Vector3(3.6f, 1.6f, 3.6f), new Color(0.42f, 0.55f, 0.68f));
-            var roof = CreatePrimitive(PrimitiveType.Cylinder, "House Roof", root.transform,
-                new Vector3(0f, 1.9f, 0f), new Vector3(2.4f, 0.45f, 2.4f), new Color(0.16f, 0.28f, 0.48f));
-            roof.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+            if (type == BuildingType.House)
+            {
+                CreatePrimitive(PrimitiveType.Cube, "House Walls", root.transform,
+                    new Vector3(0f, 0.8f, 0f), new Vector3(3.6f, 1.6f, 3.6f), new Color(0.42f, 0.55f, 0.68f));
+                var roof = CreatePrimitive(PrimitiveType.Cylinder, "House Roof", root.transform,
+                    new Vector3(0f, 1.9f, 0f), new Vector3(2.4f, 0.45f, 2.4f), new Color(0.16f, 0.28f, 0.48f));
+                roof.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+            }
+            else if (type == BuildingType.Storehouse)
+            {
+                CreatePrimitive(PrimitiveType.Cube, "Storehouse Walls", root.transform,
+                    new Vector3(0f, 0.75f, 0f), new Vector3(3.8f, 1.5f, 3.8f), new Color(0.42f, 0.55f, 0.68f));
+                for (var i = -1; i <= 1; i++)
+                    CreatePrimitive(PrimitiveType.Cube, $"Stored Supply {i + 2}", root.transform,
+                        new Vector3(i * 0.8f, 1.75f, 0f), new Vector3(0.65f, 0.65f, 0.65f),
+                        new Color(0.75f, 0.52f, 0.22f));
+            }
+            else
+            {
+                CreatePrimitive(PrimitiveType.Cylinder, "Watchtower Base", root.transform,
+                    new Vector3(0f, 1.6f, 0f), new Vector3(1.5f, 1.6f, 1.5f), new Color(0.42f, 0.55f, 0.68f));
+                CreatePrimitive(PrimitiveType.Cube, "Watchtower Platform", root.transform,
+                    new Vector3(0f, 3.35f, 0f), new Vector3(3.2f, 0.5f, 3.2f), new Color(0.16f, 0.28f, 0.48f));
+            }
+            var ring = CreatePrimitive(PrimitiveType.Cylinder, "Building Selection Ring", root.transform,
+                new Vector3(0f, 0.04f, 0f), new Vector3(4.4f, 0.025f, 4.4f), new Color(0.2f, 0.78f, 1f));
+            Destroy(ring.GetComponent<Collider>());
+            ring.AddComponent<BuildingSelectionRing>();
+            ring.SetActive(false);
             return root;
         }
 
-        private void CompleteHouse(HouseBuilding house)
+        private void CompleteBuilding(ConstructibleBuilding building)
         {
-            population.AddCapacity(tuning.housePopulationCapacity);
-            SetOrderFeedback($"House complete - population cap {PopulationCapacity}");
+            if (building.Type == BuildingType.House)
+            {
+                population.AddCapacity(tuning.housePopulationCapacity);
+                SetOrderFeedback($"House complete - population cap {PopulationCapacity}");
+            }
+            else if (building.Type == BuildingType.Storehouse)
+                SetOrderFeedback("Storehouse complete - Supply drop-off active");
+            else
+                SetOrderFeedback("Watchtower complete - guarding nearby ground");
+        }
+
+        private Vector3 FindNearestDropOff(Vector3 position)
+        {
+            var result = hisar.DropOffPoint;
+            var nearestDistance = (result - position).sqrMagnitude;
+            foreach (var storehouse in storehouses)
+            {
+                if (storehouse == null || !storehouse.IsComplete || storehouse.IsDestroyed) continue;
+                var distance = (storehouse.DropOffPoint - position).sqrMagnitude;
+                if (distance >= nearestDistance) continue;
+                result = storehouse.DropOffPoint;
+                nearestDistance = distance;
+            }
+            return result;
+        }
+
+        private int BuildingCost(BuildingType type) => type switch
+        {
+            BuildingType.House => tuning.houseCost,
+            BuildingType.Storehouse => tuning.storehouseCost,
+            _ => tuning.watchtowerCost
+        };
+
+        private float BuildingDuration(BuildingType type) => type switch
+        {
+            BuildingType.House => tuning.houseBuildSeconds,
+            BuildingType.Storehouse => tuning.storehouseBuildSeconds,
+            _ => tuning.watchtowerBuildSeconds
+        };
+
+        private void DestroyCompletedBuilding(ConstructibleBuilding building)
+        {
+            var type = building.Type;
+            if (type == BuildingType.House) population.RemoveCapacity(tuning.housePopulationCapacity);
+            RemoveBuildingFromLists(building);
+            if (selectedBuilding == building) selectedBuilding = null;
+            demolitionCandidate = null;
+            Destroy(building.gameObject, 0.25f);
+            SetOrderFeedback($"{type} {(building.WasDemolished ? "demolished" : "destroyed")} - no refund");
+        }
+
+        private void RemoveBuildingFromLists(ConstructibleBuilding building)
+        {
+            if (buildings.Remove(building)) buildingRouteVersion++;
+            if (building is HouseBuilding house) houses.Remove(house);
+            storehouses.Remove(building);
+            watchtowers.Remove(building);
         }
 
         private void CompleteFormation(FormationType type)

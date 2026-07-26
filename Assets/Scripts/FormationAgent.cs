@@ -70,9 +70,14 @@ namespace AshesOfRum
 
         public void ApplyDeterministicHit(FormationType attackerType)
         {
-            if (members.Count == 0) return;
+            ApplyFixedDamage(CombatRules.Damage(attackerType, Type, tuning.baseDamage, tuning.counterMultiplier));
+        }
+
+        public void ApplyFixedDamage(int damage)
+        {
+            if (members.Count == 0 || damage <= 0) return;
             var hitIndex = nextHitMemberIndex % members.Count;
-            memberHealth[hitIndex] -= CombatRules.Damage(attackerType, Type, tuning.baseDamage, tuning.counterMultiplier);
+            memberHealth[hitIndex] -= damage;
             members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit();
             if (memberHealth[hitIndex] > 0)
             {

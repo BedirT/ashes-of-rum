@@ -1,5 +1,5 @@
 {
   "name": "AshesOfRum.PlayModeTests",
-  "references": ["AshesOfRum.Runtime"],
+  "references": ["AshesOfRum.Runtime", "Unity.InputSystem", "Unity.ugui"],
   "optionalUnityReferences": ["TestAssemblies"]
 }
