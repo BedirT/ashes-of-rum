@@ -1267,10 +1267,13 @@ namespace AshesOfRum
                       .Select(group => $"{group.Key}: {group.Count()}")) + "\n" +
                   (selectedFormations.Count == 1
                       ? $"FACING {selectedFormations[0].FacingLabel}  |  " +
-                        (selectedFormations[0].IsTurning
+                        (selectedFormations[0].IsFrontlineBlocked
+                            ? "FRONTLINE BLOCKED"
+                            : selectedFormations[0].IsTurning
                             ? $"TURNING {selectedFormations[0].TurnProgress:P0}"
                             : "READY")
-                      : $"FACING: {selectedFormations.Count(formation => formation.IsTurning)} TURNING")
+                      : $"FACING: {selectedFormations.Count(formation => formation.IsTurning)} TURNING  |  " +
+                        $"{selectedFormations.Count(formation => formation.IsFrontlineBlocked)} BLOCKED")
                 : selectedBuilding != null
                     ? $"{selectedBuilding.Type.ToString().ToUpperInvariant()}\n" +
                       $"HEALTH {selectedBuilding.Health} / {selectedBuilding.MaxHealth}"

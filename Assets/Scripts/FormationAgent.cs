@@ -6,6 +6,22 @@ using UnityEngine.AI;
 
 namespace AshesOfRum
 {
+    public static class FormationFrontlineRules
+    {
+        private const float MinimumApproachDot = 0.25f;
+
+        public static bool Blocks(Vector3 moverPosition, Vector3 moveDirection, Vector3 opponentPosition,
+            float radius)
+        {
+            moveDirection.y = 0f;
+            var offset = opponentPosition - moverPosition;
+            offset.y = 0f;
+            if (moveDirection.sqrMagnitude <= 0.01f || offset.sqrMagnitude <= 0.01f ||
+                offset.sqrMagnitude > radius * radius) return false;
+            return Vector3.Dot(moveDirection.normalized, offset.normalized) >= MinimumApproachDot;
+        }
+    }
+
     public sealed class FormationAgent : MonoBehaviour
     {
         private readonly List<GameObject> members = new();
@@ -62,6 +78,7 @@ namespace AshesOfRum
         public int MaximumMemberHealth => tuning == null ? 0 : tuning.memberHealth * 8;
         public int LastAttackMemberCount { get; private set; }
         public bool IsTurning { get; private set; }
+        public bool IsFrontlineBlocked { get; private set; }
         public float TurnProgress => IsTurning ? Mathf.Clamp01(turnElapsed / tuning.reorientationSeconds) : 1f;
         public float FacingDegrees => Mathf.Repeat(transform.eulerAngles.y, 360f);
         public string FacingLabel => $"{FacingCardinal(FacingDegrees)} {FacingDegrees:0} deg";
@@ -183,6 +200,7 @@ namespace AshesOfRum
             structureTargetComponent = null;
             hasDestination = false;
             IsTurning = false;
+            IsFrontlineBlocked = false;
             CurrentOrder = FormationOrder.Idle;
             StopNavigation();
         }
@@ -235,6 +253,7 @@ namespace AshesOfRum
 
         private void Update()
         {
+            IsFrontlineBlocked = false;
             if (!IsValidTarget(target))
                 target = null;
             if (!IsValidWorkerTarget(workerTarget)) workerTarget = null;
@@ -389,6 +408,12 @@ namespace AshesOfRum
         {
             IsTurning = false;
             var direction = delta.normalized;
+            if (IsBlockedByVisibleFrontline(direction))
+            {
+                IsFrontlineBlocked = true;
+                StopNavigation();
+                return;
+            }
             if (CanUseNavigation())
             {
                 navAgent.speed = MoveSpeed;
@@ -405,6 +430,19 @@ namespace AshesOfRum
             transform.position += direction * distance;
             transform.rotation = Quaternion.RotateTowards(transform.rotation,
                 Quaternion.LookRotation(direction), 360f * Time.deltaTime);
+        }
+
+        private bool IsBlockedByVisibleFrontline(Vector3 direction)
+        {
+            if (hostileProvider == null) return false;
+            foreach (var hostile in hostileProvider())
+            {
+                if (!IsValidTarget(hostile)) continue;
+                if (hostile == target) continue;
+                if (FormationFrontlineRules.Blocks(transform.position, direction, hostile.transform.position,
+                        tuning.frontlineBlockRadius)) return true;
+            }
+            return false;
         }
 
         private void StartNavigation(Vector3 targetPosition)

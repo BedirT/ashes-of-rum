@@ -171,6 +171,7 @@ namespace AshesOfRum
             var contactLostUnderFog = false;
             var cavalryCounterWon = false;
             var rearAttackAdvantage = false;
+            var frontlineBlockedAndReleased = false;
             var formationRallyDispatched = false;
             if (defensiveBuildingsCompleted && storehouseDropOffUsed)
             {
@@ -290,6 +291,27 @@ namespace AshesOfRum
                                               frontHealth - frontTarget.TotalMemberHealth;
                         while (frontTarget.MemberCount > 0) frontTarget.ApplyFixedDamage(frontTarget.MaximumMemberHealth);
                         while (rearTarget.MemberCount > 0) rearTarget.ApplyFixedDamage(rearTarget.MaximumMemberHealth);
+
+                        var frontlineTarget = economy.DeployEnemyForAutomation(FormationType.Spearmen,
+                            new Vector3(0f, 0f, 12f));
+                        economy.FogOfWar.RefreshNow();
+                        economy.SelectOnly(flanker);
+                        flanker.IssueMove(new Vector3(0f, 0f, 16f));
+                        var frontlineDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                        while (!flanker.IsFrontlineBlocked && Time.realtimeSinceStartup < frontlineDeadline)
+                            yield return null;
+                        var frontlinePosition = flanker.transform.position;
+                        yield return null;
+                        var blockedHud = GameObject.Find("Selection").GetComponent<UnityEngine.UI.Text>().text
+                            .Contains("FRONTLINE BLOCKED");
+                        flanker.IssueMove(frontlinePosition + Vector3.right * 4f);
+                        while (flanker.transform.position.x < frontlinePosition.x + 0.75f &&
+                               Time.realtimeSinceStartup < frontlineDeadline)
+                            yield return null;
+                        frontlineBlockedAndReleased = blockedHud && !flanker.IsFrontlineBlocked &&
+                                                       flanker.transform.position.x >= frontlinePosition.x + 0.75f;
+                        while (frontlineTarget.MemberCount > 0)
+                            frontlineTarget.ApplyFixedDamage(frontlineTarget.MaximumMemberHealth);
                     }
                 }
             }
@@ -500,6 +522,7 @@ namespace AshesOfRum
                     "Procedural gameplay audio and fog-aware under-attack ping are functional",
                     "Combat health bars cover both factions and expose Hisar damage",
                     "Rear formation attack gains a deterministic flank advantage",
+                    "Opposing frontline blocks direct movement and releases laterally",
                     "1920x1080 window configured",
                     "Graphical health-bar frame captured",
                     "Graphical frame captured"
@@ -546,7 +569,8 @@ namespace AshesOfRum
                     "Hisar rally dispatches a formation to terrain and a Worker to a visible cache",
                     "Procedural gameplay audio and fog-aware under-attack ping are functional",
                     "Combat health bars cover both factions and expose Hisar damage",
-                    "Rear formation attack gains a deterministic flank advantage"
+                    "Rear formation attack gains a deterministic flank advantage",
+                    "Opposing frontline blocks direct movement and releases laterally"
                 };
             var result = new SmokeResult
             {
@@ -597,12 +621,13 @@ namespace AshesOfRum
                 Require(functionalAudioFeedback, checks[38]);
                 Require(combatHealthBarsProvisioned && enemyHisarHealthReadable, checks[39]);
                 Require(rearAttackAdvantage, checks[40]);
+                Require(frontlineBlockedAndReleased, checks[41]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[41]);
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[42]);
                     Require(HasContent(healthScreenshotPath),
-                        $"{checks[42]} within {ScreenshotTimeoutSeconds} seconds");
-                    Require(HasContent(screenshotPath), $"{checks[43]} within {ScreenshotTimeoutSeconds} seconds");
+                        $"{checks[43]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(HasContent(screenshotPath), $"{checks[44]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
