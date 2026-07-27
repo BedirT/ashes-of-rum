@@ -1700,6 +1700,51 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator AttackMove_ResumesItsRouteAfterTransientRetaliationTargetIsRemoved()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var movingFormation = CreateFormationForTest("Attack-move retaliation defender",
+                FormationType.Spearmen, true, tuning);
+            var hostile = CreateFormationForTest("Transient retaliation attacker",
+                FormationType.Archers, false, tuning);
+            movingFormation.transform.position = Vector3.zero;
+            hostile.transform.position = Vector3.left * 8f;
+            var destination = Vector3.forward * 12f;
+
+            try
+            {
+                movingFormation.IssueAttackMove(destination);
+                yield return new WaitForSeconds(0.1f);
+                Assert.That(movingFormation.transform.position.z, Is.GreaterThan(0f),
+                    "The formation must be following its attack-move route before retaliation begins.");
+
+                Assert.That(hostile.IssueFocus(movingFormation), Is.True);
+                Assert.That(movingFormation.Target, Is.SameAs(hostile));
+                Assert.That(movingFormation.CurrentOrder, Is.EqualTo(FormationOrder.AttackMove));
+                Assert.That(movingFormation.HasDestination, Is.True);
+                Assert.That(movingFormation.Destination, Is.EqualTo(destination));
+
+                Object.Destroy(hostile.gameObject);
+                yield return null;
+                var resumeDistance = Vector3.Distance(movingFormation.transform.position, destination);
+                yield return new WaitForSeconds(0.2f);
+
+                Assert.That(movingFormation.Target, Is.Null);
+                Assert.That(movingFormation.CurrentOrder, Is.EqualTo(FormationOrder.AttackMove));
+                Assert.That(movingFormation.HasDestination, Is.True);
+                Assert.That(Vector3.Distance(movingFormation.transform.position, destination),
+                    Is.LessThan(resumeDistance - 0.25f),
+                    "The formation must resume progress toward its original attack-move destination.");
+            }
+            finally
+            {
+                Object.Destroy(movingFormation.gameObject);
+                if (hostile != null) Object.Destroy(hostile.gameObject);
+                Object.Destroy(tuning);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator AttackMove_RevealsAndAcquiresTheNearestHostileThroughFog()
         {
             yield return LoadEconomy();

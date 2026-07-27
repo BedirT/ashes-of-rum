@@ -436,9 +436,15 @@ namespace AshesOfRum
         {
             var hasExplicitFocus = CurrentOrder == FormationOrder.Focus && HasCombatTarget;
             if (target != null || hasExplicitFocus || !IsValidTarget(attacker)) return;
+            var resumeAttackMove = CurrentOrder == FormationOrder.AttackMove && hasDestination;
             target = attacker;
             workerTarget = null;
             structureTargetComponent = null;
+            if (resumeAttackMove)
+            {
+                StartNavigation(attacker.transform.position);
+                return;
+            }
             hasDestination = false;
             CurrentOrder = FormationOrder.Focus;
             StartNavigation(attacker.transform.position);
