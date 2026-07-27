@@ -376,7 +376,12 @@ namespace AshesOfRum
                 finalAssaultStarted = economy.OpponentPhase == AiPhase.FinalAssault;
 
                 economy.SetOpponentEnabledForAutomation(false);
-                foreach (var hostile in economy.EnemyFormations) hostile.IssueStop();
+                foreach (var hostile in economy.EnemyFormations.ToArray())
+                {
+                    hostile.IssueStop();
+                    while (hostile.MemberCount > 0) hostile.ApplyFixedDamage(hostile.MaximumMemberHealth);
+                }
+                while (economy.EnemyFormations.Count > 0) yield return null;
                 economy.DeployFriendlyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 18f));
                 for (var index = 0; index < economy.FriendlyFormations.Count; index++)
                     economy.FriendlyFormations[index].GetComponent<UnityEngine.AI.NavMeshAgent>()?.Warp(
