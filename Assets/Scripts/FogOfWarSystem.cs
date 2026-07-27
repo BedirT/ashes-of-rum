@@ -26,10 +26,15 @@ namespace AshesOfRum
         private Texture2D fogTexture;
         private Texture2D minimapTexture;
         private RawImage minimapImage;
+        private Image attackPing;
+        private float attackPingRemaining;
         private RtsCameraController cameraController;
 
         public FogOfWarMap Map => map;
         public RawImage MinimapImage => minimapImage;
+        public bool IsAttackPingVisible => attackPing != null && attackPing.gameObject.activeSelf;
+        public Vector3 LastAttackPingPosition { get; private set; }
+        public int AttackPingCount { get; private set; }
         public event Action<GameObject> HostileFirstRevealed;
 
         public void Initialize(float sharedSightRadius, RtsCameraController targetCamera, Transform hudParent)
@@ -80,6 +85,20 @@ namespace AshesOfRum
             return minimapTexture.GetPixel(x, y);
         }
 
+        public bool ShowAttackPing(Vector3 position)
+        {
+            if (map == null || attackPing == null || map.StateAt(position) == FogState.Unexplored) return false;
+            LastAttackPingPosition = position;
+            AttackPingCount++;
+            var uv = map.WorldToUv(position);
+            attackPing.rectTransform.anchorMin = uv;
+            attackPing.rectTransform.anchorMax = uv;
+            attackPing.rectTransform.anchoredPosition = Vector2.zero;
+            attackPingRemaining = 1.6f;
+            attackPing.gameObject.SetActive(true);
+            return true;
+        }
+
         public void RefreshNow()
         {
             if (map == null) return;
@@ -111,6 +130,17 @@ namespace AshesOfRum
 
         private void Update()
         {
+            if (attackPingRemaining > 0f)
+            {
+                attackPingRemaining -= Time.unscaledDeltaTime;
+                if (attackPing != null)
+                {
+                    var pulse = 0.55f + Mathf.PingPong(Time.unscaledTime * 3f, 0.45f);
+                    attackPing.color = new Color(1f, 0.72f, 0.08f, pulse);
+                    attackPing.rectTransform.sizeDelta = Vector2.one * Mathf.Lerp(18f, 32f, pulse);
+                    if (attackPingRemaining <= 0f) attackPing.gameObject.SetActive(false);
+                }
+            }
             refreshRemaining -= Time.unscaledDeltaTime;
             if (refreshRemaining > 0f) return;
             refreshRemaining = RefreshSeconds;
@@ -205,6 +235,15 @@ namespace AshesOfRum
             minimapImage = imageObject.GetComponent<RawImage>();
             minimapImage.texture = minimapTexture;
             imageObject.GetComponent<MinimapClickHandler>().Initialize(map, cameraController, rect);
+
+            var pingObject = new GameObject("Under Attack Ping", typeof(RectTransform), typeof(Image));
+            pingObject.transform.SetParent(imageObject.transform, false);
+            attackPing = pingObject.GetComponent<Image>();
+            attackPing.raycastTarget = false;
+            attackPing.color = new Color(1f, 0.72f, 0.08f, 0.9f);
+            attackPing.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            attackPing.rectTransform.sizeDelta = Vector2.one * 24f;
+            pingObject.SetActive(false);
         }
 
         private void UpdateFogTexture()

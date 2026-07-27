@@ -22,6 +22,8 @@ namespace AshesOfRum
         private System.Func<ICombatStructure, bool> structureVisibilityPredicate;
         private Action<int> casualtyCallback;
         private Action<FormationAgent> destroyedCallback;
+        private Action<Vector3> damagedCallback;
+        private Action<Vector3> attackCallback;
         private NavMeshAgent navAgent;
         private int nextHitMemberIndex;
         private float attackRemaining;
@@ -63,7 +65,8 @@ namespace AshesOfRum
             System.Func<IEnumerable<WorkerAgent>> availableHostileWorkers = null,
             System.Func<WorkerAgent, bool> isWorkerVisible = null,
             System.Func<IEnumerable<ICombatStructure>> availableHostileStructures = null,
-            System.Func<ICombatStructure, bool> isStructureVisible = null)
+            System.Func<ICombatStructure, bool> isStructureVisible = null,
+            Action<Vector3> onDamaged = null, Action<Vector3> onAttack = null)
         {
             Type = type;
             IsFriendly = friendly;
@@ -76,6 +79,8 @@ namespace AshesOfRum
             workerVisibilityPredicate = isWorkerVisible;
             hostileStructureProvider = availableHostileStructures;
             structureVisibilityPredicate = isStructureVisible;
+            damagedCallback = onDamaged;
+            attackCallback = onAttack;
             navAgent = GetComponent<NavMeshAgent>();
             if (navAgent != null)
             {
@@ -176,6 +181,7 @@ namespace AshesOfRum
         public void ApplyFixedDamage(int damage)
         {
             if (members.Count == 0 || damage <= 0) return;
+            damagedCallback?.Invoke(transform.position);
             var hitIndex = nextHitMemberIndex % members.Count;
             memberHealth[hitIndex] -= damage;
             members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit();
@@ -458,6 +464,7 @@ namespace AshesOfRum
                 intendedTarget.MemberCount == 0 || members.Count == 0) return false;
 
             LastAttackMemberCount = members.Count;
+            attackCallback?.Invoke(transform.position);
             var attackers = members.ToArray();
             foreach (var attacker in attackers)
             {
@@ -471,6 +478,7 @@ namespace AshesOfRum
         {
             if (!IsValidWorkerTarget(intendedTarget) || members.Count == 0) return false;
             LastAttackMemberCount = members.Count;
+            attackCallback?.Invoke(transform.position);
             var attackers = members.ToArray();
             foreach (var attacker in attackers)
             {
@@ -486,6 +494,7 @@ namespace AshesOfRum
         {
             if (!IsValidStructureTarget(intendedTarget) || members.Count == 0) return false;
             LastAttackMemberCount = members.Count;
+            attackCallback?.Invoke(transform.position);
             var attackers = members.ToArray();
             foreach (var attacker in attackers)
             {

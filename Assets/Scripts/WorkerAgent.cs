@@ -49,6 +49,8 @@ namespace AshesOfRum
         private Action<ConstructibleBuilding> constructionCompleted;
         private Action<int> suppliesDeposited;
         private Action<WorkerAgent> destroyedCallback;
+        private Action<Vector3> damagedCallback;
+        private Action<WorkerAgent> gatheringRouteFailed;
 
         public Activity CurrentActivity { get; private set; }
         public bool IsFriendly { get; private set; }
@@ -59,11 +61,13 @@ namespace AshesOfRum
         public int CarriedSupplies { get; private set; }
         public ConstructibleBuilding CurrentConstruction => construction ?? deferredBuilding;
         public Vector3 LastDropOffPoint { get; private set; }
+        public ResourceCache TargetCache => targetCache;
 
         public void Initialize(EconomyTuning economyTuning, EconomyWallet economyWallet, Hisar home,
             IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification,
             Func<Vector3, Vector3> dropOffResolver = null, Func<Vector3, bool> visibilityResolver = null,
-            bool friendly = true, Action<int> onSuppliesDeposited = null, Action<WorkerAgent> onDestroyed = null)
+            bool friendly = true, Action<int> onSuppliesDeposited = null, Action<WorkerAgent> onDestroyed = null,
+            Action<Vector3> onDamaged = null, Action<WorkerAgent> onGatheringRouteFailed = null)
         {
             tuning = economyTuning;
             wallet = economyWallet;
@@ -74,6 +78,8 @@ namespace AshesOfRum
             notifyEconomyState = economyStateNotification;
             suppliesDeposited = onSuppliesDeposited;
             destroyedCallback = onDestroyed;
+            damagedCallback = onDamaged;
+            gatheringRouteFailed = onGatheringRouteFailed;
             IsFriendly = friendly;
             IsAlive = true;
             MaxHealth = Mathf.Max(1, tuning.memberHealth);
@@ -164,6 +170,7 @@ namespace AshesOfRum
         public void ApplyFixedDamage(int amount)
         {
             if (!IsAlive || amount <= 0) return;
+            damagedCallback?.Invoke(transform.position);
             Health = Mathf.Max(0, Health - amount);
             if (Health > 0) return;
             IsAlive = false;
@@ -347,9 +354,10 @@ namespace AshesOfRum
         {
             var completed = construction;
             construction = null;
-            constructionCompleted?.Invoke(completed);
+            var completedCallback = constructionCompleted;
             constructionCompleted = null;
             ResumeAfterConstruction();
+            completedCallback?.Invoke(completed);
         }
 
         private void ResumeAfterConstruction()
@@ -391,6 +399,7 @@ namespace AshesOfRum
             CurrentActivity = Activity.Idle;
             if (agent.isOnNavMesh) agent.ResetPath();
             notifyEconomyState?.Invoke($"{name} idle - no Supplies cache nearby");
+            gatheringRouteFailed?.Invoke(this);
         }
 
         private bool HasArrived() => agent.isOnNavMesh && agent.remainingDistance <= agent.stoppingDistance + 0.05f;

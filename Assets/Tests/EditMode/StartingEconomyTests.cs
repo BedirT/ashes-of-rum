@@ -258,6 +258,15 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void OpponentStorehouseRecovery_RequiresRouteFailureRealCostAndAvailableLaborWindow()
+        {
+            Assert.That(ScriptedOpponentEconomyRules.CanStartStorehouseRecovery(false, false, 200, 200), Is.False);
+            Assert.That(ScriptedOpponentEconomyRules.CanStartStorehouseRecovery(true, true, 200, 200), Is.False);
+            Assert.That(ScriptedOpponentEconomyRules.CanStartStorehouseRecovery(true, false, 199, 200), Is.False);
+            Assert.That(ScriptedOpponentEconomyRules.CanStartStorehouseRecovery(true, false, 200, 200), Is.True);
+        }
+
+        [Test]
         public void ConstructibleBuilding_CompletesAndDestructionCallbackFiresOnce()
         {
             var root = new GameObject("Storehouse");

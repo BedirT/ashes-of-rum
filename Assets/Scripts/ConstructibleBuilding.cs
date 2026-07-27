@@ -11,6 +11,7 @@ namespace AshesOfRum
         private Renderer[] renderers;
         private Color completeColor;
         private Action<ConstructibleBuilding> destroyedCallback;
+        private Action<Vector3> damagedCallback;
         private Coroutine hitRoutine;
         private static readonly Color ConstructionColor = new(0.42f, 0.55f, 0.68f);
 
@@ -31,7 +32,7 @@ namespace AshesOfRum
         public float CombatRadius => 2.4f;
 
         public void Initialize(BuildingType buildingType, float duration, int maximumHealth, Color finishedColor,
-            Action<ConstructibleBuilding> onDestroyed, bool friendly = true)
+            Action<ConstructibleBuilding> onDestroyed, bool friendly = true, Action<Vector3> onDamaged = null)
         {
             Type = buildingType;
             IsFriendly = friendly;
@@ -40,6 +41,7 @@ namespace AshesOfRum
             Health = MaxHealth;
             completeColor = finishedColor;
             destroyedCallback = onDestroyed;
+            damagedCallback = onDamaged;
             renderers = GetComponentsInChildren<Renderer>();
             SetColor(ConstructionColor);
             SetSelected(false);
@@ -65,6 +67,7 @@ namespace AshesOfRum
         public bool ApplyDamage(int amount)
         {
             if (IsDestroyed || amount <= 0) return false;
+            damagedCallback?.Invoke(transform.position);
             Health = Mathf.Max(0, Health - amount);
             if (Health == 0)
             {

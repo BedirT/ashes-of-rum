@@ -7,6 +7,7 @@ namespace AshesOfRum
     public sealed class Hisar : MonoBehaviour, ICombatStructure
     {
         private Action<Hisar> destroyedCallback;
+        private Action<Vector3> damagedCallback;
         private Renderer[] renderers;
         private Color[] restingColors;
         private Coroutine hitRoutine;
@@ -21,12 +22,14 @@ namespace AshesOfRum
         public Vector3 AimPoint => transform.position + Vector3.up * 1.5f;
         public float CombatRadius => 3f;
 
-        public void Initialize(bool friendly, int maximumHealth, Action<Hisar> onDestroyed)
+        public void Initialize(bool friendly, int maximumHealth, Action<Hisar> onDestroyed,
+            Action<Vector3> onDamaged = null)
         {
             IsFriendly = friendly;
             MaxHealth = Mathf.Max(1, maximumHealth);
             Health = MaxHealth;
             destroyedCallback = onDestroyed;
+            damagedCallback = onDamaged;
             renderers = GetComponentsInChildren<Renderer>();
             restingColors = new Color[renderers.Length];
             for (var index = 0; index < renderers.Length; index++)
@@ -36,6 +39,7 @@ namespace AshesOfRum
         public bool ApplyStructuralDamage(int amount)
         {
             if (IsDestroyed || amount <= 0) return false;
+            damagedCallback?.Invoke(transform.position);
             Health = Mathf.Max(0, Health - amount);
             if (Health == 0)
             {

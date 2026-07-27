@@ -13,7 +13,15 @@ then see the frozen match result and either restart or quit.
       emergency defenders.
 - [ ] The Alazhan script uses the real economy to build and train, sends a Cavalry probe around
       minute 3, mixed pressure around minute 6, and a final Hisar assault around minute 10; nearby
-      surviving formations defend an early player attack before resuming the script.
+      surviving formations defend an early player attack before resuming the script. A failed
+      gathering route spends the real Storehouse cost, assigns one Worker to construction, uses
+      the completed drop-off, and can recover again after enemy destruction without a refund.
+- [ ] Selecting the Hisar and right-clicking terrain creates a visible rally point for new
+      formations; right-clicking a currently visible neutral cache sends each newly trained Worker
+      directly into the gather-deposit loop without accepting unseen cache targets.
+- [ ] Local procedural cues cover selection, orders, construction, production, attacks, hits,
+      warnings, victory, and defeat. Friendly under-attack events emit a throttled, fog-aware
+      minimap ping without moving the camera; no music, voice, or external audio asset is added.
 - [ ] Friendly and hostile military formations can focus visible buildings and damage every
       structure at one standardized reduced structural rate; formations remain the first automatic
       combat priority and the Hisar remains non-combat.

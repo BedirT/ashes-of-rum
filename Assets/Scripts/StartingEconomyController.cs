@@ -92,6 +92,15 @@ namespace AshesOfRum
         private bool opponentTargetsAvailable = true;
         private FormationAgent lastClickedFormation;
         private float lastFormationClickTime = float.NegativeInfinity;
+        private GameplayAudio gameplayAudio;
+        private float nextUnderAttackCueAt = float.NegativeInfinity;
+        private float nextHitCueAt = float.NegativeInfinity;
+        private Vector3? hisarRallyPoint;
+        private ResourceCache hisarRallyCache;
+        private GameObject hisarRallyMarker;
+
+        private const float UnderAttackCooldownSeconds = 4f;
+        private const float HitCueCooldownSeconds = 0.08f;
 
         private static readonly Key[] ControlGroupKeys =
         {
@@ -136,6 +145,10 @@ namespace AshesOfRum
         public string MatchEventLogPath => telemetry?.EventLogPath;
         public IReadOnlyList<ResourceCache> Caches { get; private set; }
         public string LastEconomyNotification { get; private set; }
+        public GameplayAudio GameplayAudio => gameplayAudio;
+        public int UnderAttackWarningCount { get; private set; }
+        public Vector3? HisarRallyPoint => hisarRallyPoint;
+        public ResourceCache HisarRallyCache => hisarRallyCache;
 
         public void Configure(EconomyTuning economyTuning) => tuning = economyTuning;
 
@@ -155,6 +168,11 @@ namespace AshesOfRum
             productionQueue = new HisarProductionQueue(wallet, population, tuning);
             matchDirector = new MatchDirector();
             telemetry = new MatchTelemetry();
+            gameplayAudio = new GameObject("Gameplay Audio", typeof(AudioSource), typeof(GameplayAudio))
+                .GetComponent<GameplayAudio>();
+            gameplayAudio.transform.SetParent(transform, false);
+            gameplayAudio.Initialize();
+            if (FindAnyObjectByType<AudioListener>() == null) worldCamera.gameObject.AddComponent<AudioListener>();
             BuildNavMesh();
             hisar = CreateHisar(true);
             enemyHisar = CreateHisar(false);
@@ -205,6 +223,7 @@ namespace AshesOfRum
             if (worker == null) return;
             selectedWorkers.Add(worker);
             worker.SetSelected(true);
+            PlayCue(GameplayCue.Selection);
             UpdateHud();
         }
 
@@ -214,11 +233,27 @@ namespace AshesOfRum
             SelectOnly(worker);
             worker.IssueGather(cache);
             SetOrderFeedback("Gathering Supplies");
+            PlayCue(GameplayCue.Order);
         }
 
         public void CreditSuppliesForAutomation(int amount)
         {
             wallet.Deposit(amount);
+        }
+
+        public void CreditOpponentSuppliesForAutomation(int amount) => opponent?.Wallet.Deposit(amount);
+
+        public bool TriggerOpponentRouteFailureForAutomation()
+        {
+            var worker = enemyWorkers.FirstOrDefault(candidate => candidate != null && candidate.IsAlive &&
+                                                                  candidate.CarriedSupplies == 0 &&
+                                                                  candidate.CurrentConstruction == null);
+            if (worker == null || opponent == null) return false;
+            var fallbackRadius = tuning.cacheFallbackRadius;
+            tuning.cacheFallbackRadius = 0.1f;
+            worker.IssueGather(null);
+            tuning.cacheFallbackRadius = fallbackRadius;
+            return opponent.IsStorehouseRecoveryRequested;
         }
 
         public bool TryQueueFormation(FormationType type)
@@ -231,6 +266,7 @@ namespace AshesOfRum
                 return false;
             }
             SetOrderFeedback($"{type} queued");
+            PlayCue(GameplayCue.Order);
             return true;
         }
 
@@ -244,6 +280,7 @@ namespace AshesOfRum
                 return false;
             }
             SetOrderFeedback("Worker queued");
+            PlayCue(GameplayCue.Order);
             return true;
         }
 
@@ -260,7 +297,8 @@ namespace AshesOfRum
         {
             ClearSelection();
             hisarSelected = true;
-            SetOrderFeedback("Hisar selected - train a formation");
+            SetOrderFeedback("Hisar selected - train or right-click to set rally");
+            PlayCue(GameplayCue.Selection);
             UpdateHud();
         }
 
@@ -332,6 +370,7 @@ namespace AshesOfRum
                 : "Move");
             if (selectedFormations.Count == 0)
                 CreateOrderMarker(destination, new Color(0.2f, 0.78f, 1f));
+            PlayCue(GameplayCue.Order);
         }
 
         public void IssueAttackMoveForSelected(Vector3 destination) => IssueFormationGroupOrder(destination, true);
@@ -341,6 +380,7 @@ namespace AshesOfRum
             foreach (var formation in selectedFormations) formation.IssueStop();
             awaitingAttackMove = false;
             SetOrderFeedback($"Stop - {selectedFormations.Count} formation(s)");
+            PlayCue(GameplayCue.Order);
         }
 
         public bool IssueFocusForSmoke(FormationAgent friendly, FormationAgent hostile)
@@ -348,8 +388,12 @@ namespace AshesOfRum
             SelectOnly(friendly);
             var issued = friendly.IssueFocus(hostile);
             if (issued) SetOrderFeedback($"Focus {hostile.Type}");
+            if (issued) PlayCue(GameplayCue.Order);
             return issued;
         }
+
+        public bool SetHisarRallyForAutomation(Vector3 position, ResourceCache cache = null)
+            => TrySetHisarRally(position, cache);
 
         public FormationAgent DeployEnemyForAutomation(FormationType type, Vector3 position)
         {
@@ -382,6 +426,7 @@ namespace AshesOfRum
             selectedBuilding = building;
             building.SetSelected(true);
             SetOrderFeedback($"{building.Type} selected");
+            PlayCue(GameplayCue.Selection);
             UpdateHud();
         }
 
@@ -468,7 +513,8 @@ namespace AshesOfRum
             obstacle.size = new Vector3(5.2f, 3f, 4.2f);
             obstacle.carving = true;
             var result = root.AddComponent<Hisar>();
-            result.Initialize(friendly, tuning.hisarHealth, HandleHisarDestroyed);
+            result.Initialize(friendly, tuning.hisarHealth, HandleHisarDestroyed,
+                friendly ? HandleFriendlyUnderAttack : position => PlayWorldCue(GameplayCue.Hit, position, false));
             return result;
         }
 
@@ -525,11 +571,13 @@ namespace AshesOfRum
             var worker = workerObject.AddComponent<WorkerAgent>();
             worker.Initialize(tuning, sideWallet, home, knownCaches, slot,
                 friendly ? NotifyEconomyState : null,
-                friendly ? FindNearestDropOff : null,
+                friendly ? FindNearestDropOff : FindNearestEnemyDropOff,
                 friendly ? IsCurrentlyVisible : IsCurrentlyVisibleToHostileSide,
                 friendly,
                 amount => telemetry.RecordSupplies(friendly, amount, MatchElapsedSeconds),
-                HandleWorkerDestroyed);
+                HandleWorkerDestroyed,
+                friendly ? HandleFriendlyUnderAttack : position => PlayWorldCue(GameplayCue.Hit, position, false),
+                friendly ? null : worker => opponent?.NotifyGatheringRouteFailed(worker));
             if (fogOfWar != null)
             {
                 if (friendly) fogOfWar.RegisterFriendly(worker.transform);
@@ -644,6 +692,7 @@ namespace AshesOfRum
             resultElapsedText.text = $"ELAPSED   {minutes:00}:{seconds:00}";
             restartButton.interactable = true;
             quitButton.interactable = true;
+            PlayCue(outcome == MatchOutcome.Victory ? GameplayCue.Victory : GameplayCue.Defeat);
             Time.timeScale = 0f;
         }
 
@@ -694,16 +743,18 @@ namespace AshesOfRum
         {
             opponent = gameObject.AddComponent<ScriptedOpponentController>();
             opponent.Initialize(tuning, enemyHisar, hisar, enemyWorkers, enemyFormations, enemyBuildings,
-                enemyCaches, CreateEnemyWorkerForOpponent,
+                allCaches, enemyCaches, CreateEnemyWorkerForOpponent,
                 type => CreateFormation(type, false,
                     new Vector3(-5f + enemyFormations.Count * 5f, 0f, 22f)),
                 CreateOpponentBuilding,
                 () => friendlyFormations,
                 IsCurrentlyVisibleToHostileSide,
+                IsCurrentlyVisibleToHostileSide,
                 () => MatchElapsedSeconds,
                 (phase, elapsed) =>
                 {
                     telemetry.RecordAiAttack(phase, elapsed);
+                    PlayCue(GameplayCue.Warning);
                     SetOrderFeedback(phase switch
                     {
                         AiPhase.Probe => "Alazhan Cavalry probe is moving",
@@ -737,11 +788,12 @@ namespace AshesOfRum
                 : root.AddComponent<ConstructibleBuilding>();
             building.Initialize(type, BuildingDuration(type), tuning.buildingHealth,
                 type == BuildingType.Watchtower ? new Color(0.58f, 0.09f, 0.04f) : new Color(0.72f, 0.16f, 0.07f),
-                DestroyOpponentBuilding, false);
+                DestroyOpponentBuilding, false, position => PlayWorldCue(GameplayCue.Hit, position, false));
             enemyBuildings.Add(building);
             fogOfWar?.RegisterHostileStatic(root);
             if (type == BuildingType.Watchtower)
-                root.AddComponent<WatchtowerAttack>().Initialize(tuning, () => friendlyFormations);
+                root.AddComponent<WatchtowerAttack>().Initialize(tuning, () => friendlyFormations,
+                    position => PlayWorldCue(GameplayCue.Attack, position, false));
             return building;
         }
 
@@ -841,13 +893,28 @@ namespace AshesOfRum
 
         private void ApplyOrder(Vector2 position)
         {
-            if (selectedWorkers.Count == 0 && selectedFormations.Count == 0) return;
+            if (selectedWorkers.Count == 0 && selectedFormations.Count == 0 && !hisarSelected) return;
             if (!Physics.Raycast(worldCamera.ScreenPointToRay(position), out var hit, 200f)) return;
+            if (hisarSelected)
+            {
+                var rallyCache = hit.collider.GetComponentInParent<ResourceCache>();
+                if (rallyCache != null)
+                {
+                    if (IsCurrentlyVisible(rallyCache.transform.position))
+                        TrySetHisarRally(rallyCache.transform.position, rallyCache);
+                    else
+                        SetOrderFeedback("Rally cache must be currently visible");
+                    return;
+                }
+                TrySetHisarRally(hit.point, null);
+                return;
+            }
             var hostile = hit.collider.GetComponentInParent<FormationAgent>();
             if (hostile != null && !hostile.IsFriendly && selectedFormations.Count > 0)
             {
                 foreach (var formation in selectedFormations) formation.IssueFocus(hostile);
                 SetOrderFeedback($"Focus {hostile.Type} - {selectedFormations.Count} formation(s)");
+                PlayCue(GameplayCue.Order);
                 CreateOrderMarker(hostile.transform.position, new Color(1f, 0.22f, 0.1f));
                 return;
             }
@@ -857,6 +924,7 @@ namespace AshesOfRum
             {
                 foreach (var formation in selectedFormations) formation.IssueFocus(hostileWorker);
                 SetOrderFeedback($"Focus worker - {selectedFormations.Count} formation(s)");
+                PlayCue(GameplayCue.Order);
                 CreateOrderMarker(hostileWorker.transform.position, new Color(1f, 0.22f, 0.1f));
                 return;
             }
@@ -868,6 +936,7 @@ namespace AshesOfRum
             {
                 foreach (var formation in selectedFormations) formation.IssueFocus(hostileStructure);
                 SetOrderFeedback($"Focus structure - {selectedFormations.Count} formation(s)");
+                PlayCue(GameplayCue.Order);
                 CreateOrderMarker(hostileStructure.TargetComponent.transform.position, new Color(1f, 0.22f, 0.1f));
                 return;
             }
@@ -884,6 +953,7 @@ namespace AshesOfRum
                 }
                 foreach (var worker in availableWorkers) worker.IssueGather(cache);
                 SetOrderFeedback($"Gather {cache.name}");
+                PlayCue(GameplayCue.Order);
                 CreateOrderMarker(cache.transform.position, new Color(0.95f, 0.68f, 0.2f));
                 return;
             }
@@ -1103,7 +1173,8 @@ namespace AshesOfRum
                     if (clickedHisar != null && clickedHisar.IsFriendly)
                     {
                         hisarSelected = true;
-                        SetOrderFeedback("Hisar selected - train a formation");
+                        SetOrderFeedback("Hisar selected - train or right-click to set rally");
+                        PlayCue(GameplayCue.Selection);
                         return;
                     }
                     var worker = hit.collider.GetComponentInParent<WorkerAgent>();
@@ -1139,6 +1210,7 @@ namespace AshesOfRum
             if (selectedWorkers.Contains(worker)) return;
             selectedWorkers.Add(worker);
             worker.SetSelected(true);
+            PlayCue(GameplayCue.Selection);
         }
 
         private void AddSelectedFormation(FormationAgent formation)
@@ -1146,6 +1218,7 @@ namespace AshesOfRum
             if (formation == null || !formation.IsFriendly || selectedFormations.Contains(formation)) return;
             selectedFormations.Add(formation);
             formation.SetSelected(true);
+            PlayCue(GameplayCue.Selection);
         }
 
         private void SelectVisibleFormationsOfType(FormationType type)
@@ -1185,7 +1258,9 @@ namespace AshesOfRum
                     ? $"{selectedBuilding.Type.ToString().ToUpperInvariant()}\n" +
                       $"HEALTH {selectedBuilding.Health} / {selectedBuilding.MaxHealth}"
                 : hisarSelected
-                    ? "KARASUNGUR HISAR\nSHARED PRODUCTION QUEUE"
+                    ? $"KARASUNGUR HISAR\nSHARED QUEUE  |  RALLY: " +
+                      (hisarRallyCache != null ? hisarRallyCache.name.ToUpperInvariant() :
+                          hisarRallyPoint.HasValue ? "TERRAIN" : "DEFAULT")
                     : selectedWorkers.Count == 0
                         ? "No selection"
                         : $"{selectedWorkers.Count} WORKER{(selectedWorkers.Count == 1 ? string.Empty : "S")}\n" +
@@ -1364,6 +1439,7 @@ namespace AshesOfRum
             }
             SetOrderFeedback($"{(attackMove ? "Attack-move" : "Move")} - {live.Count} formation(s)");
             if (!attackMove) CreateOrderMarker(destination, new Color(0.2f, 0.78f, 1f));
+            PlayCue(GameplayCue.Order);
         }
 
         private static bool IsPointerOverHud(Vector2 screenPosition)
@@ -1494,11 +1570,12 @@ namespace AshesOfRum
                 _ => new Color(0.08f, 0.32f, 0.66f)
             };
             building.Initialize(type, BuildingDuration(type), tuning.buildingHealth, completeColor,
-                DestroyFriendlyBuilding);
+                DestroyFriendlyBuilding, true, HandleFriendlyUnderAttack);
             fogOfWar?.RegisterFriendly(root.transform);
             if (type == BuildingType.Watchtower)
                 root.AddComponent<WatchtowerAttack>().Initialize(tuning,
-                    () => enemyFormations.Where(formation => fogOfWar == null || fogOfWar.IsCurrentlyVisible(formation)));
+                    () => enemyFormations.Where(formation => fogOfWar == null || fogOfWar.IsCurrentlyVisible(formation)),
+                    position => PlayWorldCue(GameplayCue.Attack, position, true));
             return building;
         }
 
@@ -1545,6 +1622,7 @@ namespace AshesOfRum
         private void CompleteBuilding(ConstructibleBuilding building)
         {
             telemetry.RecordBuildingConstructed(true, building.Type.ToString(), MatchElapsedSeconds);
+            PlayCue(GameplayCue.Construction);
             if (building.Type == BuildingType.House)
             {
                 population.AddCapacity(tuning.housePopulationCapacity);
@@ -1563,6 +1641,22 @@ namespace AshesOfRum
             foreach (var storehouse in storehouses)
             {
                 if (storehouse == null || !storehouse.IsComplete || storehouse.IsDestroyed) continue;
+                var distance = (storehouse.DropOffPoint - position).sqrMagnitude;
+                if (distance >= nearestDistance) continue;
+                result = storehouse.DropOffPoint;
+                nearestDistance = distance;
+            }
+            return result;
+        }
+
+        private Vector3 FindNearestEnemyDropOff(Vector3 position)
+        {
+            var result = enemyHisar.DropOffPoint;
+            var nearestDistance = (result - position).sqrMagnitude;
+            foreach (var storehouse in enemyBuildings)
+            {
+                if (storehouse == null || storehouse.Type != BuildingType.Storehouse ||
+                    !storehouse.IsComplete || storehouse.IsDestroyed) continue;
                 var distance = (storehouse.DropOffPoint - position).sqrMagnitude;
                 if (distance >= nearestDistance) continue;
                 result = storehouse.DropOffPoint;
@@ -1622,6 +1716,8 @@ namespace AshesOfRum
                 workers.Add(worker);
                 telemetry.RecordEntityProduced(true, ProductionItem.Worker.ToString(), MatchElapsedSeconds);
                 SetOrderFeedback("Worker ready");
+                PlayCue(GameplayCue.Production);
+                ApplyHisarRally(worker);
                 return;
             }
             CompleteFormation(item.ToFormationType());
@@ -1633,6 +1729,8 @@ namespace AshesOfRum
             friendlyFormations.Add(friendly);
             telemetry.RecordEntityProduced(true, type.ToString(), MatchElapsedSeconds);
             SetOrderFeedback($"{type} ready - {friendly.MemberCount} members");
+            PlayCue(GameplayCue.Production);
+            ApplyHisarRally(friendly);
         }
 
         private FormationAgent CreateFormation(FormationType type, bool friendly, Vector3 position,
@@ -1670,7 +1768,9 @@ namespace AshesOfRum
                 IsCurrentlyVisibleToHostileSide,
                 friendly ? EnemyCombatStructures : FriendlyCombatStructures,
                 friendly ? structure => fogOfWar == null || fogOfWar.IsCurrentlyVisible(structure.TargetComponent) :
-                IsCurrentlyVisibleToHostileSide);
+                IsCurrentlyVisibleToHostileSide,
+                friendly ? HandleFriendlyUnderAttack : position => PlayWorldCue(GameplayCue.Hit, position, false),
+                position => PlayWorldCue(GameplayCue.Attack, position, friendly));
             if (friendly) fogOfWar?.RegisterFriendly(root.transform);
             else fogOfWar?.RegisterHostileMobile(root);
             return formation;
@@ -1733,6 +1833,61 @@ namespace AshesOfRum
                 SetOrderFeedback($"Enemy {formation.Type} sighted");
             telemetry.RecordFirstContact(MatchElapsedSeconds);
         }
+
+        private bool TrySetHisarRally(Vector3 position, ResourceCache cache)
+        {
+            if (cache != null && (cache.Remaining <= 0 || !IsCurrentlyVisible(cache.transform.position))) return false;
+            hisarRallyCache = cache;
+            hisarRallyPoint = new Vector3(position.x, 0f, position.z);
+            if (hisarRallyMarker != null) Destroy(hisarRallyMarker);
+            hisarRallyMarker = CreatePrimitive(PrimitiveType.Cylinder, "Hisar Rally Point", null,
+                hisarRallyPoint.Value + Vector3.up * 0.06f, new Vector3(1.25f, 0.025f, 1.25f),
+                new Color(1f, 0.78f, 0.16f));
+            Destroy(hisarRallyMarker.GetComponent<Collider>());
+            SetOrderFeedback(cache != null ? $"Rally set - gather {cache.name}" : "Rally set - terrain");
+            PlayCue(GameplayCue.Order);
+            UpdateHud();
+            return true;
+        }
+
+        private void ApplyHisarRally(WorkerAgent worker)
+        {
+            if (worker == null || !hisarRallyPoint.HasValue) return;
+            if (hisarRallyCache != null && hisarRallyCache.Remaining > 0)
+                worker.IssueGather(hisarRallyCache);
+            else
+                worker.IssueMove(hisarRallyPoint.Value);
+        }
+
+        private void ApplyHisarRally(FormationAgent formation)
+        {
+            if (formation != null && hisarRallyPoint.HasValue) formation.IssueMove(hisarRallyPoint.Value);
+        }
+
+        private void HandleFriendlyUnderAttack(Vector3 position)
+        {
+            PlayWorldCue(GameplayCue.Hit, position, true);
+            if (Time.unscaledTime < nextUnderAttackCueAt) return;
+            nextUnderAttackCueAt = Time.unscaledTime + UnderAttackCooldownSeconds;
+            fogOfWar?.RefreshNow();
+            if (fogOfWar == null || !fogOfWar.ShowAttackPing(position)) return;
+            UnderAttackWarningCount++;
+            PlayCue(GameplayCue.Warning);
+            SetOrderFeedback("Under attack - check minimap ping");
+        }
+
+        private void PlayWorldCue(GameplayCue cue, Vector3 position, bool friendlySource)
+        {
+            if (!friendlySource && !IsCurrentlyVisible(position)) return;
+            if (cue == GameplayCue.Hit)
+            {
+                if (Time.unscaledTime < nextHitCueAt) return;
+                nextHitCueAt = Time.unscaledTime + HitCueCooldownSeconds;
+            }
+            PlayCue(cue);
+        }
+
+        private void PlayCue(GameplayCue cue) => gameplayAudio?.Play(cue);
 
         private sealed class ControlGroup
         {
