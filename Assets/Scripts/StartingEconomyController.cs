@@ -526,7 +526,7 @@ namespace AshesOfRum
             worker.Initialize(tuning, sideWallet, home, knownCaches, slot,
                 friendly ? NotifyEconomyState : null,
                 friendly ? FindNearestDropOff : null,
-                friendly ? IsCurrentlyVisible : _ => true,
+                friendly ? IsCurrentlyVisible : IsCurrentlyVisibleToHostileSide,
                 friendly,
                 amount => telemetry.RecordSupplies(friendly, amount, MatchElapsedSeconds),
                 HandleWorkerDestroyed);

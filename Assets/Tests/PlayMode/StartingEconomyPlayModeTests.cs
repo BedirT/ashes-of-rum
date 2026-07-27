@@ -313,6 +313,49 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator DepletedCrossSideCache_OpponentDoesNotRetargetToUnseenNeutralCache()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.EnemyWorkers.Where(worker => worker.CurrentConstruction == null).All(worker =>
+                    economy.OpponentCaches.Contains(GetPrivateField<ResourceCache>(worker, "targetCache"))), Is.True,
+                "The scripted opponent opening must continue assigning workers to its safe starting caches.");
+
+            var worker = economy.EnemyWorkers.First(candidate => candidate.CurrentConstruction == null);
+            foreach (var otherWorker in economy.EnemyWorkers.Where(candidate => candidate != worker))
+                otherWorker.Suspend();
+            foreach (var startingCache in economy.OpponentCaches) startingCache.TakeBatch(int.MaxValue);
+            var depletedCache = economy.Caches[0];
+            var unseenFallback = economy.Caches[1];
+            depletedCache.Initialize(10);
+            economy.DeployEnemyForAutomation(FormationType.Spearmen, depletedCache.transform.position);
+
+            var visibility = GetPrivateField<System.Func<Vector3, bool>>(worker, "isCurrentlyVisible");
+            Assert.That(GetPrivateField<IReadOnlyList<ResourceCache>>(worker, "knownCaches").Count, Is.EqualTo(4));
+            Assert.That(visibility(depletedCache.transform.position), Is.True,
+                "The Alazhan observer must reveal the assigned depleted cache.");
+            Assert.That(visibility(unseenFallback.transform.position), Is.False,
+                "The cross-side fallback must begin outside Alazhan current vision.");
+
+            var originalTimeScale = Time.timeScale;
+            try
+            {
+                Time.timeScale = 4f;
+                worker.IssueGather(depletedCache);
+                yield return WaitUntil(() => depletedCache.Remaining == 0 &&
+                                             worker.CurrentActivity == WorkerAgent.Activity.Idle);
+
+                Assert.That(unseenFallback.Remaining, Is.EqualTo(400),
+                    "An Alazhan worker must not gather from an unseen cross-side cache.");
+                Assert.That(GetPrivateField<ResourceCache>(worker, "targetCache"), Is.Null);
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+            }
+        }
+
+        [UnityTest]
         public IEnumerator DepletedCache_NoNearbySupplyMakesWorkerIdleAndNotifiesPlayer()
         {
             yield return LoadEconomy();
