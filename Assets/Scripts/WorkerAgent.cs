@@ -47,16 +47,27 @@ namespace AshesOfRum
         private ConstructibleBuilding construction;
         private ResourceCache resumeCache;
         private Action<ConstructibleBuilding> constructionCompleted;
+        private Action<int> suppliesDeposited;
+        private Action<WorkerAgent> destroyedCallback;
+        private Action<Vector3> damagedCallback;
+        private Action<WorkerAgent> gatheringRouteFailed;
 
         public Activity CurrentActivity { get; private set; }
+        public bool IsFriendly { get; private set; }
+        public bool IsAlive { get; private set; }
+        public int Health { get; private set; }
+        public int MaxHealth { get; private set; }
         public bool IsSelected { get; private set; }
         public int CarriedSupplies { get; private set; }
         public ConstructibleBuilding CurrentConstruction => construction ?? deferredBuilding;
         public Vector3 LastDropOffPoint { get; private set; }
+        public ResourceCache TargetCache => targetCache;
 
         public void Initialize(EconomyTuning economyTuning, EconomyWallet economyWallet, Hisar home,
             IReadOnlyList<ResourceCache> caches, int slot, Action<string> economyStateNotification,
-            Func<Vector3, Vector3> dropOffResolver = null, Func<Vector3, bool> visibilityResolver = null)
+            Func<Vector3, Vector3> dropOffResolver = null, Func<Vector3, bool> visibilityResolver = null,
+            bool friendly = true, Action<int> onSuppliesDeposited = null, Action<WorkerAgent> onDestroyed = null,
+            Action<Vector3> onDamaged = null, Action<WorkerAgent> onGatheringRouteFailed = null)
         {
             tuning = economyTuning;
             wallet = economyWallet;
@@ -65,6 +76,14 @@ namespace AshesOfRum
             isCurrentlyVisible = visibilityResolver;
             knownCaches = caches;
             notifyEconomyState = economyStateNotification;
+            suppliesDeposited = onSuppliesDeposited;
+            destroyedCallback = onDestroyed;
+            damagedCallback = onDamaged;
+            gatheringRouteFailed = onGatheringRouteFailed;
+            IsFriendly = friendly;
+            IsAlive = true;
+            MaxHealth = Mathf.Max(1, tuning.memberHealth);
+            Health = MaxHealth;
             gatherSlot = slot;
             agent = GetComponent<NavMeshAgent>();
             agent.speed = tuning.workerSpeed;
@@ -81,6 +100,7 @@ namespace AshesOfRum
         {
             IsSelected = selected;
             if (selectionRing != null) selectionRing.SetActive(selected);
+            GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
         public void IssueMove(Vector3 destination)
@@ -146,6 +166,35 @@ namespace AshesOfRum
             var path = new NavMeshPath();
             return NavMesh.CalculatePath(transform.position, destination, NavMesh.AllAreas, path) &&
                    path.status == NavMeshPathStatus.PathComplete;
+        }
+
+        public void ApplyFixedDamage(int amount)
+        {
+            if (!IsAlive || amount <= 0) return;
+            damagedCallback?.Invoke(transform.position);
+            Health = Mathf.Max(0, Health - amount);
+            GetComponent<WorldHealthBar>()?.RecordDamage();
+            if (Health > 0) return;
+            IsAlive = false;
+            if (agent != null && agent.isOnNavMesh)
+            {
+                agent.isStopped = true;
+                agent.ResetPath();
+            }
+            CurrentActivity = Activity.Idle;
+            destroyedCallback?.Invoke(this);
+            Destroy(gameObject, 0.25f);
+        }
+
+        public void Suspend()
+        {
+            if (agent != null && agent.isOnNavMesh)
+            {
+                agent.isStopped = true;
+                agent.ResetPath();
+                agent.velocity = Vector3.zero;
+            }
+            enabled = false;
         }
 
         private void BeginMove(Vector3 destination)
@@ -235,7 +284,9 @@ namespace AshesOfRum
 
         private void DepositAndReturn()
         {
-            wallet.Deposit(CarriedSupplies);
+            var deposited = CarriedSupplies;
+            wallet.Deposit(deposited);
+            suppliesDeposited?.Invoke(deposited);
             SetCarrying(0);
             if (deferredOrder != DeferredOrder.None)
             {
@@ -305,9 +356,10 @@ namespace AshesOfRum
         {
             var completed = construction;
             construction = null;
-            constructionCompleted?.Invoke(completed);
+            var completedCallback = constructionCompleted;
             constructionCompleted = null;
             ResumeAfterConstruction();
+            completedCallback?.Invoke(completed);
         }
 
         private void ResumeAfterConstruction()
@@ -349,6 +401,7 @@ namespace AshesOfRum
             CurrentActivity = Activity.Idle;
             if (agent.isOnNavMesh) agent.ResetPath();
             notifyEconomyState?.Invoke($"{name} idle - no Supplies cache nearby");
+            gatheringRouteFailed?.Invoke(this);
         }
 
         private bool HasArrived() => agent.isOnNavMesh && agent.remainingDistance <= agent.stoppingDistance + 0.05f;

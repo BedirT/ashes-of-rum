@@ -14,6 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: AshesOfRum.Runtime::AshesOfRum.EconomyTuning
   startingSupplies: 100
   cacheSupplies: 400
+  workerCost: 100
+  workerTrainSeconds: 2.5
   gatherBatch: 10
   gatherSeconds: 0.75
   workerSpeed: 5
@@ -25,6 +27,8 @@ MonoBehaviour:
   watchtowerCost: 300
   watchtowerBuildSeconds: 5
   buildingHealth: 100
+  hisarHealth: 640
+  structuralDamage: 2
   watchtowerRange: 9
   watchtowerAttackSeconds: 0.75
   watchtowerDamage: 10
@@ -42,3 +46,6 @@ MonoBehaviour:
   footSpeed: 3.5
   cavalrySpeed: 5.25
   sightRadius: 10
+  aiProbeSeconds: 180
+  aiPressureSeconds: 360
+  aiFinalAssaultSeconds: 600

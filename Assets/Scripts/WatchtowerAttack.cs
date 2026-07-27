@@ -16,11 +16,13 @@ namespace AshesOfRum
         private float projectileSeconds;
         private int damage;
         private float attackReadyAt;
+        private Action<Vector3> attackCallback;
 
         public FormationAgent CurrentTarget { get; private set; }
         public int ShotsFired { get; private set; }
 
-        public void Initialize(EconomyTuning tuning, Func<IEnumerable<FormationAgent>> targetProvider)
+        public void Initialize(EconomyTuning tuning, Func<IEnumerable<FormationAgent>> targetProvider,
+            Action<Vector3> onAttack = null)
         {
             building = GetComponent<ConstructibleBuilding>();
             targets = targetProvider;
@@ -28,6 +30,7 @@ namespace AshesOfRum
             attackSeconds = tuning.watchtowerAttackSeconds;
             projectileSeconds = tuning.projectileSeconds;
             damage = tuning.watchtowerDamage;
+            attackCallback = onAttack;
         }
 
         private void Update()
@@ -37,6 +40,7 @@ namespace AshesOfRum
             if (CurrentTarget == null || Time.time < attackReadyAt) return;
             attackReadyAt = Time.time + attackSeconds;
             ShotsFired++;
+            attackCallback?.Invoke(transform.position);
             StartCoroutine(FireProjectile(CurrentTarget));
         }
 
@@ -44,7 +48,7 @@ namespace AshesOfRum
         {
             var rangeSquared = range * range;
             return targets?.Invoke()
-                .Where(target => target != null && !target.IsFriendly && target.MemberCount > 0)
+                .Where(target => target != null && target.IsFriendly != building.IsFriendly && target.MemberCount > 0)
                 .Select(target => new
                 {
                     Target = target,

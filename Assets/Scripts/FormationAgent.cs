@@ -12,10 +12,18 @@ namespace AshesOfRum
         private readonly List<int> memberHealth = new();
         private EconomyTuning tuning;
         private FormationAgent target;
+        private WorkerAgent workerTarget;
+        private MonoBehaviour structureTargetComponent;
         private System.Func<IEnumerable<FormationAgent>> hostileProvider;
+        private System.Func<IEnumerable<WorkerAgent>> hostileWorkerProvider;
+        private System.Func<IEnumerable<ICombatStructure>> hostileStructureProvider;
         private System.Func<FormationAgent, bool> visibilityPredicate;
+        private System.Func<WorkerAgent, bool> workerVisibilityPredicate;
+        private System.Func<ICombatStructure, bool> structureVisibilityPredicate;
         private Action<int> casualtyCallback;
         private Action<FormationAgent> destroyedCallback;
+        private Action<Vector3> damagedCallback;
+        private Action<Vector3> attackCallback;
         private NavMeshAgent navAgent;
         private int nextHitMemberIndex;
         private float attackRemaining;
@@ -33,6 +41,8 @@ namespace AshesOfRum
         public int MemberCount => members.Count;
         public bool IsSelected { get; private set; }
         public FormationAgent Target => target;
+        public WorkerAgent WorkerTarget => workerTarget;
+        public ICombatStructure StructureTarget => structureTargetComponent as ICombatStructure;
         public FormationOrder CurrentOrder { get; private set; }
         public Vector3 Destination => destination;
         public bool HasDestination => hasDestination;
@@ -46,12 +56,18 @@ namespace AshesOfRum
                 return total;
             }
         }
+        public int MaximumMemberHealth => tuning == null ? 0 : tuning.memberHealth * 8;
         public int LastAttackMemberCount { get; private set; }
 
         public void Initialize(FormationType type, bool friendly, EconomyTuning combatTuning,
             Action<int> onCasualty = null, Action<FormationAgent> onDestroyed = null,
             System.Func<IEnumerable<FormationAgent>> availableHostiles = null,
-            System.Func<FormationAgent, bool> isTargetVisible = null)
+            System.Func<FormationAgent, bool> isTargetVisible = null,
+            System.Func<IEnumerable<WorkerAgent>> availableHostileWorkers = null,
+            System.Func<WorkerAgent, bool> isWorkerVisible = null,
+            System.Func<IEnumerable<ICombatStructure>> availableHostileStructures = null,
+            System.Func<ICombatStructure, bool> isStructureVisible = null,
+            Action<Vector3> onDamaged = null, Action<Vector3> onAttack = null)
         {
             Type = type;
             IsFriendly = friendly;
@@ -60,6 +76,12 @@ namespace AshesOfRum
             destroyedCallback = onDestroyed;
             hostileProvider = availableHostiles;
             visibilityPredicate = isTargetVisible;
+            hostileWorkerProvider = availableHostileWorkers;
+            workerVisibilityPredicate = isWorkerVisible;
+            hostileStructureProvider = availableHostileStructures;
+            structureVisibilityPredicate = isStructureVisible;
+            damagedCallback = onDamaged;
+            attackCallback = onAttack;
             navAgent = GetComponent<NavMeshAgent>();
             if (navAgent != null)
             {
@@ -81,12 +103,15 @@ namespace AshesOfRum
             IsSelected = selected;
             foreach (var ring in GetComponentsInChildren<FormationSelectionRing>(true))
                 ring.gameObject.SetActive(selected);
+            GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
         public bool IssueFocus(FormationAgent hostile)
         {
             if (!IsValidTarget(hostile)) return false;
             target = hostile;
+            workerTarget = null;
+            structureTargetComponent = null;
             hasDestination = false;
             CurrentOrder = FormationOrder.Focus;
             StartNavigation(hostile.transform.position);
@@ -94,9 +119,35 @@ namespace AshesOfRum
             return true;
         }
 
+        public bool IssueFocus(WorkerAgent hostile)
+        {
+            if (!IsValidWorkerTarget(hostile)) return false;
+            target = null;
+            workerTarget = hostile;
+            structureTargetComponent = null;
+            hasDestination = false;
+            CurrentOrder = FormationOrder.Focus;
+            StartNavigation(hostile.transform.position);
+            return true;
+        }
+
+        public bool IssueFocus(ICombatStructure hostile)
+        {
+            if (!IsValidStructureTarget(hostile)) return false;
+            target = null;
+            workerTarget = null;
+            structureTargetComponent = hostile.TargetComponent as MonoBehaviour;
+            hasDestination = false;
+            CurrentOrder = FormationOrder.Focus;
+            StartNavigation(hostile.TargetComponent.transform.position);
+            return true;
+        }
+
         public void IssueMove(Vector3 position)
         {
             target = null;
+            workerTarget = null;
+            structureTargetComponent = null;
             destination = Grounded(position);
             hasDestination = true;
             CurrentOrder = FormationOrder.Move;
@@ -106,6 +157,8 @@ namespace AshesOfRum
         public void IssueAttackMove(Vector3 position)
         {
             target = null;
+            workerTarget = null;
+            structureTargetComponent = null;
             destination = Grounded(position);
             hasDestination = true;
             CurrentOrder = FormationOrder.AttackMove;
@@ -115,6 +168,8 @@ namespace AshesOfRum
         public void IssueStop()
         {
             target = null;
+            workerTarget = null;
+            structureTargetComponent = null;
             hasDestination = false;
             CurrentOrder = FormationOrder.Idle;
             StopNavigation();
@@ -128,6 +183,8 @@ namespace AshesOfRum
         public void ApplyFixedDamage(int damage)
         {
             if (members.Count == 0 || damage <= 0) return;
+            damagedCallback?.Invoke(transform.position);
+            GetComponent<WorldHealthBar>()?.RecordDamage();
             var hitIndex = nextHitMemberIndex % members.Count;
             memberHealth[hitIndex] -= damage;
             members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit();
@@ -146,6 +203,8 @@ namespace AshesOfRum
             ReForm();
             if (members.Count != 0) return;
             target = null;
+            workerTarget = null;
+            structureTargetComponent = null;
             StopNavigation();
             destroyedCallback?.Invoke(this);
             Destroy(gameObject, 0.25f);
@@ -154,23 +213,21 @@ namespace AshesOfRum
         private void Update()
         {
             if (!IsValidTarget(target))
-            {
                 target = null;
-                if (CurrentOrder == FormationOrder.Focus)
-                {
-                    CurrentOrder = FormationOrder.Idle;
-                    StopNavigation();
-                }
-            }
-            if (CurrentOrder == FormationOrder.AttackMove && target == null)
+            if (!IsValidWorkerTarget(workerTarget)) workerTarget = null;
+            if (!IsValidStructureTarget(StructureTarget)) structureTargetComponent = null;
+            if (CurrentOrder == FormationOrder.Focus && !HasCombatTarget)
             {
-                target = FindNearestVisibleHostile();
-                target?.TryRetaliate(this);
+                CurrentOrder = FormationOrder.Idle;
+                StopNavigation();
             }
-            if (target != null)
+            if (CurrentOrder == FormationOrder.AttackMove) AcquireAttackMoveTarget();
+            if (HasCombatTarget)
             {
-                target.TryRetaliate(this);
-                MoveOrAttackTarget();
+                if (target != null) target.TryRetaliate(this);
+                if (target != null) MoveOrAttackTarget();
+                else if (workerTarget != null) MoveOrAttackWorker();
+                else MoveOrAttackStructure();
                 return;
             }
             if (!hasDestination) return;
@@ -187,11 +244,41 @@ namespace AshesOfRum
             MoveAndFace(delta);
         }
 
+        private bool HasCombatTarget => target != null || workerTarget != null || StructureTarget != null;
+
+        private void AcquireAttackMoveTarget()
+        {
+            if (target == null)
+            {
+                var formation = FindNearestVisibleHostile();
+                if (formation != null)
+                {
+                    target = formation;
+                    workerTarget = null;
+                    structureTargetComponent = null;
+                    target.TryRetaliate(this);
+                    return;
+                }
+            }
+            if (target != null || workerTarget != null) return;
+            workerTarget = FindNearestVisibleWorker();
+            if (workerTarget != null)
+            {
+                structureTargetComponent = null;
+                return;
+            }
+            if (StructureTarget == null)
+            {
+                var structure = FindNearestVisibleStructure();
+                structureTargetComponent = structure?.TargetComponent as MonoBehaviour;
+            }
+        }
+
         private void MoveOrAttackTarget()
         {
             var delta = target.transform.position - transform.position;
             delta.y = 0f;
-            var range = Type == FormationType.Archers ? 7f : 2.2f;
+            var range = AttackRange;
             if (delta.sqrMagnitude > range * range)
             {
                 MoveAndFace(delta);
@@ -206,6 +293,52 @@ namespace AshesOfRum
             if (attackRemaining > 0f) return;
             attackRemaining = tuning.attackSeconds;
             ExecuteAttackVolley(target);
+        }
+
+        private void MoveOrAttackWorker()
+        {
+            var delta = workerTarget.transform.position - transform.position;
+            delta.y = 0f;
+            if (delta.sqrMagnitude > AttackRange * AttackRange)
+            {
+                MoveAndFace(delta);
+                return;
+            }
+            StopNavigation();
+            FaceCombatTarget(delta);
+            attackRemaining -= Time.deltaTime;
+            if (attackRemaining > 0f) return;
+            attackRemaining = tuning.attackSeconds;
+            ExecuteAttackVolley(workerTarget);
+        }
+
+        private void MoveOrAttackStructure()
+        {
+            var structure = StructureTarget;
+            if (structure == null) return;
+            var delta = structure.TargetComponent.transform.position - transform.position;
+            delta.y = 0f;
+            var range = AttackRange + structure.CombatRadius;
+            if (delta.sqrMagnitude > range * range)
+            {
+                MoveAndFace(delta);
+                return;
+            }
+            StopNavigation();
+            FaceCombatTarget(delta);
+            attackRemaining -= Time.deltaTime;
+            if (attackRemaining > 0f) return;
+            attackRemaining = tuning.attackSeconds;
+            ExecuteStructuralVolley(structure);
+        }
+
+        private float AttackRange => Type == FormationType.Archers ? 7f : 2.2f;
+
+        private void FaceCombatTarget(Vector3 delta)
+        {
+            if (delta.sqrMagnitude > 0.01f)
+                transform.rotation = Quaternion.RotateTowards(transform.rotation,
+                    Quaternion.LookRotation(delta.normalized), 360f * Time.deltaTime);
         }
 
         private void MoveAndFace(Vector3 delta)
@@ -264,15 +397,66 @@ namespace AshesOfRum
             return nearest;
         }
 
+        private WorkerAgent FindNearestVisibleWorker()
+        {
+            if (hostileWorkerProvider == null) return null;
+            WorkerAgent nearest = null;
+            var nearestDistance = tuning.sightRadius * tuning.sightRadius;
+            foreach (var hostile in hostileWorkerProvider())
+            {
+                if (!IsValidWorkerTarget(hostile)) continue;
+                var distance = (hostile.transform.position - transform.position).sqrMagnitude;
+                if (distance > nearestDistance) continue;
+                nearest = hostile;
+                nearestDistance = distance;
+            }
+            return nearest;
+        }
+
+        private ICombatStructure FindNearestVisibleStructure()
+        {
+            if (hostileStructureProvider == null) return null;
+            ICombatStructure nearest = null;
+            var nearestDistance = tuning.sightRadius * tuning.sightRadius;
+            foreach (var hostile in hostileStructureProvider())
+            {
+                if (!IsValidStructureTarget(hostile)) continue;
+                var distance = (hostile.TargetComponent.transform.position - transform.position).sqrMagnitude;
+                if (distance > nearestDistance) continue;
+                nearest = hostile;
+                nearestDistance = distance;
+            }
+            return nearest;
+        }
+
         private bool IsValidTarget(FormationAgent candidate) => candidate != null &&
             candidate.IsFriendly != IsFriendly && candidate.MemberCount > 0 &&
             (visibilityPredicate == null || visibilityPredicate(candidate));
 
+        private bool IsValidWorkerTarget(WorkerAgent candidate) => candidate != null && candidate.IsAlive &&
+            candidate.IsFriendly != IsFriendly &&
+            (workerVisibilityPredicate == null || workerVisibilityPredicate(candidate));
+
+        private bool IsValidStructureTarget(ICombatStructure candidate) => candidate != null &&
+            candidate.TargetComponent != null && candidate.IsAttackable && candidate.IsFriendly != IsFriendly &&
+            (structureVisibilityPredicate == null || structureVisibilityPredicate(candidate));
+
         private void TryRetaliate(FormationAgent attacker)
         {
-            if (target != null || !IsValidTarget(attacker)) return;
+            var hasExplicitFocus = CurrentOrder == FormationOrder.Focus && HasCombatTarget;
+            if (target != null || hasExplicitFocus || !IsValidTarget(attacker)) return;
+            var resumeAttackMove = CurrentOrder == FormationOrder.AttackMove && hasDestination;
             target = attacker;
+            workerTarget = null;
+            structureTargetComponent = null;
+            if (resumeAttackMove)
+            {
+                StartNavigation(attacker.transform.position);
+                return;
+            }
+            hasDestination = false;
             CurrentOrder = FormationOrder.Focus;
+            StartNavigation(attacker.transform.position);
         }
 
         private static Vector3 Grounded(Vector3 position) => new(position.x, 0f, position.z);
@@ -283,11 +467,44 @@ namespace AshesOfRum
                 intendedTarget.MemberCount == 0 || members.Count == 0) return false;
 
             LastAttackMemberCount = members.Count;
+            attackCallback?.Invoke(transform.position);
             var attackers = members.ToArray();
             foreach (var attacker in attackers)
             {
                 if (Type == FormationType.Archers) StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
                 else intendedTarget.ApplyDeterministicHit(Type);
+            }
+            return true;
+        }
+
+        public bool ExecuteAttackVolley(WorkerAgent intendedTarget)
+        {
+            if (!IsValidWorkerTarget(intendedTarget) || members.Count == 0) return false;
+            LastAttackMemberCount = members.Count;
+            attackCallback?.Invoke(transform.position);
+            var attackers = members.ToArray();
+            foreach (var attacker in attackers)
+            {
+                if (Type == FormationType.Archers)
+                    StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
+                else
+                    intendedTarget.ApplyFixedDamage(tuning.baseDamage);
+            }
+            return true;
+        }
+
+        public bool ExecuteStructuralVolley(ICombatStructure intendedTarget)
+        {
+            if (!IsValidStructureTarget(intendedTarget) || members.Count == 0) return false;
+            LastAttackMemberCount = members.Count;
+            attackCallback?.Invoke(transform.position);
+            var attackers = members.ToArray();
+            foreach (var attacker in attackers)
+            {
+                if (Type == FormationType.Archers)
+                    StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
+                else
+                    intendedTarget.ApplyStructuralDamage(tuning.structuralDamage);
             }
             return true;
         }
@@ -329,6 +546,53 @@ namespace AshesOfRum
             }
             if (intendedTarget != null) intendedTarget.ApplyDeterministicHit(Type);
             Destroy(arrow);
+        }
+
+        private IEnumerator FireArrow(Vector3 memberPosition, WorkerAgent intendedTarget)
+        {
+            var arrow = CreateArrow();
+            var start = memberPosition + Vector3.up * 1.4f;
+            var elapsed = 0f;
+            while (elapsed < tuning.projectileSeconds && intendedTarget != null && intendedTarget.IsAlive)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
+                var end = intendedTarget.transform.position + Vector3.up;
+                arrow.transform.position = Vector3.Lerp(start, end, t) +
+                                           Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                yield return null;
+            }
+            if (intendedTarget != null && intendedTarget.IsAlive) intendedTarget.ApplyFixedDamage(tuning.baseDamage);
+            Destroy(arrow);
+        }
+
+        private IEnumerator FireArrow(Vector3 memberPosition, ICombatStructure intendedTarget)
+        {
+            var arrow = CreateArrow();
+            var start = memberPosition + Vector3.up * 1.4f;
+            var elapsed = 0f;
+            while (elapsed < tuning.projectileSeconds && intendedTarget != null &&
+                   intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
+                arrow.transform.position = Vector3.Lerp(start, intendedTarget.AimPoint, t) +
+                                           Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                yield return null;
+            }
+            if (intendedTarget != null && intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
+                intendedTarget.ApplyStructuralDamage(tuning.structuralDamage);
+            Destroy(arrow);
+        }
+
+        private static GameObject CreateArrow()
+        {
+            var arrow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            arrow.name = "Arrow";
+            arrow.transform.localScale = new Vector3(0.06f, 0.35f, 0.06f);
+            Destroy(arrow.GetComponent<Collider>());
+            AssignSupportedMaterial(arrow.GetComponent<Renderer>(), ArrowColor);
+            return arrow;
         }
 
         private GameObject CreateMember(int index)

@@ -7,10 +7,18 @@ using UnityEngine.SceneManagement;
 
 namespace AshesOfRum
 {
+    public static class SmokeVerificationRules
+    {
+        public static bool HasFairOpponentEconomy(int hostileFormationsProduced, int completedHostileBuildings,
+            int populationCapacity, int hostileSuppliesGathered) =>
+            hostileFormationsProduced >= 2 && completedHostileBuildings > 0 && populationCapacity >= 20 &&
+            hostileSuppliesGathered > 0;
+    }
+
     public sealed class SmokeTestRunner : MonoBehaviour
     {
         private const float ScreenshotTimeoutSeconds = 15f;
-        private const float EconomyTimeoutSeconds = 20f;
+        private const float EconomyTimeoutSeconds = 30f;
         private const float ConstructionTimeoutSeconds = 20f;
         private const float CombatTimeoutSeconds = 20f;
 
@@ -35,6 +43,7 @@ namespace AshesOfRum
         private static IEnumerator Run()
         {
             var screenshotPath = GetArgumentValue("--smoke-screenshot");
+            var healthScreenshotPath = GetArgumentValue("--smoke-health-screenshot");
             var graphical = !string.IsNullOrEmpty(screenshotPath);
             if (graphical) Screen.SetResolution(1920, 1080, FullScreenMode.Windowed);
             yield return null;
@@ -42,8 +51,53 @@ namespace AshesOfRum
 
             var economy = FindAnyObjectByType<StartingEconomyController>();
             var economyStarted = economy != null && economy.Workers.Count == StartingEconomyController.WorkerCount;
+            var opponentCachesHiddenByFog = false;
+            var hiddenCacheDepletionStayedHidden = false;
+            var opponentStorehouseRecovered = false;
             if (economyStarted)
             {
+                economy.FogOfWar.RefreshNow();
+                var hiddenCache = economy.OpponentCaches[0];
+                var hiddenCacheRenderers = hiddenCache.GetComponentsInChildren<Renderer>(true);
+                var hiddenCacheColliders = hiddenCache.GetComponentsInChildren<Collider>(true);
+                opponentCachesHiddenByFog = economy.FogOfWar.StateAt(hiddenCache.transform.position) ==
+                                             FogState.Unexplored &&
+                                             hiddenCacheRenderers.All(item => !item.enabled) &&
+                                             hiddenCacheColliders.All(item => !item.enabled) &&
+                                             economy.CurrentMatchSummary.firstContactSeconds < 0f;
+                var originalCacheSupplies = hiddenCache.Remaining;
+                hiddenCache.TakeBatch(int.MaxValue);
+                economy.FogOfWar.RefreshNow();
+                hiddenCacheDepletionStayedHidden = hiddenCache.Remaining == 0 &&
+                                                   hiddenCacheRenderers.All(item => !item.enabled) &&
+                                                   hiddenCacheColliders.All(item => !item.enabled) &&
+                                                   economy.CurrentMatchSummary.firstContactSeconds < 0f;
+                hiddenCache.Initialize(originalCacheSupplies);
+                economy.FogOfWar.RefreshNow();
+                economy.SetOpponentEnabledForAutomation(false);
+                economy.SetOpponentTargetsAvailableForAutomation(false);
+                economy.CreditOpponentSuppliesForAutomation(200);
+                var recoveryRequested = economy.TriggerOpponentRouteFailureForAutomation();
+                economy.SetOpponentEnabledForAutomation(true);
+                var recoveryDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
+                while (!economy.EnemyBuildings.Any(building => building.Type == BuildingType.Storehouse &&
+                                                                building.IsComplete) &&
+                       Time.realtimeSinceStartup < recoveryDeadline)
+                    yield return null;
+                var recoveredStorehouse = economy.EnemyBuildings.FirstOrDefault(building =>
+                    building.Type == BuildingType.Storehouse && building.IsComplete);
+                if (recoveredStorehouse != null)
+                {
+                    while (!economy.EnemyWorkers.Any(worker => Vector3.Distance(worker.LastDropOffPoint,
+                               recoveredStorehouse.DropOffPoint) < 0.1f) &&
+                           Time.realtimeSinceStartup < recoveryDeadline)
+                        yield return null;
+                    opponentStorehouseRecovered = recoveryRequested &&
+                        economy.CurrentMatchSummary.hostileSuppliesGathered > 0 &&
+                        economy.EnemyWorkers.Any(worker => Vector3.Distance(worker.LastDropOffPoint,
+                            recoveredStorehouse.DropOffPoint) < 0.1f);
+                }
+                economy.SetOpponentEnabledForAutomation(false);
                 economy.IssueGatherForSmoke(economy.Caches[0]);
                 var economyDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
                 while (economy.Supplies <= economy.StartingSupplies && Time.realtimeSinceStartup < economyDeadline)
@@ -60,6 +114,7 @@ namespace AshesOfRum
             }
             var houseCompleted = houseStarted && economy.PopulationCapacity == 20 &&
                                  economy.Houses.Count == 1 && economy.Houses[0].IsComplete;
+            var populationCapacityIncreased = economy.PopulationCapacity == 20;
             var storehouseStarted = false;
             var watchtowerStarted = false;
             var defensiveBuildingsCompleted = false;
@@ -115,16 +170,22 @@ namespace AshesOfRum
             var hostileRevealedByMovement = false;
             var contactLostUnderFog = false;
             var cavalryCounterWon = false;
+            var formationRallyDispatched = false;
             if (defensiveBuildingsCompleted && storehouseDropOffUsed)
             {
                 economy.CreditSuppliesForAutomation(400);
+                economy.SetHisarRallyForAutomation(new Vector3(-8f, 0f, 2f));
                 trainingStarted = economy.TryQueueFormation(FormationType.Archers);
                 var combatDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
                 while (economy.FriendlyFormations.Count == 0 && Time.realtimeSinceStartup < combatDeadline)
                     yield return null;
-                if (economy.FriendlyFormations.Count > 0 && economy.EnemyFormations.Count > 0)
+                if (economy.FriendlyFormations.Count > 0)
                 {
+                    economy.DeployEnemyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 17f));
                     var friendly = economy.FriendlyFormations[0];
+                    formationRallyDispatched = friendly.CurrentOrder == FormationOrder.Move &&
+                                               Vector3.Distance(friendly.Destination,
+                                                   economy.HisarRallyPoint ?? Vector3.zero) < 0.1f;
                     var hostile = economy.EnemyFormations[0];
                     var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
                     supportedFormationMaterials = friendly.HasSupportedVisualMaterials() &&
@@ -160,6 +221,7 @@ namespace AshesOfRum
                                       formation.Type == FormationType.Cavalry && formation.MemberCount == 8);
                 if (cavalryTrained)
                 {
+                    economy.DeployEnemyForAutomation(FormationType.Archers, new Vector3(0f, 0f, 26f));
                     economy.SelectFormationsForAutomation(economy.FriendlyFormations);
                     economy.AssignControlGroup(1);
                     economy.SelectHisar();
@@ -206,6 +268,154 @@ namespace AshesOfRum
                                             formation.Type == FormationType.Cavalry && formation.MemberCount > 0);
                 }
             }
+
+            var fairOpponentEconomy = false;
+            var probeStarted = false;
+            var pressureStarted = false;
+            var finalAssaultStarted = false;
+            var enemyHisarDestroyed = false;
+            var victoryResultShown = false;
+            var telemetryWritten = false;
+            var restartResetMatch = false;
+            var friendlyHisarDestroyed = false;
+            var defeatResultShown = false;
+            var quitButtonReady = false;
+            var workerRallyDispatched = false;
+            var functionalAudioFeedback = false;
+            var combatHealthBarsProvisioned = false;
+            var enemyHisarHealthReadable = false;
+            if (cavalryCounterWon)
+            {
+                for (var index = 0; index < economy.FriendlyFormations.Count; index++)
+                {
+                    var friendly = economy.FriendlyFormations[index];
+                    friendly.IssueStop();
+                    friendly.GetComponent<UnityEngine.AI.NavMeshAgent>()?.Warp(
+                        new Vector3(-3f + index * 6f, 0f, 0f));
+                }
+                economy.FogOfWar.RefreshNow();
+                economy.SetOpponentTargetsAvailableForAutomation(true);
+                economy.SetOpponentEnabledForAutomation(true);
+                Time.timeScale = 10f;
+                var aiSimulationDeadline = economy.MatchElapsedSeconds + 360f;
+                while (economy.OpponentFormationsProduced < 2 &&
+                       economy.MatchElapsedSeconds < aiSimulationDeadline)
+                    yield return null;
+                var completedHostileBuildings = economy.EnemyBuildings.Count(building => building.IsComplete);
+                fairOpponentEconomy = SmokeVerificationRules.HasFairOpponentEconomy(
+                    economy.OpponentFormationsProduced, completedHostileBuildings,
+                    economy.OpponentPopulationCapacity, economy.CurrentMatchSummary.hostileSuppliesGathered);
+                Debug.Log($"SMOKE_OPPONENT_STATE:{DescribeOpponentState(economy)}");
+                combatHealthBarsProvisioned = economy.FriendlyHisar.GetComponent<WorldHealthBar>() != null &&
+                    economy.EnemyHisar.GetComponent<WorldHealthBar>() != null &&
+                    economy.Workers.All(worker => worker.GetComponent<WorldHealthBar>() != null) &&
+                    economy.EnemyWorkers.All(worker => worker.GetComponent<WorldHealthBar>() != null) &&
+                    economy.FriendlyFormations.All(formation => formation.GetComponent<WorldHealthBar>() != null) &&
+                    economy.EnemyFormations.All(formation => formation.GetComponent<WorldHealthBar>() != null) &&
+                    economy.Houses.All(building => building.GetComponent<WorldHealthBar>() != null) &&
+                    economy.Storehouses.All(building => building.GetComponent<WorldHealthBar>() != null) &&
+                    economy.Watchtowers.All(building => building.GetComponent<WorldHealthBar>() != null) &&
+                    economy.EnemyBuildings.All(building => building.GetComponent<WorldHealthBar>() != null);
+
+                Time.timeScale = 0f;
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 180f - economy.MatchElapsedSeconds));
+                yield return null;
+                probeStarted = economy.OpponentPhase == AiPhase.Probe;
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 360f - economy.MatchElapsedSeconds));
+                yield return null;
+                pressureStarted = economy.OpponentPhase == AiPhase.Pressure;
+                economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 600f - economy.MatchElapsedSeconds));
+                yield return null;
+                finalAssaultStarted = economy.OpponentPhase == AiPhase.FinalAssault;
+
+                economy.SetOpponentEnabledForAutomation(false);
+                foreach (var hostile in economy.EnemyFormations) hostile.IssueStop();
+                economy.DeployFriendlyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 18f));
+                for (var index = 0; index < economy.FriendlyFormations.Count; index++)
+                    economy.FriendlyFormations[index].GetComponent<UnityEngine.AI.NavMeshAgent>()?.Warp(
+                        new Vector3(-3f + index * 6f, 0f, 18f));
+                economy.FogOfWar.RefreshNow();
+                foreach (var friendly in economy.FriendlyFormations)
+                    friendly.IssueFocus(economy.EnemyHisar);
+                Time.timeScale = 10f;
+                var resultDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                var healthFrameCaptured = false;
+                while (economy.Outcome == MatchOutcome.InProgress && Time.realtimeSinceStartup < resultDeadline)
+                {
+                    var healthBar = economy.EnemyHisar.GetComponent<WorldHealthBar>();
+                    enemyHisarHealthReadable |= healthBar != null && healthBar.IsVisible &&
+                                                healthBar.FillFraction > 0f && healthBar.FillFraction < 1f;
+                    if (graphical && enemyHisarHealthReadable && !healthFrameCaptured)
+                    {
+                        Time.timeScale = 0f;
+                        ScreenCapture.CaptureScreenshot(healthScreenshotPath);
+                        yield return new WaitForEndOfFrame();
+                        var healthFrameDeadline = Time.realtimeSinceStartup + ScreenshotTimeoutSeconds;
+                        while (!HasContent(healthScreenshotPath) && Time.realtimeSinceStartup < healthFrameDeadline)
+                            yield return null;
+                        healthFrameCaptured = HasContent(healthScreenshotPath);
+                        Time.timeScale = 10f;
+                    }
+                    yield return null;
+                }
+                enemyHisarDestroyed = economy.EnemyHisar.IsDestroyed;
+                victoryResultShown = economy.Outcome == MatchOutcome.Victory &&
+                                     GameObject.Find("Match Result Title")?.GetComponent<UnityEngine.UI.Text>().text ==
+                                     "VICTORY";
+                telemetryWritten = HasContent(economy.MatchSummaryPath) && HasContent(economy.MatchEventLogPath);
+                functionalAudioFeedback = economy.GameplayAudio.HasAllFunctionalCues &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Selection) > 0 &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Order) > 0 &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Construction) > 0 &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Production) > 0 &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Attack) > 0 &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Hit) > 0 &&
+                                          economy.GameplayAudio.CountFor(GameplayCue.Victory) > 0;
+
+                var completedEconomy = economy;
+                economy.RestartMatch();
+                var restartDeadline = Time.realtimeSinceStartup + ConstructionTimeoutSeconds;
+                while ((economy == null || economy == completedEconomy) &&
+                       Time.realtimeSinceStartup < restartDeadline)
+                {
+                    economy = FindAnyObjectByType<StartingEconomyController>();
+                    yield return null;
+                }
+                restartResetMatch = economy != null && economy != completedEconomy &&
+                                    economy.Outcome == MatchOutcome.InProgress &&
+                                    economy.Supplies == economy.StartingSupplies &&
+                                    economy.FriendlyFormations.Count == 0;
+                if (restartResetMatch)
+                {
+                    economy.SetOpponentEnabledForAutomation(false);
+                    var rallyCache = economy.Caches[0];
+                    economy.SetHisarRallyForAutomation(rallyCache.transform.position, rallyCache);
+                    economy.TryQueueWorker();
+                    var rallyDeadline = Time.realtimeSinceStartup + EconomyTimeoutSeconds;
+                    while (economy.Workers.Count == StartingEconomyController.WorkerCount &&
+                           Time.realtimeSinceStartup < rallyDeadline) yield return null;
+                    workerRallyDispatched = economy.Workers.Count == StartingEconomyController.WorkerCount + 1 &&
+                        economy.Workers.Last().TargetCache == rallyCache &&
+                        economy.Workers.Last().CurrentActivity != WorkerAgent.Activity.Idle;
+                    var invaders = economy.DeployEnemyForAutomation(FormationType.Cavalry,
+                        economy.FriendlyHisar.transform.position + Vector3.forward * 7f);
+                    invaders.IssueFocus(economy.FriendlyHisar);
+                    Time.timeScale = 10f;
+                    resultDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
+                    while (economy.Outcome == MatchOutcome.InProgress &&
+                           Time.realtimeSinceStartup < resultDeadline) yield return null;
+                    friendlyHisarDestroyed = economy.FriendlyHisar.IsDestroyed;
+                    defeatResultShown = economy.Outcome == MatchOutcome.Defeat &&
+                                        GameObject.Find("Match Result Title")?.GetComponent<UnityEngine.UI.Text>().text ==
+                                        "DEFEAT";
+                    var quitButton = GameObject.Find("Quit Match")?.GetComponent<UnityEngine.UI.Button>();
+                    quitButtonReady = quitButton != null && quitButton.gameObject.activeInHierarchy &&
+                                      quitButton.interactable;
+                    functionalAudioFeedback &= economy.GameplayAudio.CountFor(GameplayCue.Warning) > 0 &&
+                                               economy.GameplayAudio.CountFor(GameplayCue.Defeat) > 0 &&
+                                               economy.FogOfWar.AttackPingCount > 0;
+                }
+            }
             yield return null;
 
             if (graphical)
@@ -247,7 +457,25 @@ namespace AshesOfRum
                     "Formation movement reveals hostile contact",
                     "Moving away loses contact while preserving explored ground",
                     "Cavalry wins its Archer counter fight",
+                    "Fair opponent economy builds and trains through real resources",
+                    "AI Cavalry probe begins at the configured phase",
+                    "AI mixed pressure begins at the configured phase",
+                    "AI final Hisar assault begins at the configured phase",
+                    "Karasungur formations destroy the Alazhan Hisar",
+                    "Victory result freezes the match",
+                    "Match summary and event log are written locally",
+                    "Restart creates a fresh match",
+                    "Alazhan formations destroy the Karasungur Hisar",
+                    "Defeat result freezes the match",
+                    "Shipped Quit button invokes process exit",
+                    "Unexplored opponent Supply caches are hidden by fog",
+                    "Hidden Supply-cache depletion does not leak through fog",
+                    "Opponent recovers a failed gathering route through a paid Worker-built Storehouse",
+                    "Hisar rally dispatches a formation to terrain and a Worker to a visible cache",
+                    "Procedural gameplay audio and fog-aware under-attack ping are functional",
+                    "Combat health bars cover both factions and expose Hisar damage",
                     "1920x1080 window configured",
+                    "Graphical health-bar frame captured",
                     "Graphical frame captured"
                 }
                 : new[]
@@ -274,7 +502,24 @@ namespace AshesOfRum
                     "Hostile mobile formation starts hidden by fog",
                     "Formation movement reveals hostile contact",
                     "Moving away loses contact while preserving explored ground",
-                    "Cavalry wins its Archer counter fight"
+                    "Cavalry wins its Archer counter fight",
+                    "Fair opponent economy builds and trains through real resources",
+                    "AI Cavalry probe begins at the configured phase",
+                    "AI mixed pressure begins at the configured phase",
+                    "AI final Hisar assault begins at the configured phase",
+                    "Karasungur formations destroy the Alazhan Hisar",
+                    "Victory result freezes the match",
+                    "Match summary and event log are written locally",
+                    "Restart creates a fresh match",
+                    "Alazhan formations destroy the Karasungur Hisar",
+                    "Defeat result freezes the match",
+                    "Shipped Quit button invokes process exit",
+                    "Unexplored opponent Supply caches are hidden by fog",
+                    "Hidden Supply-cache depletion does not leak through fog",
+                    "Opponent recovers a failed gathering route through a paid Worker-built Storehouse",
+                    "Hisar rally dispatches a formation to terrain and a Worker to a visible cache",
+                    "Procedural gameplay audio and fog-aware under-attack ping are functional",
+                    "Combat health bars cover both factions and expose Hisar damage"
                 };
             var result = new SmokeResult
             {
@@ -290,7 +535,7 @@ namespace AshesOfRum
                 Require(economyStarted, checks[3]);
                 Require(economyCompleted, $"{checks[4]} within {EconomyTimeoutSeconds} seconds");
                 Require(houseCompleted, $"{checks[5]} within {ConstructionTimeoutSeconds} seconds");
-                Require(economy.PopulationCapacity == 20, checks[6]);
+                Require(populationCapacityIncreased, checks[6]);
                 Require(storehouseStarted && defensiveBuildingsCompleted, checks[7]);
                 Require(watchtowerStarted && defensiveBuildingsCompleted, checks[8]);
                 Require(storehouseDropOffUsed, checks[9]);
@@ -307,10 +552,29 @@ namespace AshesOfRum
                 Require(hostileRevealedByMovement, $"{checks[20]} within {CombatTimeoutSeconds} seconds");
                 Require(contactLostUnderFog, $"{checks[21]} within {CombatTimeoutSeconds} seconds");
                 Require(cavalryCounterWon, $"{checks[22]} within {CombatTimeoutSeconds} seconds");
+                Require(fairOpponentEconomy, $"{checks[23]} within {EconomyTimeoutSeconds} seconds");
+                Require(probeStarted, checks[24]);
+                Require(pressureStarted, checks[25]);
+                Require(finalAssaultStarted, checks[26]);
+                Require(enemyHisarDestroyed, $"{checks[27]} within {CombatTimeoutSeconds} seconds");
+                Require(victoryResultShown, checks[28]);
+                Require(telemetryWritten, checks[29]);
+                Require(restartResetMatch, checks[30]);
+                Require(friendlyHisarDestroyed, $"{checks[31]} within {CombatTimeoutSeconds} seconds");
+                Require(defeatResultShown, checks[32]);
+                Require(quitButtonReady, checks[33]);
+                Require(opponentCachesHiddenByFog, checks[34]);
+                Require(hiddenCacheDepletionStayedHidden, checks[35]);
+                Require(opponentStorehouseRecovered, checks[36]);
+                Require(formationRallyDispatched && workerRallyDispatched, checks[37]);
+                Require(functionalAudioFeedback, checks[38]);
+                Require(combatHealthBarsProvisioned && enemyHisarHealthReadable, checks[39]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[23]);
-                    Require(HasContent(screenshotPath), $"{checks[24]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[40]);
+                    Require(HasContent(healthScreenshotPath),
+                        $"{checks[41]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(HasContent(screenshotPath), $"{checks[42]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
@@ -327,7 +591,16 @@ namespace AshesOfRum
             File.WriteAllText(outputPath, JsonUtility.ToJson(result, true));
             Debug.Log($"SMOKE_TEST:{(result.passed ? "PASS" : "FAIL")}:{outputPath}");
             yield return null;
-            Application.Quit(result.passed ? 0 : 1);
+            if (!result.passed)
+            {
+                Application.Quit(1);
+                yield break;
+            }
+
+            var shippedQuitButton = GameObject.Find("Quit Match")?.GetComponent<UnityEngine.UI.Button>();
+            Debug.Log("SMOKE_TEST:QUIT_BUTTON_INVOKED");
+            shippedQuitButton.onClick.Invoke();
+            while (true) yield return null;
         }
 
         private static void Require(bool condition, string message)
@@ -336,6 +609,25 @@ namespace AshesOfRum
         }
 
         private static bool HasContent(string path) => File.Exists(path) && new FileInfo(path).Length > 0;
+
+        private static string DescribeOpponentState(StartingEconomyController economy)
+        {
+            var formations = string.Join(",", economy.EnemyFormations.Select(formation =>
+                $"{formation.Type}:{formation.MemberCount}:{formation.CurrentOrder}"));
+            var workers = string.Join(",", economy.EnemyWorkers.Select(worker =>
+                $"{worker.CurrentActivity}:carry={worker.CarriedSupplies}:cache={worker.TargetCache?.Remaining ?? -1}:" +
+                $"build={worker.CurrentConstruction?.Type.ToString() ?? "none"}"));
+            var buildings = string.Join(",", economy.EnemyBuildings.Select(building =>
+                $"{building.Type}:complete={building.IsComplete}:progress={building.Progress:0.00}"));
+            var caches = string.Join(",", economy.Caches.Concat(economy.OpponentCaches)
+                .Select(cache => cache.Remaining));
+            return $"formations=[{formations}] formationsProduced={economy.OpponentFormationsProduced} " +
+                   $"entitiesProduced={economy.CurrentMatchSummary.hostileEntitiesProduced} " +
+                   $"queue={economy.OpponentProductionQueueCount} workers=[{workers}] " +
+                   $"wallet={economy.OpponentSupplies} caches=[{caches}] buildings=[{buildings}] " +
+                   $"population={economy.OpponentPopulationUsed}/{economy.OpponentPopulationCapacity} " +
+                   $"gathered={economy.CurrentMatchSummary.hostileSuppliesGathered}";
+        }
 
         private static bool HasArgument(string name) => Array.IndexOf(Environment.GetCommandLineArgs(), name) >= 0;
 

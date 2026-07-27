@@ -19,16 +19,22 @@ namespace AshesOfRum
 
         private readonly List<Transform> friendlySources = new();
         private readonly Dictionary<GameObject, FogVisibilityTarget> hostileTargets = new();
+        private readonly Dictionary<GameObject, FogVisibilityTarget> neutralTargets = new();
         private FogOfWarMap map;
         private float sightRadius;
         private float refreshRemaining;
         private Texture2D fogTexture;
         private Texture2D minimapTexture;
         private RawImage minimapImage;
+        private Image attackPing;
+        private float attackPingRemaining;
         private RtsCameraController cameraController;
 
         public FogOfWarMap Map => map;
         public RawImage MinimapImage => minimapImage;
+        public bool IsAttackPingVisible => attackPing != null && attackPing.gameObject.activeSelf;
+        public Vector3 LastAttackPingPosition { get; private set; }
+        public int AttackPingCount { get; private set; }
         public event Action<GameObject> HostileFirstRevealed;
 
         public void Initialize(float sharedSightRadius, RtsCameraController targetCamera, Transform hudParent)
@@ -48,6 +54,15 @@ namespace AshesOfRum
         public void RegisterHostileMobile(GameObject target) => RegisterHostile(target, false);
 
         public void RegisterHostileStatic(GameObject target) => RegisterHostile(target, true);
+
+        public void RegisterNeutralStatic(GameObject target)
+        {
+            if (target == null || neutralTargets.ContainsKey(target)) return;
+            var visibility = target.GetComponent<FogVisibilityTarget>() ?? target.AddComponent<FogVisibilityTarget>();
+            visibility.Initialize(true);
+            neutralTargets.Add(target, visibility);
+            visibility.Apply(map.StateAt(target.transform.position));
+        }
 
         public void UnregisterHostile(GameObject target)
         {
@@ -70,6 +85,20 @@ namespace AshesOfRum
             return minimapTexture.GetPixel(x, y);
         }
 
+        public bool ShowAttackPing(Vector3 position)
+        {
+            if (map == null || attackPing == null || map.StateAt(position) == FogState.Unexplored) return false;
+            LastAttackPingPosition = position;
+            AttackPingCount++;
+            var uv = map.WorldToUv(position);
+            attackPing.rectTransform.anchorMin = uv;
+            attackPing.rectTransform.anchorMax = uv;
+            attackPing.rectTransform.anchoredPosition = Vector2.zero;
+            attackPingRemaining = 1.6f;
+            attackPing.gameObject.SetActive(true);
+            return true;
+        }
+
         public void RefreshNow()
         {
             if (map == null) return;
@@ -86,12 +115,32 @@ namespace AshesOfRum
                 if (pair.Value.Apply(map.StateAt(pair.Key.transform.position)))
                     HostileFirstRevealed?.Invoke(pair.Key);
             }
+            foreach (var pair in neutralTargets.ToArray())
+            {
+                if (pair.Key == null || pair.Value == null)
+                {
+                    neutralTargets.Remove(pair.Key);
+                    continue;
+                }
+                pair.Value.Apply(map.StateAt(pair.Key.transform.position));
+            }
             UpdateFogTexture();
             UpdateMinimapTexture();
         }
 
         private void Update()
         {
+            if (attackPingRemaining > 0f)
+            {
+                attackPingRemaining -= Time.unscaledDeltaTime;
+                if (attackPing != null)
+                {
+                    var pulse = 0.55f + Mathf.PingPong(Time.unscaledTime * 3f, 0.45f);
+                    attackPing.color = new Color(1f, 0.72f, 0.08f, pulse);
+                    attackPing.rectTransform.sizeDelta = Vector2.one * Mathf.Lerp(18f, 32f, pulse);
+                    if (attackPingRemaining <= 0f) attackPing.gameObject.SetActive(false);
+                }
+            }
             refreshRemaining -= Time.unscaledDeltaTime;
             if (refreshRemaining > 0f) return;
             refreshRemaining = RefreshSeconds;
@@ -112,6 +161,10 @@ namespace AshesOfRum
             if (source == null) return false;
             var formation = source.GetComponent<FormationAgent>();
             if (formation != null) return formation.MemberCount > 0;
+            var worker = source.GetComponent<WorkerAgent>();
+            if (worker != null) return worker.IsAlive;
+            var hisar = source.GetComponent<Hisar>();
+            if (hisar != null) return !hisar.IsDestroyed;
             var building = source.GetComponent<ConstructibleBuilding>();
             return building == null || !building.IsDestroyed;
         }
@@ -119,7 +172,13 @@ namespace AshesOfRum
         private static bool IsLivingHostile(GameObject target)
         {
             var formation = target.GetComponent<FormationAgent>();
-            return formation == null || formation.MemberCount > 0;
+            if (formation != null) return formation.MemberCount > 0;
+            var worker = target.GetComponent<WorkerAgent>();
+            if (worker != null) return worker.IsAlive;
+            var structure = target.GetComponent<Hisar>();
+            if (structure != null) return !structure.IsDestroyed;
+            var building = target.GetComponent<ConstructibleBuilding>();
+            return building == null || !building.IsDestroyed;
         }
 
         private void CreateBattlefieldOverlay()
@@ -176,6 +235,15 @@ namespace AshesOfRum
             minimapImage = imageObject.GetComponent<RawImage>();
             minimapImage.texture = minimapTexture;
             imageObject.GetComponent<MinimapClickHandler>().Initialize(map, cameraController, rect);
+
+            var pingObject = new GameObject("Under Attack Ping", typeof(RectTransform), typeof(Image));
+            pingObject.transform.SetParent(imageObject.transform, false);
+            attackPing = pingObject.GetComponent<Image>();
+            attackPing.raycastTarget = false;
+            attackPing.color = new Color(1f, 0.72f, 0.08f, 0.9f);
+            attackPing.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            attackPing.rectTransform.sizeDelta = Vector2.one * 24f;
+            pingObject.SetActive(false);
         }
 
         private void UpdateFogTexture()
@@ -229,7 +297,8 @@ namespace AshesOfRum
     {
         private Renderer[] renderers;
         private Collider[] colliders;
-        private Color[] originalColors;
+        private Color[] liveColors;
+        private Color[] rememberedColors;
         private bool remembersWhenExplored;
         private bool hasEverBeenVisible;
 
@@ -241,13 +310,25 @@ namespace AshesOfRum
             hasEverBeenVisible = false;
             renderers = GetComponentsInChildren<Renderer>(true);
             colliders = GetComponentsInChildren<Collider>(true);
-            originalColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            liveColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            rememberedColors = (Color[])liveColors.Clone();
+        }
+
+        public void RefreshColors()
+        {
+            if (renderers == null) return;
+            liveColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
+            Apply(State);
         }
 
         public bool Apply(FogState state)
         {
             var firstReveal = state == FogState.Visible && !hasEverBeenVisible;
-            if (state == FogState.Visible) hasEverBeenVisible = true;
+            if (state == FogState.Visible)
+            {
+                hasEverBeenVisible = true;
+                rememberedColors = (Color[])liveColors.Clone();
+            }
             State = state;
             var show = state == FogState.Visible ||
                        remembersWhenExplored && hasEverBeenVisible && state == FogState.Explored;
@@ -257,8 +338,8 @@ namespace AshesOfRum
                 renderers[index].enabled = show;
                 if (show)
                     renderers[index].material.color = state == FogState.Explored
-                        ? Color.Lerp(originalColors[index], Color.black, 0.65f)
-                        : originalColors[index];
+                        ? Color.Lerp(rememberedColors[index], Color.black, 0.65f)
+                        : liveColors[index];
             }
             foreach (var itemCollider in colliders)
                 if (itemCollider != null) itemCollider.enabled = state == FogState.Visible;

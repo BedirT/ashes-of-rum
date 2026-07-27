@@ -12,7 +12,9 @@ PLAYER_LOG="$EVIDENCE/player.log"
 GRAPHICAL_RESULT="$EVIDENCE/graphical-smoke-result.json"
 GRAPHICAL_LOG="$EVIDENCE/graphical-player.log"
 GRAPHICAL_SCREENSHOT="$EVIDENCE/graphical-smoke.png"
+GRAPHICAL_HEALTH_SCREENSHOT="$EVIDENCE/graphical-health-bars.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
+GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
 export UNITY_NO_CONSENT_PROMPT=1
 export UNITY_NO_UPDATE_CHECK=1
@@ -156,14 +158,15 @@ assert_unused_player_modules() {
 wait_for_player() {
   local pid="$1"
   local label="$2"
+  local timeout_seconds="${3:-$PLAYER_TIMEOUT_SECONDS}"
   local waited=0
   while kill -0 "$pid" 2>/dev/null; do
-    if (( waited >= PLAYER_TIMEOUT_SECONDS )); then
+    if (( waited >= timeout_seconds )); then
       kill "$pid" 2>/dev/null || true
       sleep 2
       kill -9 "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
-      fail "$label timed out after $PLAYER_TIMEOUT_SECONDS seconds"
+      fail "$label timed out after $timeout_seconds seconds"
     fi
     sleep 1
     waited=$((waited + 1))
@@ -181,31 +184,48 @@ smoke() {
   local pid=$!
   wait_for_player "$pid" "Built-player smoke"
   validate_json "$SMOKE_RESULT"
-  jq -e '.passed == true and (.checks | index("Development player running")) != null' "$SMOKE_RESULT" >/dev/null \
+  jq -e '.passed == true and (.checks | index("Development player running")) != null and
+    (.checks | index("Shipped Quit button invokes process exit")) != null' "$SMOKE_RESULT" >/dev/null \
     || fail "Smoke result did not pass development-player checks"
   grep -F 'SMOKE_TEST:PASS' "$PLAYER_LOG" >/dev/null || fail "Smoke pass marker missing from player log"
+  grep -F 'SMOKE_TEST:QUIT_BUTTON_INVOKED' "$PLAYER_LOG" >/dev/null \
+    || fail "Smoke did not dispatch the shipped Quit button"
+  grep -F 'MATCH_QUIT:REQUESTED' "$PLAYER_LOG" >/dev/null \
+    || fail "Smoke did not reach the shipped Quit listener"
   scan_log "$PLAYER_LOG"
   say "Built-player smoke passed."
 }
 
 graphical_smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
-  rm -f "$GRAPHICAL_RESULT" "$GRAPHICAL_LOG" "$GRAPHICAL_SCREENSHOT"
+  rm -f "$GRAPHICAL_RESULT" "$GRAPHICAL_LOG" "$GRAPHICAL_SCREENSHOT" "$GRAPHICAL_HEALTH_SCREENSHOT"
   "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
     -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
     -logFile "$GRAPHICAL_LOG" --smoke-test \
-    --smoke-output "$GRAPHICAL_RESULT" --smoke-screenshot "$GRAPHICAL_SCREENSHOT" &
+    --smoke-output "$GRAPHICAL_RESULT" --smoke-screenshot "$GRAPHICAL_SCREENSHOT" \
+    --smoke-health-screenshot "$GRAPHICAL_HEALTH_SCREENSHOT" &
   local pid=$!
-  wait_for_player "$pid" "Graphical smoke"
+  wait_for_player "$pid" "Graphical smoke" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
   validate_json "$GRAPHICAL_RESULT"
-  jq -e '.passed == true and (.checks | index("1920x1080 window configured")) != null and (.checks | index("Graphical frame captured")) != null' "$GRAPHICAL_RESULT" >/dev/null \
+  jq -e '.passed == true and (.checks | index("Shipped Quit button invokes process exit")) != null and
+    (.checks | index("1920x1080 window configured")) != null and
+    (.checks | index("Graphical health-bar frame captured")) != null and
+    (.checks | index("Graphical frame captured")) != null' "$GRAPHICAL_RESULT" >/dev/null \
     || fail "Graphical smoke result did not pass rendering checks"
   [[ -s "$GRAPHICAL_SCREENSHOT" ]] || fail "Graphical smoke screenshot was not created"
+  [[ -s "$GRAPHICAL_HEALTH_SCREENSHOT" ]] || fail "Graphical health-bar screenshot was not created"
   local dimensions
   dimensions="$(sips -g pixelWidth -g pixelHeight "$GRAPHICAL_SCREENSHOT" 2>/dev/null)"
   [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
     || fail "Graphical smoke screenshot is not 1920x1080: $dimensions"
+  dimensions="$(sips -g pixelWidth -g pixelHeight "$GRAPHICAL_HEALTH_SCREENSHOT" 2>/dev/null)"
+  [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
+    || fail "Graphical health-bar screenshot is not 1920x1080: $dimensions"
   grep -F 'SMOKE_TEST:PASS' "$GRAPHICAL_LOG" >/dev/null || fail "Graphical smoke pass marker missing"
+  grep -F 'SMOKE_TEST:QUIT_BUTTON_INVOKED' "$GRAPHICAL_LOG" >/dev/null \
+    || fail "Graphical smoke did not dispatch the shipped Quit button"
+  grep -F 'MATCH_QUIT:REQUESTED' "$GRAPHICAL_LOG" >/dev/null \
+    || fail "Graphical smoke did not reach the shipped Quit listener"
   scan_log "$GRAPHICAL_LOG"
   say "Graphical 1920x1080 smoke passed."
 }
