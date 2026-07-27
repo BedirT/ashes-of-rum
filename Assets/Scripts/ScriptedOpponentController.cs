@@ -61,6 +61,7 @@ namespace AshesOfRum
         public bool IsStorehouseRecoveryRequested => storehouseRecoveryRequested;
         public bool IsStorehouseConstructionInProgress => storehouseConstructionInProgress;
         public ResourceCache RecoveryCache => recoveryCache;
+        public int CompletedFormationCount { get; private set; }
 
         public void Initialize(EconomyTuning economyTuning, Hisar home, Hisar hostileHisar,
             IList<WorkerAgent> workerList, IList<FormationAgent> formationList,
@@ -301,6 +302,7 @@ namespace AshesOfRum
             }
             var formation = createFormation(item.ToFormationType());
             formations.Add(formation);
+            CompletedFormationCount++;
             entityProduced?.Invoke(false, item.ToString());
             if (ApplyCurrentPhaseOrder(formation)) RecordCurrentPhaseAttack();
         }

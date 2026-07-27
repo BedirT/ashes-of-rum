@@ -98,6 +98,7 @@ namespace AshesOfRum
         private Vector3? hisarRallyPoint;
         private ResourceCache hisarRallyCache;
         private GameObject hisarRallyMarker;
+        private WorldHealthBar hoveredHealthBar;
 
         private const float UnderAttackCooldownSeconds = 4f;
         private const float HitCueCooldownSeconds = 0.08f;
@@ -138,6 +139,8 @@ namespace AshesOfRum
         public int OpponentSupplies => opponent?.Wallet?.Supplies ?? 0;
         public int OpponentPopulationUsed => opponent?.Population?.Used ?? 0;
         public int OpponentPopulationCapacity => opponent?.Population?.Capacity ?? 0;
+        public int OpponentProductionQueueCount => opponent?.ProductionQueueCount ?? 0;
+        public int OpponentFormationsProduced => opponent?.CompletedFormationCount ?? 0;
         public IReadOnlyList<ResourceCache> OpponentCaches => enemyCaches;
         public MatchSummary CurrentMatchSummary => telemetry?.Summary;
         public bool QuitRequested { get; private set; }
@@ -198,6 +201,7 @@ namespace AshesOfRum
         private void Update()
         {
             UpdateHud();
+            UpdateHealthBarHover();
             if (matchDirector.IsComplete)
             {
                 queuedInputs.Clear();
@@ -297,6 +301,7 @@ namespace AshesOfRum
         {
             ClearSelection();
             hisarSelected = true;
+            hisar.SetSelected(true);
             SetOrderFeedback("Hisar selected - train or right-click to set rally");
             PlayCue(GameplayCue.Selection);
             UpdateHud();
@@ -515,6 +520,7 @@ namespace AshesOfRum
             var result = root.AddComponent<Hisar>();
             result.Initialize(friendly, tuning.hisarHealth, HandleHisarDestroyed,
                 friendly ? HandleFriendlyUnderAttack : position => PlayWorldCue(GameplayCue.Hit, position, false));
+            AttachHealthBar(root, () => result.Health, () => result.MaxHealth, 4.25f, friendly);
             return result;
         }
 
@@ -578,6 +584,7 @@ namespace AshesOfRum
                 HandleWorkerDestroyed,
                 friendly ? HandleFriendlyUnderAttack : position => PlayWorldCue(GameplayCue.Hit, position, false),
                 friendly ? null : worker => opponent?.NotifyGatheringRouteFailed(worker));
+            AttachHealthBar(workerObject, () => worker.Health, () => worker.MaxHealth, 2.55f, friendly);
             if (fogOfWar != null)
             {
                 if (friendly) fogOfWar.RegisterFriendly(worker.transform);
@@ -789,6 +796,8 @@ namespace AshesOfRum
             building.Initialize(type, BuildingDuration(type), tuning.buildingHealth,
                 type == BuildingType.Watchtower ? new Color(0.58f, 0.09f, 0.04f) : new Color(0.72f, 0.16f, 0.07f),
                 DestroyOpponentBuilding, false, position => PlayWorldCue(GameplayCue.Hit, position, false));
+            AttachHealthBar(root, () => building.Health, () => building.MaxHealth,
+                type == BuildingType.Watchtower ? 4.4f : 2.9f, false);
             enemyBuildings.Add(building);
             fogOfWar?.RegisterHostileStatic(root);
             if (type == BuildingType.Watchtower)
@@ -1173,6 +1182,7 @@ namespace AshesOfRum
                     if (clickedHisar != null && clickedHisar.IsFriendly)
                     {
                         hisarSelected = true;
+                        clickedHisar.SetSelected(true);
                         SetOrderFeedback("Hisar selected - train or right-click to set rally");
                         PlayCue(GameplayCue.Selection);
                         return;
@@ -1242,6 +1252,7 @@ namespace AshesOfRum
             selectedBuilding = null;
             demolitionCandidate = null;
             hisarSelected = false;
+            hisar?.SetSelected(false);
             awaitingAttackMove = false;
         }
 
@@ -1571,6 +1582,8 @@ namespace AshesOfRum
             };
             building.Initialize(type, BuildingDuration(type), tuning.buildingHealth, completeColor,
                 DestroyFriendlyBuilding, true, HandleFriendlyUnderAttack);
+            AttachHealthBar(root, () => building.Health, () => building.MaxHealth,
+                type == BuildingType.Watchtower ? 4.4f : 2.9f, true);
             fogOfWar?.RegisterFriendly(root.transform);
             if (type == BuildingType.Watchtower)
                 root.AddComponent<WatchtowerAttack>().Initialize(tuning,
@@ -1771,9 +1784,37 @@ namespace AshesOfRum
                 IsCurrentlyVisibleToHostileSide,
                 friendly ? HandleFriendlyUnderAttack : position => PlayWorldCue(GameplayCue.Hit, position, false),
                 position => PlayWorldCue(GameplayCue.Attack, position, friendly));
+            AttachHealthBar(root, () => formation.TotalMemberHealth, () => formation.MaximumMemberHealth,
+                3.25f, friendly);
             if (friendly) fogOfWar?.RegisterFriendly(root.transform);
             else fogOfWar?.RegisterHostileMobile(root);
             return formation;
+        }
+
+        private void AttachHealthBar(GameObject owner, System.Func<int> health, System.Func<int> maxHealth,
+            float height, bool friendly)
+        {
+            var color = friendly ? new Color(0.12f, 0.58f, 1f) : new Color(0.95f, 0.22f, 0.08f);
+            owner.AddComponent<WorldHealthBar>().Initialize(health, maxHealth, height, color,
+                friendly ? null : () => owner != null &&
+                    owner.GetComponent<FogVisibilityTarget>()?.State == FogState.Visible);
+        }
+
+        private void UpdateHealthBarHover()
+        {
+            WorldHealthBar next = null;
+            var mouse = Mouse.current;
+            if (mouse != null && worldCamera != null)
+            {
+                var position = mouse.position.ReadValue();
+                if (!IsPointerOverHud(position) &&
+                    Physics.Raycast(worldCamera.ScreenPointToRay(position), out var hit, 200f))
+                    next = hit.collider.GetComponentInParent<WorldHealthBar>();
+            }
+            if (ReferenceEquals(next, hoveredHealthBar)) return;
+            hoveredHealthBar?.SetHovered(false);
+            hoveredHealthBar = next;
+            hoveredHealthBar?.SetHovered(true);
         }
 
         private IEnumerable<ICombatStructure> FriendlyCombatStructures()

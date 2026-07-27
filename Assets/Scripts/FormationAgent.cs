@@ -56,6 +56,7 @@ namespace AshesOfRum
                 return total;
             }
         }
+        public int MaximumMemberHealth => tuning == null ? 0 : tuning.memberHealth * 8;
         public int LastAttackMemberCount { get; private set; }
 
         public void Initialize(FormationType type, bool friendly, EconomyTuning combatTuning,
@@ -102,6 +103,7 @@ namespace AshesOfRum
             IsSelected = selected;
             foreach (var ring in GetComponentsInChildren<FormationSelectionRing>(true))
                 ring.gameObject.SetActive(selected);
+            GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
         public bool IssueFocus(FormationAgent hostile)
@@ -182,6 +184,7 @@ namespace AshesOfRum
         {
             if (members.Count == 0 || damage <= 0) return;
             damagedCallback?.Invoke(transform.position);
+            GetComponent<WorldHealthBar>()?.RecordDamage();
             var hitIndex = nextHitMemberIndex % members.Count;
             memberHealth[hitIndex] -= damage;
             members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit();

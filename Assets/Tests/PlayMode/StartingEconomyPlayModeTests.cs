@@ -21,6 +21,77 @@ namespace AshesOfRum.Tests
         private static readonly Vector3 VisibleStorehouseSite = new(8f, 0f, -1f);
 
         [UnityTest]
+        public IEnumerator HealthBars_CoverCombatEntitiesAndTrackSelectionHoverDamageAndFog()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var friendlyHisarBar = economy.FriendlyHisar.GetComponent<WorldHealthBar>();
+            var enemyHisarBar = economy.EnemyHisar.GetComponent<WorldHealthBar>();
+
+            Assert.That(friendlyHisarBar, Is.Not.Null);
+            Assert.That(enemyHisarBar, Is.Not.Null);
+            Assert.That(economy.Workers.All(worker => worker.GetComponent<WorldHealthBar>() != null), Is.True);
+            Assert.That(friendlyHisarBar.IsVisible, Is.False);
+            economy.SelectHisar();
+            yield return null;
+            Assert.That(friendlyHisarBar.IsVisible, Is.True, "Selecting the friendly Hisar must show its bar.");
+            economy.SelectOnly(economy.Workers[0]);
+            yield return null;
+            Assert.That(friendlyHisarBar.IsVisible, Is.False);
+            var workerBar = economy.Workers[0].GetComponent<WorldHealthBar>();
+            Assert.That(workerBar.IsVisible, Is.True);
+
+            enemyHisarBar.SetHovered(true);
+            yield return null;
+            Assert.That(enemyHisarBar.IsVisible, Is.False,
+                "Hover must not leak a hostile health bar through unexplored fog.");
+            enemyHisarBar.SetHovered(false);
+            var scout = new GameObject("Health bar scout");
+            scout.transform.position = economy.EnemyHisar.transform.position;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            economy.FogOfWar.RefreshNow();
+            yield return null;
+            enemyHisarBar.SetHovered(true);
+            yield return null;
+            Assert.That(enemyHisarBar.IsVisible, Is.True,
+                "Hover over a visible hostile Hisar must show its bar.");
+            enemyHisarBar.SetHovered(false);
+            yield return null;
+            Assert.That(enemyHisarBar.IsVisible, Is.False, "The bar must hide when its only trigger ends.");
+            var hisarHealth = economy.EnemyHisar.Health;
+            economy.EnemyHisar.ApplyStructuralDamage(100);
+            yield return null;
+            Assert.That(enemyHisarBar.FillFraction,
+                Is.EqualTo((float)(hisarHealth - 100) / economy.EnemyHisar.MaxHealth).Within(0.001f));
+            Assert.That(enemyHisarBar.IsVisible, Is.True, "Recent damage must keep the hostile Hisar bar visible.");
+
+            var friendlyFormation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 2f));
+            var hostileFormation = economy.DeployEnemyForAutomation(FormationType.Archers,
+                new Vector3(0f, 0f, 3f));
+            economy.FogOfWar.RefreshNow();
+            economy.SelectOnly(friendlyFormation);
+            yield return null;
+            Assert.That(friendlyFormation.GetComponent<WorldHealthBar>().IsVisible, Is.True);
+            hostileFormation.ApplyFixedDamage(10);
+            yield return null;
+            Assert.That(hostileFormation.GetComponent<WorldHealthBar>().IsVisible, Is.True);
+            Assert.That(hostileFormation.GetComponent<WorldHealthBar>().FillFraction, Is.LessThan(1f));
+
+            economy.CreditSuppliesForAutomation(500);
+            Assert.That(economy.TryPlaceWatchtower(economy.Workers[1], VisibleStorehouseSite), Is.True);
+            var building = economy.Watchtowers.Single();
+            Assert.That(building.GetComponent<WorldHealthBar>(), Is.Not.Null,
+                "Unfinished and completed combat structures share the health-bar path.");
+            building.ApplyStructuralDamage(20);
+            yield return null;
+            Assert.That(building.GetComponent<WorldHealthBar>().IsVisible, Is.True);
+            Assert.That(building.GetComponent<WorldHealthBar>().FillFraction, Is.LessThan(1f));
+
+            Object.Destroy(scout);
+        }
+
+        [UnityTest]
         public IEnumerator Worker_GathersDepositsAndReturnsAutomatically()
         {
             yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
@@ -2014,6 +2085,68 @@ namespace AshesOfRum.Tests
                 Assert.That(economy.EnemyFormations.Select(formation => formation.Type),
                     Does.Contain(FormationType.Cavalry));
                 Assert.That(economy.CurrentMatchSummary.hostileSuppliesGathered, Is.EqualTo(gathered - carried));
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator OpponentEconomy_RecoveryFirstKeepsMonotonicPaidFormationProofAfterLoss()
+        {
+            yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
+            yield return null;
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var tuning = GetPrivateField<EconomyTuning>(economy, "tuning");
+            var originalTimeScale = Time.timeScale;
+            try
+            {
+                Time.timeScale = 20f;
+                economy.SetOpponentEnabledForAutomation(false);
+                economy.SetOpponentTargetsAvailableForAutomation(false);
+                economy.CreditOpponentSuppliesForAutomation(tuning.storehouseCost);
+                Assert.That(economy.TriggerOpponentRouteFailureForAutomation(), Is.True);
+                economy.SetOpponentEnabledForAutomation(true);
+
+                yield return WaitUntil(() => economy.EnemyBuildings.Any(building =>
+                    building.Type == BuildingType.Storehouse && building.IsComplete));
+                yield return WaitUntil(() => economy.CurrentMatchSummary.hostileSuppliesGathered > 0);
+                yield return WaitUntil(() => economy.OpponentFormationsProduced >= 1);
+
+                var firstFormation = economy.EnemyFormations.First();
+                while (firstFormation.MemberCount > 0) firstFormation.ApplyFixedDamage(int.MaxValue);
+                yield return null;
+                yield return WaitUntil(() => economy.OpponentFormationsProduced >= 2);
+                Time.timeScale = 0f;
+
+                Assert.That(economy.OpponentFormationsProduced, Is.GreaterThan(economy.EnemyFormations.Count),
+                    "Completed production must remain monotonic after the first paid formation is lost.");
+                Assert.That(SmokeVerificationRules.HasFairOpponentEconomy(
+                    economy.OpponentFormationsProduced,
+                    economy.EnemyBuildings.Count(building => building.IsComplete),
+                    economy.OpponentPopulationCapacity,
+                    economy.CurrentMatchSummary.hostileSuppliesGathered), Is.True);
+
+                var gathered = economy.Caches.Concat(economy.OpponentCaches)
+                    .Sum(cache => tuning.cacheSupplies - cache.Remaining);
+                var carried = economy.EnemyWorkers.Sum(worker => worker.CarriedSupplies);
+                var buildingSpend = economy.EnemyBuildings.Sum(building => building.Type switch
+                {
+                    BuildingType.House => tuning.houseCost,
+                    BuildingType.Storehouse => tuning.storehouseCost,
+                    _ => tuning.watchtowerCost
+                });
+                var formationCommitments = economy.OpponentFormationsProduced +
+                                           economy.OpponentProductionQueueCount;
+                Assert.That(tuning.startingSupplies + tuning.storehouseCost + gathered,
+                    Is.EqualTo(economy.OpponentSupplies + carried + buildingSpend +
+                               formationCommitments * tuning.formationCost),
+                    "Recovery credit must be fully consumed by the real Storehouse; formations remain paid from finite gathering.");
+                Assert.That(economy.OpponentPopulationUsed,
+                    Is.EqualTo(StartingEconomyController.WorkerCount +
+                               (economy.EnemyFormations.Count + economy.OpponentProductionQueueCount) *
+                               tuning.formationPopulation));
             }
             finally
             {

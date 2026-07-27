@@ -62,6 +62,7 @@ namespace AshesOfRum
             IsSelected = selected;
             var ring = transform.Find("Building Selection Ring");
             if (ring != null) ring.gameObject.SetActive(selected);
+            GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
         public bool ApplyDamage(int amount)
@@ -69,6 +70,7 @@ namespace AshesOfRum
             if (IsDestroyed || amount <= 0) return false;
             damagedCallback?.Invoke(transform.position);
             Health = Mathf.Max(0, Health - amount);
+            GetComponent<WorldHealthBar>()?.RecordDamage();
             if (Health == 0)
             {
                 DestroyBuilding();

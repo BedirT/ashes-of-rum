@@ -100,6 +100,7 @@ namespace AshesOfRum
         {
             IsSelected = selected;
             if (selectionRing != null) selectionRing.SetActive(selected);
+            GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
         public void IssueMove(Vector3 destination)
@@ -172,6 +173,7 @@ namespace AshesOfRum
             if (!IsAlive || amount <= 0) return;
             damagedCallback?.Invoke(transform.position);
             Health = Mathf.Max(0, Health - amount);
+            GetComponent<WorldHealthBar>()?.RecordDamage();
             if (Health > 0) return;
             IsAlive = false;
             if (agent != null && agent.isOnNavMesh)

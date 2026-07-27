@@ -7,6 +7,34 @@ namespace AshesOfRum.Tests
     public sealed class StartingEconomyTests
     {
         [Test]
+        public void HealthBarVisibility_SelectedHoveredAndRecentDamageAreIndependentTriggers()
+        {
+            var state = new HealthBarVisibilityState(3f);
+
+            Assert.That(state.ShouldShow(10f), Is.False);
+            state.SetSelected(true);
+            Assert.That(state.ShouldShow(10f), Is.True);
+            state.SetSelected(false);
+            state.SetHovered(true);
+            Assert.That(state.ShouldShow(10f), Is.True);
+            state.SetHovered(false);
+            state.RecordDamage(10f);
+            Assert.That(state.ShouldShow(12.99f), Is.True);
+            Assert.That(state.ShouldShow(13f), Is.False);
+        }
+
+        [Test]
+        public void SmokeFairEconomy_UsesCompletedProductionRatherThanCurrentSurvivors()
+        {
+            Assert.That(SmokeVerificationRules.HasFairOpponentEconomy(2, 1, 20, 10), Is.True,
+                "A paid formation remains produced after it leaves the living-formation collection.");
+            Assert.That(SmokeVerificationRules.HasFairOpponentEconomy(1, 1, 20, 10), Is.False);
+            Assert.That(SmokeVerificationRules.HasFairOpponentEconomy(2, 0, 20, 10), Is.False);
+            Assert.That(SmokeVerificationRules.HasFairOpponentEconomy(2, 1, 12, 10), Is.False);
+            Assert.That(SmokeVerificationRules.HasFairOpponentEconomy(2, 1, 20, 0), Is.False);
+        }
+
+        [Test]
         public void Wallet_DepositIncreasesSupplies()
         {
             var wallet = new EconomyWallet(100);

@@ -15,6 +15,7 @@ namespace AshesOfRum
         public Vector3 DropOffPoint => transform.position + transform.forward * -3.2f;
         public Component TargetComponent => this;
         public bool IsFriendly { get; private set; }
+        public bool IsSelected { get; private set; }
         public bool IsAttackable => !IsDestroyed;
         public bool IsDestroyed { get; private set; }
         public int Health { get; private set; }
@@ -41,6 +42,7 @@ namespace AshesOfRum
             if (IsDestroyed || amount <= 0) return false;
             damagedCallback?.Invoke(transform.position);
             Health = Mathf.Max(0, Health - amount);
+            GetComponent<WorldHealthBar>()?.RecordDamage();
             if (Health == 0)
             {
                 IsDestroyed = true;
@@ -50,6 +52,12 @@ namespace AshesOfRum
             if (hitRoutine != null) StopCoroutine(hitRoutine);
             hitRoutine = StartCoroutine(FlashHit());
             return false;
+        }
+
+        public void SetSelected(bool selected)
+        {
+            IsSelected = selected;
+            GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
         private IEnumerator FlashHit()
