@@ -15,11 +15,11 @@ the existing flanking path available.
 - [x] Focus, attack-move, reorientation, and side or rear damage keep their existing behavior.
 - [x] Focused EditMode and PlayMode coverage protects deterministic blocking, release, and
       same-faction non-blocking behavior.
-- [ ] The native macOS development player exercises both a blocked direct move and a successful
+- [x] The native macOS development player exercises both a blocked direct move and a successful
       lateral release while preserving the complete match loop.
-- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
-- [ ] A context-free review covers the exact final HEAD.
-- [ ] The merged game remains playable at its current scope.
+- [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
+- [x] A context-free review covers the exact final HEAD.
+- [x] The merged game remains playable at its current scope.
 
 ## Non-Goals
 
@@ -43,4 +43,22 @@ changes.
 
 ## Evidence
 
-Pending implementation, verification, review, and merge.
+- Gameplay PR: [#15](https://github.com/BedirT/rts-game/pull/15)
+- Corrective verification PR: [#16](https://github.com/BedirT/rts-game/pull/16)
+- Verification: `make verify` passed on final gameplay HEAD
+  `1d4129c7b9272b2ae81aa64badb492cc6cdbcd0e` and corrective HEAD
+  `622750b8d33eef2c401ce69cd3381644b9380700`, each with 25 EditMode and 71
+  PlayMode tests, an ARM64 development build, headless smoke, graphical 1920x1080 smoke, the
+  frontline block and lateral-release assertion, and clean logs.
+- Runtime proof: the built player issued a normal move through a visible opposing formation,
+  stopped on its own side with `FRONTLINE BLOCKED` selection feedback, moved laterally to clear
+  the line, and preserved attack-move, counter combat, flank damage, both scripted-AI Hisar
+  outcomes, Restart, and Quit. Graphical captures were visually inspected.
+- Review: context-free round 1 on both PRs reported no blocking findings at each final head; no
+  fixer runs were required.
+- Merge: gameplay was squash-merged as `793d2934f4a1f8e19651ca9c1e9163df4c397c85`.
+  Its first post-merge graphical smoke exposed a setup dependency in the isolated Hisar proof:
+  surviving AI formations correctly blocked the runner's direct structure path. Corrective PR
+  #16 made that test setup deterministic without changing gameplay and was squash-merged as
+  `cad4b62427030fa8e9b7393bb0578e5892634b3c`; `make post-merge` then passed on merged `main` with
+  the same 25 EditMode and 71 PlayMode tests, ARM64 build, both smokes, and clean logs.
