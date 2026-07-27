@@ -658,12 +658,8 @@ namespace AshesOfRum
         {
             if (!matchDirector.IsComplete) return;
             QuitRequested = true;
+            Debug.Log("MATCH_QUIT:REQUESTED");
             Application.Quit(0);
-        }
-
-        public void RequestQuitForAutomation()
-        {
-            if (matchDirector.IsComplete) QuitRequested = true;
         }
 
         public void AdvanceMatchClockForAutomation(float seconds) => matchDirector.Advance(seconds);
@@ -1622,7 +1618,7 @@ namespace AshesOfRum
                 var slot = workers.Count == 0 ? 0 : workers.Count;
                 var position = new Vector3(-2.2f + slot % WorkerCount * 1.45f, 0f,
                     -4f + slot / WorkerCount * 1.3f);
-                var worker = CreateWorker(true, slot, position, wallet, hisar, Caches);
+                var worker = CreateWorker(true, slot, position, wallet, hisar, allCaches);
                 workers.Add(worker);
                 telemetry.RecordEntityProduced(true, ProductionItem.Worker.ToString(), MatchElapsedSeconds);
                 SetOrderFeedback("Worker ready");

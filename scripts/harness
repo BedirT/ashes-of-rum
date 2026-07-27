@@ -181,9 +181,14 @@ smoke() {
   local pid=$!
   wait_for_player "$pid" "Built-player smoke"
   validate_json "$SMOKE_RESULT"
-  jq -e '.passed == true and (.checks | index("Development player running")) != null' "$SMOKE_RESULT" >/dev/null \
+  jq -e '.passed == true and (.checks | index("Development player running")) != null and
+    (.checks | index("Shipped Quit button invokes process exit")) != null' "$SMOKE_RESULT" >/dev/null \
     || fail "Smoke result did not pass development-player checks"
   grep -F 'SMOKE_TEST:PASS' "$PLAYER_LOG" >/dev/null || fail "Smoke pass marker missing from player log"
+  grep -F 'SMOKE_TEST:QUIT_BUTTON_INVOKED' "$PLAYER_LOG" >/dev/null \
+    || fail "Smoke did not dispatch the shipped Quit button"
+  grep -F 'MATCH_QUIT:REQUESTED' "$PLAYER_LOG" >/dev/null \
+    || fail "Smoke did not reach the shipped Quit listener"
   scan_log "$PLAYER_LOG"
   say "Built-player smoke passed."
 }
@@ -198,7 +203,8 @@ graphical_smoke() {
   local pid=$!
   wait_for_player "$pid" "Graphical smoke"
   validate_json "$GRAPHICAL_RESULT"
-  jq -e '.passed == true and (.checks | index("1920x1080 window configured")) != null and (.checks | index("Graphical frame captured")) != null' "$GRAPHICAL_RESULT" >/dev/null \
+  jq -e '.passed == true and (.checks | index("Shipped Quit button invokes process exit")) != null and
+    (.checks | index("1920x1080 window configured")) != null and (.checks | index("Graphical frame captured")) != null' "$GRAPHICAL_RESULT" >/dev/null \
     || fail "Graphical smoke result did not pass rendering checks"
   [[ -s "$GRAPHICAL_SCREENSHOT" ]] || fail "Graphical smoke screenshot was not created"
   local dimensions
@@ -206,6 +212,10 @@ graphical_smoke() {
   [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
     || fail "Graphical smoke screenshot is not 1920x1080: $dimensions"
   grep -F 'SMOKE_TEST:PASS' "$GRAPHICAL_LOG" >/dev/null || fail "Graphical smoke pass marker missing"
+  grep -F 'SMOKE_TEST:QUIT_BUTTON_INVOKED' "$GRAPHICAL_LOG" >/dev/null \
+    || fail "Graphical smoke did not dispatch the shipped Quit button"
+  grep -F 'MATCH_QUIT:REQUESTED' "$GRAPHICAL_LOG" >/dev/null \
+    || fail "Graphical smoke did not reach the shipped Quit listener"
   scan_log "$GRAPHICAL_LOG"
   say "Graphical 1920x1080 smoke passed."
 }

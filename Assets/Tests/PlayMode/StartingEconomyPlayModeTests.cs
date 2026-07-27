@@ -2278,7 +2278,7 @@ namespace AshesOfRum.Tests
             Time.timeScale = 20f;
             yield return WaitUntil(() => economy.Outcome == MatchOutcome.Defeat);
             Assert.That(GameObject.Find("Match Result Title").GetComponent<Text>().text, Is.EqualTo("DEFEAT"));
-            economy.RequestQuitForAutomation();
+            GameObject.Find("Quit Match").GetComponent<Button>().onClick.Invoke();
             Assert.That(economy.QuitRequested, Is.True);
             Time.timeScale = 1f;
         }
@@ -2326,6 +2326,63 @@ namespace AshesOfRum.Tests
 
             Assert.That(economy.Workers.Last().IsAlive, Is.True);
             Assert.That(economy.CurrentMatchSummary.friendlyEntitiesProduced, Is.EqualTo(1));
+        }
+
+        [UnityTest]
+        public IEnumerator TrainedWorker_CrossSideFallbackUsesOnlyVisibleNeutralCaches()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.SelectHisar();
+            GameObject.Find("Train Worker").GetComponent<Button>().onClick.Invoke();
+            yield return WaitUntil(() => economy.Workers.Count == 5);
+
+            foreach (var enemyWorker in economy.EnemyWorkers) enemyWorker.Suspend();
+            foreach (var startingCache in economy.Caches) startingCache.TakeBatch(int.MaxValue);
+            var depletedCache = economy.OpponentCaches[0];
+            var fallbackCache = economy.OpponentCaches[1];
+            depletedCache.Initialize(10);
+            var depletedScout = new GameObject("Trained worker depleted-cache scout");
+            depletedScout.transform.position = depletedCache.transform.position;
+            economy.FogOfWar.RegisterFriendly(depletedScout.transform);
+            economy.FogOfWar.RefreshNow();
+
+            var worker = economy.Workers.Last();
+            Assert.That(GetPrivateField<IReadOnlyList<ResourceCache>>(worker, "knownCaches").Count,
+                Is.EqualTo(4), "A trained Worker must receive the shared neutral-cache catalog.");
+            Assert.That(economy.FogOfWar.StateAt(depletedCache.transform.position), Is.EqualTo(FogState.Visible));
+            Assert.That(economy.FogOfWar.StateAt(fallbackCache.transform.position), Is.Not.EqualTo(FogState.Visible));
+
+            var originalTimeScale = Time.timeScale;
+            GameObject fallbackScout = null;
+            try
+            {
+                Time.timeScale = 4f;
+                worker.IssueGather(depletedCache);
+                yield return WaitUntil(() => depletedCache.Remaining == 0 &&
+                                             worker.CurrentActivity == WorkerAgent.Activity.Idle);
+                Assert.That(fallbackCache.Remaining, Is.EqualTo(400),
+                    "A trained Worker must not retarget to an unseen cross-side cache.");
+                Assert.That(GetPrivateField<ResourceCache>(worker, "targetCache"), Is.Null);
+
+                fallbackScout = new GameObject("Trained worker fallback-cache scout");
+                fallbackScout.transform.position = fallbackCache.transform.position;
+                economy.FogOfWar.RegisterFriendly(fallbackScout.transform);
+                economy.FogOfWar.RefreshNow();
+                Assert.That(economy.FogOfWar.StateAt(fallbackCache.transform.position), Is.EqualTo(FogState.Visible));
+
+                depletedCache.Initialize(10);
+                worker.IssueGather(depletedCache);
+                yield return WaitUntil(() => depletedCache.Remaining == 0 &&
+                    GetPrivateField<ResourceCache>(worker, "targetCache") == fallbackCache);
+                Assert.That(worker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+                Object.Destroy(depletedScout);
+                if (fallbackScout != null) Object.Destroy(fallbackScout);
+            }
         }
 
         [UnityTest]

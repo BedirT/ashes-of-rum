@@ -242,7 +242,7 @@ namespace AshesOfRum
             var restartResetMatch = false;
             var friendlyHisarDestroyed = false;
             var defeatResultShown = false;
-            var quitActionAvailable = false;
+            var quitButtonReady = false;
             if (cavalryCounterWon)
             {
                 for (var index = 0; index < economy.FriendlyFormations.Count; index++)
@@ -321,8 +321,9 @@ namespace AshesOfRum
                     defeatResultShown = economy.Outcome == MatchOutcome.Defeat &&
                                         GameObject.Find("Match Result Title")?.GetComponent<UnityEngine.UI.Text>().text ==
                                         "DEFEAT";
-                    economy.RequestQuitForAutomation();
-                    quitActionAvailable = economy.QuitRequested;
+                    var quitButton = GameObject.Find("Quit Match")?.GetComponent<UnityEngine.UI.Button>();
+                    quitButtonReady = quitButton != null && quitButton.gameObject.activeInHierarchy &&
+                                      quitButton.interactable;
                 }
             }
             yield return null;
@@ -376,7 +377,7 @@ namespace AshesOfRum
                     "Restart creates a fresh match",
                     "Alazhan formations destroy the Karasungur Hisar",
                     "Defeat result freezes the match",
-                    "Quit action is available from the result",
+                    "Shipped Quit button invokes process exit",
                     "Unexplored opponent Supply caches are hidden by fog",
                     "Hidden Supply-cache depletion does not leak through fog",
                     "1920x1080 window configured",
@@ -417,7 +418,7 @@ namespace AshesOfRum
                     "Restart creates a fresh match",
                     "Alazhan formations destroy the Karasungur Hisar",
                     "Defeat result freezes the match",
-                    "Quit action is available from the result",
+                    "Shipped Quit button invokes process exit",
                     "Unexplored opponent Supply caches are hidden by fog",
                     "Hidden Supply-cache depletion does not leak through fog"
                 };
@@ -462,7 +463,7 @@ namespace AshesOfRum
                 Require(restartResetMatch, checks[30]);
                 Require(friendlyHisarDestroyed, $"{checks[31]} within {CombatTimeoutSeconds} seconds");
                 Require(defeatResultShown, checks[32]);
-                Require(quitActionAvailable, checks[33]);
+                Require(quitButtonReady, checks[33]);
                 Require(opponentCachesHiddenByFog, checks[34]);
                 Require(hiddenCacheDepletionStayedHidden, checks[35]);
                 if (graphical)
@@ -485,7 +486,16 @@ namespace AshesOfRum
             File.WriteAllText(outputPath, JsonUtility.ToJson(result, true));
             Debug.Log($"SMOKE_TEST:{(result.passed ? "PASS" : "FAIL")}:{outputPath}");
             yield return null;
-            Application.Quit(result.passed ? 0 : 1);
+            if (!result.passed)
+            {
+                Application.Quit(1);
+                yield break;
+            }
+
+            var shippedQuitButton = GameObject.Find("Quit Match")?.GetComponent<UnityEngine.UI.Button>();
+            Debug.Log("SMOKE_TEST:QUIT_BUTTON_INVOKED");
+            shippedQuitButton.onClick.Invoke();
+            while (true) yield return null;
         }
 
         private static void Require(bool condition, string message)
