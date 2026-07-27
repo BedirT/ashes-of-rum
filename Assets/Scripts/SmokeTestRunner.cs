@@ -261,8 +261,8 @@ namespace AshesOfRum
                     yield return null;
                 fairOpponentEconomy = economy.EnemyFormations.Count >= 2 &&
                                       economy.EnemyBuildings.Any(building => building.IsComplete) &&
-                                      economy.OpponentPopulationUsed == 20 &&
-                                      economy.OpponentPopulationCapacity == 20;
+                                      economy.OpponentPopulationCapacity >= 20 &&
+                                      economy.CurrentMatchSummary.hostileSuppliesGathered > 0;
 
                 Time.timeScale = 0f;
                 economy.AdvanceMatchClockForAutomation(Mathf.Max(0f, 180f - economy.MatchElapsedSeconds));
@@ -277,6 +277,7 @@ namespace AshesOfRum
 
                 economy.SetOpponentEnabledForAutomation(false);
                 foreach (var hostile in economy.EnemyFormations) hostile.IssueStop();
+                economy.DeployFriendlyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 18f));
                 for (var index = 0; index < economy.FriendlyFormations.Count; index++)
                     economy.FriendlyFormations[index].GetComponent<UnityEngine.AI.NavMeshAgent>()?.Warp(
                         new Vector3(-3f + index * 6f, 0f, 18f));

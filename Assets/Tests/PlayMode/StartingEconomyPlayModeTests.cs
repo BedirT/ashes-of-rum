@@ -190,8 +190,10 @@ namespace AshesOfRum.Tests
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            foreach (var enemyWorker in economy.EnemyWorkers) enemyWorker.Suspend();
             var depletedCache = economy.Caches[0];
             var fallbackCache = economy.Caches[1];
+            foreach (var crossSideCache in economy.OpponentCaches) crossSideCache.TakeBatch(int.MaxValue);
             depletedCache.Initialize(10);
             var firstWorker = economy.Workers[0];
             var secondWorker = economy.Workers[1];
@@ -228,6 +230,86 @@ namespace AshesOfRum.Tests
             Assert.That(worker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
             Assert.That(economy.LastEconomyNotification, Is.Null);
             Object.Destroy(scout);
+        }
+
+        [UnityTest]
+        public IEnumerator DepletedCrossSideCache_PlayerRetargetsToAnotherVisibleNeutralCache()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            foreach (var enemyWorker in economy.EnemyWorkers) enemyWorker.Suspend();
+            foreach (var startingCache in economy.Caches) startingCache.TakeBatch(int.MaxValue);
+            var depletedCache = economy.OpponentCaches[0];
+            var fallbackCache = economy.OpponentCaches[1];
+            depletedCache.Initialize(10);
+            var depletedScout = new GameObject("Cross-side depleted cache scout");
+            depletedScout.transform.position = depletedCache.transform.position;
+            var fallbackScout = new GameObject("Cross-side fallback cache scout");
+            fallbackScout.transform.position = fallbackCache.transform.position;
+            economy.FogOfWar.RegisterFriendly(depletedScout.transform);
+            economy.FogOfWar.RegisterFriendly(fallbackScout.transform);
+            economy.FogOfWar.RefreshNow();
+            Assert.That(economy.FogOfWar.StateAt(depletedCache.transform.position), Is.EqualTo(FogState.Visible));
+            Assert.That(economy.FogOfWar.StateAt(fallbackCache.transform.position), Is.EqualTo(FogState.Visible));
+
+            var originalTimeScale = Time.timeScale;
+            try
+            {
+                Time.timeScale = 4f;
+                var worker = economy.Workers[0];
+                Assert.That(GetPrivateField<IReadOnlyList<ResourceCache>>(worker, "knownCaches").Count,
+                    Is.EqualTo(4));
+                worker.IssueGather(depletedCache);
+                yield return WaitUntil(() => depletedCache.Remaining == 0 &&
+                    GetPrivateField<ResourceCache>(worker, "targetCache") == fallbackCache);
+
+                Assert.That(depletedCache.Remaining, Is.Zero);
+                Assert.That(fallbackCache.Remaining, Is.GreaterThan(0));
+                Assert.That(worker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
+                Assert.That(economy.LastEconomyNotification, Is.Null);
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+                Object.Destroy(depletedScout);
+                Object.Destroy(fallbackScout);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator DepletedCrossSideCache_OpponentRetargetsToAnotherVisibleNeutralCache()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.EnemyWorkers.Where(worker => worker.CurrentConstruction == null).All(worker =>
+                    economy.OpponentCaches.Contains(GetPrivateField<ResourceCache>(worker, "targetCache"))), Is.True,
+                "The scripted opponent opening must continue assigning workers to its safe starting caches.");
+            foreach (var startingCache in economy.OpponentCaches) startingCache.TakeBatch(int.MaxValue);
+            var depletedCache = economy.Caches[0];
+            var fallbackCache = economy.Caches[1];
+            depletedCache.Initialize(10);
+            economy.DeployEnemyForAutomation(FormationType.Spearmen, depletedCache.transform.position);
+            economy.DeployEnemyForAutomation(FormationType.Spearmen, fallbackCache.transform.position);
+
+            var originalTimeScale = Time.timeScale;
+            try
+            {
+                Time.timeScale = 4f;
+                var worker = economy.EnemyWorkers.First(candidate => candidate.CurrentConstruction == null);
+                Assert.That(GetPrivateField<IReadOnlyList<ResourceCache>>(worker, "knownCaches").Count,
+                    Is.EqualTo(4));
+                worker.IssueGather(depletedCache);
+                yield return WaitUntil(() => depletedCache.Remaining == 0 &&
+                    GetPrivateField<ResourceCache>(worker, "targetCache") == fallbackCache);
+
+                Assert.That(depletedCache.Remaining, Is.Zero);
+                Assert.That(fallbackCache.Remaining, Is.GreaterThan(0));
+                Assert.That(worker.CurrentActivity, Is.Not.EqualTo(WorkerAgent.Activity.Idle));
+            }
+            finally
+            {
+                Time.timeScale = originalTimeScale;
+            }
         }
 
         [UnityTest]
@@ -1867,16 +1949,28 @@ namespace AshesOfRum.Tests
                                              economy.EnemyFormations.Count >= 2);
                 Time.timeScale = 0f;
 
-                var gathered = economy.OpponentCaches.Sum(cache => 400 - cache.Remaining);
-                var accounted = economy.OpponentSupplies + 100 + 400 * 2;
-                Assert.That(gathered + 100, Is.EqualTo(accounted),
-                    "The opponent's wallet, House, and two formations must reconcile to finite gathered Supplies.");
-                Assert.That(economy.OpponentPopulationUsed, Is.EqualTo(20));
-                Assert.That(economy.OpponentPopulationCapacity, Is.EqualTo(20));
+                var tuning = GetPrivateField<EconomyTuning>(economy, "tuning");
+                var opponent = GetPrivateField<ScriptedOpponentController>(economy, "opponent");
+                var gathered = economy.Caches.Concat(economy.OpponentCaches)
+                    .Sum(cache => tuning.cacheSupplies - cache.Remaining);
+                var carried = economy.EnemyWorkers.Sum(worker => worker.CarriedSupplies);
+                var formationsPaidFor = economy.EnemyFormations.Count + opponent.ProductionQueueCount;
+                var spent = economy.EnemyBuildings.Count * tuning.houseCost +
+                            formationsPaidFor * tuning.formationCost;
+                Assert.That(economy.EnemyBuildings.All(building => building.Type == BuildingType.House), Is.True);
+                Assert.That(tuning.startingSupplies + gathered,
+                    Is.EqualTo(economy.OpponentSupplies + carried + spent),
+                    "The opponent's wallet and spending must reconcile to finite gathered Supplies.");
+                Assert.That(economy.OpponentPopulationUsed,
+                    Is.EqualTo(StartingEconomyController.WorkerCount +
+                               formationsPaidFor * tuning.formationPopulation));
+                Assert.That(economy.OpponentPopulationCapacity,
+                    Is.EqualTo(tuning.startingPopulationCap + economy.EnemyBuildings.Count(building =>
+                        building.IsComplete) * tuning.housePopulationCapacity));
                 Assert.That(economy.EnemyWorkers.Count(worker => worker.IsAlive), Is.EqualTo(4));
                 Assert.That(economy.EnemyFormations.Select(formation => formation.Type),
                     Does.Contain(FormationType.Cavalry));
-                Assert.That(economy.CurrentMatchSummary.hostileSuppliesGathered, Is.EqualTo(gathered));
+                Assert.That(economy.CurrentMatchSummary.hostileSuppliesGathered, Is.EqualTo(gathered - carried));
             }
             finally
             {

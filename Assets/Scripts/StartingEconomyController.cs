@@ -66,6 +66,7 @@ namespace AshesOfRum
         private HisarProductionQueue productionQueue;
         private ScriptedOpponentController opponent;
         private IReadOnlyList<ResourceCache> enemyCaches;
+        private IReadOnlyList<ResourceCache> allCaches;
         private MatchDirector matchDirector;
         private MatchTelemetry telemetry;
         private GameObject resultOverlay;
@@ -167,6 +168,7 @@ namespace AshesOfRum
                 CreateCache(3, new Vector3(7f, 0.65f, 14f)),
                 CreateCache(4, new Vector3(-8f, 0.65f, 12f))
             };
+            allCaches = Caches.Concat(enemyCaches).ToArray();
             CreateWorkers();
             CreateHud();
             InputSystem.onEvent += QueueInputEvent;
@@ -496,7 +498,7 @@ namespace AshesOfRum
                 new Vector3(0.7f, 0f, -4f), new Vector3(2.2f, 0f, -4f)
             };
             for (var i = 0; i < WorkerCount; i++)
-                workers.Add(CreateWorker(true, i, positions[i], wallet, hisar, Caches));
+                workers.Add(CreateWorker(true, i, positions[i], wallet, hisar, allCaches));
         }
 
         private WorkerAgent CreateWorker(bool friendly, int slot, Vector3 position, EconomyWallet sideWallet,
@@ -687,7 +689,7 @@ namespace AshesOfRum
             fogOfWar.HostileFirstRevealed += HandleHostileFirstRevealed;
             fogOfWar.RegisterFriendly(hisar.transform);
             foreach (var worker in workers) fogOfWar.RegisterFriendly(worker.transform);
-            foreach (var cache in Caches.Concat(enemyCaches)) fogOfWar.RegisterNeutralStatic(cache.gameObject);
+            foreach (var cache in allCaches) fogOfWar.RegisterNeutralStatic(cache.gameObject);
             fogOfWar.RegisterHostileStatic(enemyHisar.gameObject);
             fogOfWar.RefreshNow();
         }
@@ -723,7 +725,7 @@ namespace AshesOfRum
             var column = slot % WorkerCount;
             var row = slot / WorkerCount;
             var position = new Vector3(-2.2f + column * 1.45f, 0f, 22f - row * 1.3f);
-            return CreateWorker(false, slot, position, opponent.Wallet, enemyHisar, enemyCaches);
+            return CreateWorker(false, slot, position, opponent.Wallet, enemyHisar, allCaches);
         }
 
         private ConstructibleBuilding CreateOpponentBuilding(BuildingType type, Vector3 position)
