@@ -43,6 +43,9 @@ MonoBehaviour:
   counterMultiplier: 2
   attackSeconds: 0.75
   projectileSeconds: 0.35
+  reorientationSeconds: 0.45
+  sideDamageMultiplier: 1.15
+  rearDamageMultiplier: 1.3
   footSpeed: 3.5
   cavalrySpeed: 5.25
   sightRadius: 10

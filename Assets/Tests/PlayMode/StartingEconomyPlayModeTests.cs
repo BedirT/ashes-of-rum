@@ -1078,6 +1078,8 @@ namespace AshesOfRum.Tests
                 Is.True);
             Assert.That(hostileMarkers.All(itemRenderer => itemRenderer.transform.localRotation == Quaternion.identity),
                 Is.True);
+            Assert.That(archers.GetComponentInChildren<FormationFrontIndicator>(true), Is.Not.Null);
+            Assert.That(spearmen.GetComponentInChildren<FormationFrontIndicator>(true), Is.Not.Null);
 
             Assert.That(archers.ExecuteAttackVolley(spearmen), Is.True);
             yield return null;
@@ -1085,6 +1087,9 @@ namespace AshesOfRum.Tests
                 .Where(itemRenderer => itemRenderer.name == "Arrow").ToArray();
             Assert.That(arrows, Has.Length.EqualTo(8));
             Assert.That(arrows.All(FormationAgent.UsesSupportedMaterial), Is.True);
+            archers.ApplyFixedDamage(archers.MaximumMemberHealth);
+            Assert.That(archers.GetComponentInChildren<FormationFrontIndicator>(true), Is.Not.Null,
+                "The front indicator must survive member casualties.");
         }
 
         [UnityTest]
@@ -1126,6 +1131,69 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator Combat_ReorientationBlocksAttacksForFixedDurationAndHudShowsFacingState()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var tuning = GetPrivateField<EconomyTuning>(economy, "tuning");
+            var attacker = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 7f));
+            var defender = economy.DeployEnemyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 8.5f));
+            attacker.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            economy.FogOfWar.RefreshNow();
+            economy.SelectOnly(attacker);
+            Assert.That(attacker.IssueFocus(defender), Is.True);
+
+            yield return null;
+            var healthBefore = defender.TotalMemberHealth;
+            Assert.That(attacker.IsTurning, Is.True);
+            yield return null;
+            Assert.That(GameObject.Find("Selection").GetComponent<UnityEngine.UI.Text>().text,
+                Does.Contain("FACING").And.Contain("TURNING"));
+
+            yield return new WaitForSeconds(tuning.reorientationSeconds * 0.75f);
+            Assert.That(defender.TotalMemberHealth, Is.EqualTo(healthBefore),
+                "The formation must not attack before its fixed reorientation completes.");
+            yield return WaitUntil(() => defender.TotalMemberHealth < healthBefore);
+            Assert.That(attacker.IsTurning, Is.False);
+            Assert.That(Vector3.Angle(attacker.transform.forward,
+                defender.transform.position - attacker.transform.position), Is.LessThan(3f));
+            attacker.IssueStop();
+            Assert.That(attacker.IsTurning, Is.False);
+            Assert.That(attacker.CurrentOrder, Is.EqualTo(FormationOrder.Idle));
+        }
+
+        [UnityTest]
+        public IEnumerator ArcherProjectile_ResolvesFlankAgainstDefenderFacingAtImpact()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var archers = CreateFormationForTest("Flanking Archers", FormationType.Archers, true, tuning);
+            var target = CreateFormationForTest("Turning Archers", FormationType.Archers, false, tuning);
+            archers.transform.position = Vector3.zero;
+            target.transform.position = new Vector3(0f, 0f, 6f);
+            target.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            var healthBefore = target.TotalMemberHealth;
+
+            Assert.That(archers.ExecuteAttackVolley(target), Is.True);
+            yield return null;
+            target.transform.rotation = Quaternion.identity;
+            yield return new WaitForSeconds(tuning.projectileSeconds + 0.1f);
+
+            var rearDamage = CombatRules.Damage(FormationType.Archers, FormationType.Archers,
+                tuning.baseDamage, tuning.counterMultiplier, FlankDirection.Rear,
+                tuning.sideDamageMultiplier, tuning.rearDamageMultiplier);
+            Assert.That(healthBefore - target.TotalMemberHealth, Is.EqualTo(rearDamage * 8));
+            Assert.That(target.LastReceivedFlank, Is.EqualTo(FlankDirection.Rear));
+            Assert.That(target.GetComponentsInChildren<FormationMemberVisual>()
+                .All(visual => visual.LastHitFlank == FlankDirection.Rear), Is.True,
+                "Every projectile impact should display the stronger rear-hit reaction.");
+            Object.Destroy(archers.gameObject);
+            Object.Destroy(target.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
         public IEnumerator Cavalry_MovesFasterStopsAndWinsItsArcherCounterFight()
         {
             var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
@@ -1140,6 +1208,7 @@ namespace AshesOfRum.Tests
 
             yield return new WaitForSeconds(0.5f);
             Assert.That(cavalry.transform.position.z, Is.GreaterThan(spearmen.transform.position.z + 0.7f));
+            Assert.That(Vector3.Angle(cavalry.transform.forward, Vector3.forward), Is.LessThan(3f));
             cavalry.IssueStop();
             var stoppedPosition = cavalry.transform.position;
             yield return new WaitForSeconds(0.2f);

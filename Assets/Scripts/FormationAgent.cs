@@ -29,6 +29,9 @@ namespace AshesOfRum
         private float attackRemaining;
         private Vector3 destination;
         private bool hasDestination;
+        private Quaternion turnStartRotation;
+        private Quaternion turnTargetRotation;
+        private float turnElapsed;
 
         private static readonly Color FriendlyColor = new(0.1f, 0.38f, 0.9f);
         private static readonly Color HostileColor = new(0.8f, 0.16f, 0.08f);
@@ -58,6 +61,11 @@ namespace AshesOfRum
         }
         public int MaximumMemberHealth => tuning == null ? 0 : tuning.memberHealth * 8;
         public int LastAttackMemberCount { get; private set; }
+        public bool IsTurning { get; private set; }
+        public float TurnProgress => IsTurning ? Mathf.Clamp01(turnElapsed / tuning.reorientationSeconds) : 1f;
+        public float FacingDegrees => Mathf.Repeat(transform.eulerAngles.y, 360f);
+        public string FacingLabel => $"{FacingCardinal(FacingDegrees)} {FacingDegrees:0} deg";
+        public FlankDirection LastReceivedFlank { get; private set; }
 
         public void Initialize(FormationType type, bool friendly, EconomyTuning combatTuning,
             Action<int> onCasualty = null, Action<FormationAgent> onDestroyed = null,
@@ -96,6 +104,7 @@ namespace AshesOfRum
                 members.Add(CreateMember(i));
                 memberHealth.Add(tuning.memberHealth);
             }
+            CreateFrontIndicator(transform);
         }
 
         public void SetSelected(bool selected)
@@ -150,6 +159,7 @@ namespace AshesOfRum
             structureTargetComponent = null;
             destination = Grounded(position);
             hasDestination = true;
+            IsTurning = false;
             CurrentOrder = FormationOrder.Move;
             StartNavigation(destination);
         }
@@ -161,6 +171,7 @@ namespace AshesOfRum
             structureTargetComponent = null;
             destination = Grounded(position);
             hasDestination = true;
+            IsTurning = false;
             CurrentOrder = FormationOrder.AttackMove;
             StartNavigation(destination);
         }
@@ -171,23 +182,35 @@ namespace AshesOfRum
             workerTarget = null;
             structureTargetComponent = null;
             hasDestination = false;
+            IsTurning = false;
             CurrentOrder = FormationOrder.Idle;
             StopNavigation();
         }
 
         public void ApplyDeterministicHit(FormationType attackerType)
         {
-            ApplyFixedDamage(CombatRules.Damage(attackerType, Type, tuning.baseDamage, tuning.counterMultiplier));
+            ApplyDeterministicHit(attackerType, transform.position + transform.forward);
         }
 
-        public void ApplyFixedDamage(int damage)
+        public void ApplyDeterministicHit(FormationType attackerType, Vector3 attackerPosition)
+        {
+            var incoming = attackerPosition - transform.position;
+            var flank = CombatRules.ClassifyFlank(transform.forward, incoming);
+            ApplyFixedDamage(CombatRules.Damage(attackerType, Type, tuning.baseDamage, tuning.counterMultiplier,
+                flank, tuning.sideDamageMultiplier, tuning.rearDamageMultiplier), flank);
+        }
+
+        public void ApplyFixedDamage(int damage) => ApplyFixedDamage(damage, FlankDirection.Front);
+
+        private void ApplyFixedDamage(int damage, FlankDirection flank)
         {
             if (members.Count == 0 || damage <= 0) return;
+            LastReceivedFlank = flank;
             damagedCallback?.Invoke(transform.position);
             GetComponent<WorldHealthBar>()?.RecordDamage();
             var hitIndex = nextHitMemberIndex % members.Count;
             memberHealth[hitIndex] -= damage;
-            members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit();
+            members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit(flank);
             if (memberHealth[hitIndex] > 0)
             {
                 nextHitMemberIndex = (hitIndex + 1) % members.Count;
@@ -218,6 +241,7 @@ namespace AshesOfRum
             if (!IsValidStructureTarget(StructureTarget)) structureTargetComponent = null;
             if (CurrentOrder == FormationOrder.Focus && !HasCombatTarget)
             {
+                IsTurning = false;
                 CurrentOrder = FormationOrder.Idle;
                 StopNavigation();
             }
@@ -286,9 +310,7 @@ namespace AshesOfRum
             }
 
             StopNavigation();
-            if (delta.sqrMagnitude > 0.01f)
-                transform.rotation = Quaternion.RotateTowards(transform.rotation,
-                    Quaternion.LookRotation(delta.normalized), 360f * Time.deltaTime);
+            if (!FaceCombatTarget(delta)) return;
             attackRemaining -= Time.deltaTime;
             if (attackRemaining > 0f) return;
             attackRemaining = tuning.attackSeconds;
@@ -305,7 +327,7 @@ namespace AshesOfRum
                 return;
             }
             StopNavigation();
-            FaceCombatTarget(delta);
+            if (!FaceCombatTarget(delta)) return;
             attackRemaining -= Time.deltaTime;
             if (attackRemaining > 0f) return;
             attackRemaining = tuning.attackSeconds;
@@ -325,7 +347,7 @@ namespace AshesOfRum
                 return;
             }
             StopNavigation();
-            FaceCombatTarget(delta);
+            if (!FaceCombatTarget(delta)) return;
             attackRemaining -= Time.deltaTime;
             if (attackRemaining > 0f) return;
             attackRemaining = tuning.attackSeconds;
@@ -334,15 +356,38 @@ namespace AshesOfRum
 
         private float AttackRange => Type == FormationType.Archers ? 7f : 2.2f;
 
-        private void FaceCombatTarget(Vector3 delta)
+        private bool FaceCombatTarget(Vector3 delta)
         {
-            if (delta.sqrMagnitude > 0.01f)
-                transform.rotation = Quaternion.RotateTowards(transform.rotation,
-                    Quaternion.LookRotation(delta.normalized), 360f * Time.deltaTime);
+            if (delta.sqrMagnitude <= 0.01f)
+            {
+                IsTurning = false;
+                return true;
+            }
+            var desired = Quaternion.LookRotation(delta.normalized);
+            if (!IsTurning && Quaternion.Angle(transform.rotation, desired) <= 2f)
+            {
+                transform.rotation = desired;
+                return true;
+            }
+            if (!IsTurning || Quaternion.Angle(turnTargetRotation, desired) > 5f)
+            {
+                turnStartRotation = transform.rotation;
+                turnTargetRotation = desired;
+                turnElapsed = 0f;
+                IsTurning = true;
+            }
+            turnElapsed += Time.deltaTime;
+            var progress = Mathf.Clamp01(turnElapsed / tuning.reorientationSeconds);
+            transform.rotation = Quaternion.Slerp(turnStartRotation, turnTargetRotation, progress);
+            if (progress < 1f) return false;
+            transform.rotation = turnTargetRotation;
+            IsTurning = false;
+            return true;
         }
 
         private void MoveAndFace(Vector3 delta)
         {
+            IsTurning = false;
             var direction = delta.normalized;
             if (CanUseNavigation())
             {
@@ -472,7 +517,7 @@ namespace AshesOfRum
             foreach (var attacker in attackers)
             {
                 if (Type == FormationType.Archers) StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
-                else intendedTarget.ApplyDeterministicHit(Type);
+                else intendedTarget.ApplyDeterministicHit(Type, transform.position);
             }
             return true;
         }
@@ -544,7 +589,7 @@ namespace AshesOfRum
                 arrow.transform.position = Vector3.Lerp(start, end, t) + Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
                 yield return null;
             }
-            if (intendedTarget != null) intendedTarget.ApplyDeterministicHit(Type);
+            if (intendedTarget != null) intendedTarget.ApplyDeterministicHit(Type, memberPosition);
             Destroy(arrow);
         }
 
@@ -629,6 +674,27 @@ namespace AshesOfRum
             return member;
         }
 
+        private static void CreateFrontIndicator(Transform parent)
+        {
+            var indicator = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            indicator.name = "Formation Front Indicator";
+            indicator.transform.SetParent(parent, false);
+            indicator.transform.localPosition = new Vector3(0f, 0.08f, 1.6f);
+            indicator.transform.localRotation = Quaternion.Euler(0f, 45f, 0f);
+            indicator.transform.localScale = new Vector3(0.32f, 0.06f, 0.32f);
+            AssignSupportedMaterial(indicator.GetComponent<Renderer>(), Color.white);
+            Destroy(indicator.GetComponent<Collider>());
+            indicator.AddComponent<FormationFrontIndicator>();
+        }
+
+        private static string FacingCardinal(float degrees)
+        {
+            if (degrees < 45f || degrees >= 315f) return "N";
+            if (degrees < 135f) return "E";
+            if (degrees < 225f) return "S";
+            return "W";
+        }
+
         private void ReForm()
         {
             for (var i = 0; i < members.Count; i++) members[i].transform.localPosition = Slot(i);
@@ -651,6 +717,8 @@ namespace AshesOfRum
 
     public sealed class FormationSelectionRing : MonoBehaviour { }
 
+    public sealed class FormationFrontIndicator : MonoBehaviour { }
+
     public sealed class FormationMemberVisual : MonoBehaviour
     {
         private const float HitSeconds = 0.16f;
@@ -660,6 +728,7 @@ namespace AshesOfRum
         private Coroutine hitRoutine;
 
         public bool IsShowingHitFeedback { get; private set; }
+        public FlankDirection LastHitFlank { get; private set; }
 
         public void Initialize(Renderer targetRenderer)
         {
@@ -668,17 +737,30 @@ namespace AshesOfRum
             restingScale = transform.localScale;
         }
 
-        public void ShowHit()
+        public void ShowHit(FlankDirection flank = FlankDirection.Front)
         {
             if (hitRoutine != null) StopCoroutine(hitRoutine);
-            hitRoutine = StartCoroutine(Flash());
+            LastHitFlank = flank;
+            hitRoutine = StartCoroutine(Flash(flank));
         }
 
-        private IEnumerator Flash()
+        private IEnumerator Flash(FlankDirection flank)
         {
             IsShowingHitFeedback = true;
-            memberRenderer.sharedMaterial.color = Color.Lerp(restingColor, Color.white, 0.8f);
-            transform.localScale = restingScale * 1.12f;
+            var flashColor = flank switch
+            {
+                FlankDirection.Side => new Color(1f, 0.75f, 0.2f),
+                FlankDirection.Rear => new Color(1f, 0.25f, 0.08f),
+                _ => Color.white
+            };
+            var scale = flank switch
+            {
+                FlankDirection.Side => 1.2f,
+                FlankDirection.Rear => 1.3f,
+                _ => 1.12f
+            };
+            memberRenderer.sharedMaterial.color = Color.Lerp(restingColor, flashColor, 0.85f);
+            transform.localScale = restingScale * scale;
             yield return new WaitForSeconds(HitSeconds);
             memberRenderer.sharedMaterial.color = restingColor;
             transform.localScale = restingScale;
