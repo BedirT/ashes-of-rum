@@ -1264,7 +1264,13 @@ namespace AshesOfRum
             selectionText.text = selectedFormations.Count > 0
                 ? $"{selectedFormations.Count} FORMATION{(selectedFormations.Count == 1 ? string.Empty : "S")}\n" +
                   string.Join("  |  ", selectedFormations.GroupBy(formation => formation.Type)
-                      .Select(group => $"{group.Key}: {group.Count()}"))
+                      .Select(group => $"{group.Key}: {group.Count()}")) + "\n" +
+                  (selectedFormations.Count == 1
+                      ? $"FACING {selectedFormations[0].FacingLabel}  |  " +
+                        (selectedFormations[0].IsTurning
+                            ? $"TURNING {selectedFormations[0].TurnProgress:P0}"
+                            : "READY")
+                      : $"FACING: {selectedFormations.Count(formation => formation.IsTurning)} TURNING")
                 : selectedBuilding != null
                     ? $"{selectedBuilding.Type.ToString().ToUpperInvariant()}\n" +
                       $"HEALTH {selectedBuilding.Health} / {selectedBuilding.MaxHealth}"

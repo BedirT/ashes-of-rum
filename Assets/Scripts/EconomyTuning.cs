@@ -36,6 +36,9 @@ namespace AshesOfRum
         [Min(1f)] public float counterMultiplier = 2f;
         [Min(0.1f)] public float attackSeconds = 0.75f;
         [Min(0.1f)] public float projectileSeconds = 0.35f;
+        [Min(0.1f)] public float reorientationSeconds = 0.45f;
+        [Min(1f)] public float sideDamageMultiplier = 1.15f;
+        [Min(1f)] public float rearDamageMultiplier = 1.3f;
         [Min(0.1f)] public float footSpeed = 3.5f;
         [Min(0.1f)] public float cavalrySpeed = 5.25f;
         [Min(0.1f)] public float sightRadius = 10f;

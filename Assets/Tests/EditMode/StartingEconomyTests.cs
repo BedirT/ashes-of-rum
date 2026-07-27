@@ -228,6 +228,23 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void Combat_FlankClassificationAndDamageComposeDeterministicallyWithCounters()
+        {
+            Assert.That(CombatRules.ClassifyFlank(Vector3.forward, Vector3.forward),
+                Is.EqualTo(FlankDirection.Front));
+            Assert.That(CombatRules.ClassifyFlank(Vector3.forward, Vector3.right),
+                Is.EqualTo(FlankDirection.Side));
+            Assert.That(CombatRules.ClassifyFlank(Vector3.forward, Vector3.back),
+                Is.EqualTo(FlankDirection.Rear));
+            Assert.That(CombatRules.Damage(FormationType.Archers, FormationType.Spearmen, 10, 2f,
+                FlankDirection.Front, 1.15f, 1.3f), Is.EqualTo(20));
+            Assert.That(CombatRules.Damage(FormationType.Archers, FormationType.Spearmen, 10, 2f,
+                FlankDirection.Side, 1.15f, 1.3f), Is.EqualTo(23));
+            Assert.That(CombatRules.Damage(FormationType.Archers, FormationType.Spearmen, 10, 2f,
+                FlankDirection.Rear, 1.15f, 1.3f), Is.EqualTo(26));
+        }
+
+        [Test]
         public void FormationTuning_CavalryIsClearlyFasterThanFootFormations()
         {
             var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
@@ -235,6 +252,8 @@ namespace AshesOfRum.Tests
             {
                 Assert.That(tuning.cavalrySpeed, Is.GreaterThan(tuning.footSpeed * 1.4f));
                 Assert.That(tuning.sightRadius, Is.GreaterThan(0f));
+                Assert.That(tuning.reorientationSeconds, Is.InRange(0.1f, 1f));
+                Assert.That(tuning.rearDamageMultiplier, Is.GreaterThan(tuning.sideDamageMultiplier));
             }
             finally
             {

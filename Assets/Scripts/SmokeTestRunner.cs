@@ -170,6 +170,7 @@ namespace AshesOfRum
             var hostileRevealedByMovement = false;
             var contactLostUnderFog = false;
             var cavalryCounterWon = false;
+            var rearAttackAdvantage = false;
             var formationRallyDispatched = false;
             if (defensiveBuildingsCompleted && storehouseDropOffUsed)
             {
@@ -189,7 +190,8 @@ namespace AshesOfRum
                     var hostile = economy.EnemyFormations[0];
                     var tower = economy.Watchtowers[0].GetComponent<WatchtowerAttack>();
                     supportedFormationMaterials = friendly.HasSupportedVisualMaterials() &&
-                                                  hostile.HasSupportedVisualMaterials();
+                                                  hostile.HasSupportedVisualMaterials() &&
+                                                  friendly.GetComponentInChildren<FormationFrontIndicator>() != null;
                     while (hostile.MemberCount == 8 && Time.realtimeSinceStartup < combatDeadline)
                         yield return null;
                     watchtowerFired = tower.ShotsFired > 0 && hostile.MemberCount < 8;
@@ -266,6 +268,29 @@ namespace AshesOfRum
                     cavalryCounterWon = economy.EnemyFormations.Count == 0 &&
                                         economy.FriendlyFormations.Any(formation =>
                                             formation.Type == FormationType.Cavalry && formation.MemberCount > 0);
+                    if (cavalryCounterWon)
+                    {
+                        var flanker = economy.FriendlyFormations.First(formation =>
+                            formation.Type == FormationType.Cavalry);
+                        flanker.IssueStop();
+                        var flankPosition = new Vector3(0f, 0f, 8f);
+                        if (!flanker.GetComponent<UnityEngine.AI.NavMeshAgent>().Warp(flankPosition))
+                            flanker.transform.position = flankPosition;
+                        var frontTarget = economy.DeployEnemyForAutomation(FormationType.Spearmen,
+                            new Vector3(0f, 0f, 10f));
+                        var rearTarget = economy.DeployEnemyForAutomation(FormationType.Spearmen,
+                            new Vector3(0f, 0f, 10f));
+                        frontTarget.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+                        rearTarget.transform.rotation = Quaternion.identity;
+                        var frontHealth = frontTarget.TotalMemberHealth;
+                        var rearHealth = rearTarget.TotalMemberHealth;
+                        flanker.ExecuteAttackVolley(frontTarget);
+                        flanker.ExecuteAttackVolley(rearTarget);
+                        rearAttackAdvantage = rearHealth - rearTarget.TotalMemberHealth >
+                                              frontHealth - frontTarget.TotalMemberHealth;
+                        while (frontTarget.MemberCount > 0) frontTarget.ApplyFixedDamage(frontTarget.MaximumMemberHealth);
+                        while (rearTarget.MemberCount > 0) rearTarget.ApplyFixedDamage(rearTarget.MaximumMemberHealth);
+                    }
                 }
             }
 
@@ -474,6 +499,7 @@ namespace AshesOfRum
                     "Hisar rally dispatches a formation to terrain and a Worker to a visible cache",
                     "Procedural gameplay audio and fog-aware under-attack ping are functional",
                     "Combat health bars cover both factions and expose Hisar damage",
+                    "Rear formation attack gains a deterministic flank advantage",
                     "1920x1080 window configured",
                     "Graphical health-bar frame captured",
                     "Graphical frame captured"
@@ -519,7 +545,8 @@ namespace AshesOfRum
                     "Opponent recovers a failed gathering route through a paid Worker-built Storehouse",
                     "Hisar rally dispatches a formation to terrain and a Worker to a visible cache",
                     "Procedural gameplay audio and fog-aware under-attack ping are functional",
-                    "Combat health bars cover both factions and expose Hisar damage"
+                    "Combat health bars cover both factions and expose Hisar damage",
+                    "Rear formation attack gains a deterministic flank advantage"
                 };
             var result = new SmokeResult
             {
@@ -569,12 +596,13 @@ namespace AshesOfRum
                 Require(formationRallyDispatched && workerRallyDispatched, checks[37]);
                 Require(functionalAudioFeedback, checks[38]);
                 Require(combatHealthBarsProvisioned && enemyHisarHealthReadable, checks[39]);
+                Require(rearAttackAdvantage, checks[40]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[40]);
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[41]);
                     Require(HasContent(healthScreenshotPath),
-                        $"{checks[41]} within {ScreenshotTimeoutSeconds} seconds");
-                    Require(HasContent(screenshotPath), $"{checks[42]} within {ScreenshotTimeoutSeconds} seconds");
+                        $"{checks[42]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(HasContent(screenshotPath), $"{checks[43]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
