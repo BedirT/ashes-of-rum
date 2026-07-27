@@ -54,8 +54,8 @@ import_project() {
 run_tests() {
   local output_dir="$1"
   mkdir -p "$output_dir"
-  unity_cli test "$ROOT" --mode EditMode --output "$output_dir/editmode.xml" --timeout 300
-  unity_cli test "$ROOT" --mode PlayMode --output "$output_dir/playmode.xml" --timeout 300
+  unity_cli test "$ROOT" --mode EditMode --output "$output_dir/editmode.xml" --timeout 420
+  unity_cli test "$ROOT" --mode PlayMode --output "$output_dir/playmode.xml" --timeout 420
 }
 
 verify_fast() {

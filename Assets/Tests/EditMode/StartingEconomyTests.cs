@@ -262,6 +262,19 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void FrontlineRules_BlockDirectApproachButAllowLateralRelease()
+        {
+            var mover = Vector3.zero;
+            var opponent = new Vector3(0f, 0f, 2f);
+
+            Assert.That(FormationFrontlineRules.Blocks(mover, Vector3.forward, opponent, 2.4f), Is.True);
+            Assert.That(FormationFrontlineRules.Blocks(mover, Vector3.right, opponent, 2.4f), Is.False);
+            Assert.That(FormationFrontlineRules.Blocks(mover, Vector3.back, opponent, 2.4f), Is.False);
+            Assert.That(FormationFrontlineRules.Blocks(mover, Vector3.forward,
+                new Vector3(0f, 0f, 2.5f), 2.4f), Is.False);
+        }
+
+        [Test]
         public void FogMap_PreservesExplorationAndClearsOnlyCurrentVisibility()
         {
             var fog = new FogOfWarMap(-10f, 10f, -10f, 10f, 1f);

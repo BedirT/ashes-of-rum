@@ -1226,6 +1226,57 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator MoveOrder_OpposingFrontlineBlocksDirectPassageAndReleasesLaterally()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            FormationAgent defender = null;
+            var attacker = CreateFormationForTest("Frontline mover", FormationType.Spearmen, true, tuning,
+                () => new[] { defender });
+            defender = CreateFormationForTest("Frontline blocker", FormationType.Spearmen, false, tuning);
+            attacker.transform.position = Vector3.zero;
+            defender.transform.position = new Vector3(0f, 0f, 4f);
+
+            attacker.IssueMove(new Vector3(0f, 0f, 8f));
+            yield return WaitUntil(() => attacker.IsFrontlineBlocked);
+            var blockedPosition = attacker.transform.position;
+            yield return new WaitForSeconds(0.25f);
+
+            Assert.That(attacker.transform.position.z, Is.LessThan(defender.transform.position.z));
+            Assert.That(Vector3.Distance(attacker.transform.position, blockedPosition), Is.LessThan(0.05f));
+            Assert.That(attacker.CurrentOrder, Is.EqualTo(FormationOrder.Move));
+
+            attacker.IssueMove(attacker.transform.position + Vector3.right * 4f);
+            yield return new WaitForSeconds(0.35f);
+
+            Assert.That(attacker.IsFrontlineBlocked, Is.False);
+            Assert.That(attacker.transform.position.x, Is.GreaterThan(blockedPosition.x + 0.5f));
+            Object.Destroy(attacker.gameObject);
+            Object.Destroy(defender.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator MoveOrder_AlliedFormationDoesNotCreateRigidFrontline()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            FormationAgent ally = null;
+            var mover = CreateFormationForTest("Allied mover", FormationType.Spearmen, true, tuning,
+                () => new[] { ally });
+            ally = CreateFormationForTest("Allied soft obstacle", FormationType.Archers, true, tuning);
+            mover.transform.position = Vector3.zero;
+            ally.transform.position = new Vector3(0f, 0f, 2f);
+
+            mover.IssueMove(new Vector3(0f, 0f, 5f));
+            yield return new WaitForSeconds(0.8f);
+
+            Assert.That(mover.IsFrontlineBlocked, Is.False);
+            Assert.That(mover.transform.position.z, Is.GreaterThan(ally.transform.position.z));
+            Object.Destroy(mover.gameObject);
+            Object.Destroy(ally.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
         public IEnumerator ControlGroupHotkeys_BareDigitsRecallOnlyAndModifiedDigitsAssign()
         {
             yield return LoadEconomy();
@@ -2903,12 +2954,12 @@ namespace AshesOfRum.Tests
         }
 
         private static FormationAgent CreateFormationForTest(string name, FormationType type, bool friendly,
-            EconomyTuning tuning)
+            EconomyTuning tuning, System.Func<IEnumerable<FormationAgent>> availableHostiles = null)
         {
             var root = new GameObject(name);
             root.transform.position = new Vector3(100f, 0f, 100f);
             var formation = root.AddComponent<FormationAgent>();
-            formation.Initialize(type, friendly, tuning);
+            formation.Initialize(type, friendly, tuning, availableHostiles: availableHostiles);
             return formation;
         }
 
