@@ -15,7 +15,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | 004 - Build the defensive line | Place a Storehouse and Tower with valid placement, construction, and destruction states. |
 | Complete | 005 - Contest the road | Add Cavalry, control groups, formations, fog, and minimap information. |
 | Complete | 006 - Win a complete match | Add fair scripted AI, both Hisar destruction outcomes, restart, quit, and a 10-15 minute match tune. |
-| In Progress | 007 - Maneuver and flank | Read formation facing, exploit fixed reorientation, and gain a modest deterministic side or rear damage advantage. |
+| Complete | 007 - Maneuver and flank | Read formation facing, exploit fixed reorientation, and gain a modest deterministic side or rear damage advantage. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
