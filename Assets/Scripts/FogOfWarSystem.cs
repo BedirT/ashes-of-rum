@@ -19,6 +19,7 @@ namespace AshesOfRum
 
         private readonly List<Transform> friendlySources = new();
         private readonly Dictionary<GameObject, FogVisibilityTarget> hostileTargets = new();
+        private readonly Dictionary<GameObject, FogVisibilityTarget> neutralTargets = new();
         private FogOfWarMap map;
         private float sightRadius;
         private float refreshRemaining;
@@ -48,6 +49,15 @@ namespace AshesOfRum
         public void RegisterHostileMobile(GameObject target) => RegisterHostile(target, false);
 
         public void RegisterHostileStatic(GameObject target) => RegisterHostile(target, true);
+
+        public void RegisterNeutralStatic(GameObject target)
+        {
+            if (target == null || neutralTargets.ContainsKey(target)) return;
+            var visibility = target.GetComponent<FogVisibilityTarget>() ?? target.AddComponent<FogVisibilityTarget>();
+            visibility.Initialize(true);
+            neutralTargets.Add(target, visibility);
+            visibility.Apply(map.StateAt(target.transform.position));
+        }
 
         public void UnregisterHostile(GameObject target)
         {
@@ -85,6 +95,15 @@ namespace AshesOfRum
                 }
                 if (pair.Value.Apply(map.StateAt(pair.Key.transform.position)))
                     HostileFirstRevealed?.Invoke(pair.Key);
+            }
+            foreach (var pair in neutralTargets.ToArray())
+            {
+                if (pair.Key == null || pair.Value == null)
+                {
+                    neutralTargets.Remove(pair.Key);
+                    continue;
+                }
+                pair.Value.Apply(map.StateAt(pair.Key.transform.position));
             }
             UpdateFogTexture();
             UpdateMinimapTexture();

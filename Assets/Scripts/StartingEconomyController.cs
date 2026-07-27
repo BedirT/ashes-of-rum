@@ -475,16 +475,16 @@ namespace AshesOfRum
             var root = new GameObject($"{CachePrefix} {index}");
             root.transform.position = position;
             var cache = root.AddComponent<ResourceCache>();
-            cache.Initialize(tuning.cacheSupplies);
             for (var i = 0; i < 5; i++)
             {
                 var offset = new Vector3((i % 3 - 1) * 0.65f, i % 2 * 0.22f, (i / 3 - 0.5f) * 0.65f);
                 CreatePrimitive(PrimitiveType.Cube, $"Supply Bundle {i + 1}", root.transform, offset,
-                    new Vector3(0.55f, 0.45f, 0.55f), new Color(0.72f, 0.49f, 0.2f));
+                    new Vector3(0.55f, 0.45f, 0.55f), ResourceCache.AvailableColor);
             }
             var collider = root.AddComponent<BoxCollider>();
             collider.center = new Vector3(0f, 0.35f, 0f);
             collider.size = new Vector3(2.8f, 1.4f, 2f);
+            cache.Initialize(tuning.cacheSupplies);
             return cache;
         }
 
@@ -687,6 +687,7 @@ namespace AshesOfRum
             fogOfWar.HostileFirstRevealed += HandleHostileFirstRevealed;
             fogOfWar.RegisterFriendly(hisar.transform);
             foreach (var worker in workers) fogOfWar.RegisterFriendly(worker.transform);
+            foreach (var cache in Caches.Concat(enemyCaches)) fogOfWar.RegisterNeutralStatic(cache.gameObject);
             fogOfWar.RegisterHostileStatic(enemyHisar.gameObject);
             fogOfWar.RefreshNow();
         }

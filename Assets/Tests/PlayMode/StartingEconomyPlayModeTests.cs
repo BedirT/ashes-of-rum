@@ -263,10 +263,8 @@ namespace AshesOfRum.Tests
             InputSystem.QueueStateEvent(mouse, new MouseState { position = cacheScreenPosition });
             InputSystem.Update();
             Physics.SyncTransforms();
-            Assert.That(Physics.Raycast(Camera.main.ScreenPointToRay(cacheScreenPosition), out var cacheHit, 200f),
-                Is.True);
-            Assert.That(cacheHit.collider.GetComponentInParent<ResourceCache>(), Is.SameAs(cache),
-                $"Expected the live neutral cache collider, but hit {cacheHit.collider.name}.");
+            Assert.That(cache.GetComponentsInChildren<Collider>(true).All(item => !item.enabled), Is.True,
+                "An unseen neutral cache must not expose an interactive collider.");
 
             yield return PressMouseButton(economy, mouse, cacheScreenPosition, MouseButton.Right,
                 "HandleOrderInput");
@@ -279,6 +277,8 @@ namespace AshesOfRum.Tests
             scout.transform.position = cache.transform.position;
             economy.FogOfWar.RegisterFriendly(scout.transform);
             economy.FogOfWar.RefreshNow();
+            Assert.That(cache.GetComponentsInChildren<Collider>(true).Any(item => item.enabled), Is.True,
+                "Revealing a neutral cache must restore its gather collider.");
             yield return PressMouseButton(economy, mouse, cacheScreenPosition, MouseButton.Right,
                 "HandleOrderInput");
 
@@ -287,6 +287,78 @@ namespace AshesOfRum.Tests
                 Does.Contain(cache.name.ToUpperInvariant()));
             Object.Destroy(scout);
             InputSystem.RemoveDevice(mouse);
+        }
+
+        [UnityTest]
+        public IEnumerator NeutralCacheFog_HidesUnexploredAndPreservesLastSeenDepletionState()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var fog = economy.FogOfWar;
+            var cache = economy.OpponentCaches[1];
+            var renderers = cache.GetComponentsInChildren<Renderer>(true);
+            var colliders = cache.GetComponentsInChildren<Collider>(true);
+
+            Assert.That(fog.StateAt(cache.transform.position), Is.EqualTo(FogState.Unexplored));
+            Assert.That(renderers, Is.Not.Empty);
+            Assert.That(renderers.All(item => !item.enabled), Is.True,
+                "An unexplored opponent-side Supply cache must not render.");
+            Assert.That(colliders.All(item => !item.enabled), Is.True,
+                "An unexplored opponent-side Supply cache must not be interactive.");
+            Assert.That(economy.CurrentMatchSummary.firstContactSeconds, Is.LessThan(0f),
+                "Registering neutral caches must not record hostile first contact.");
+
+            var scout = new GameObject("Neutral cache fog scout");
+            try
+            {
+                economy.SetOpponentEnabledForAutomation(false);
+                foreach (var worker in economy.EnemyWorkers)
+                {
+                    worker.Suspend();
+                    var agent = worker.GetComponent<NavMeshAgent>();
+                    if (agent != null && agent.isOnNavMesh) agent.Warp(economy.EnemyHisar.transform.position);
+                    else worker.transform.position = economy.EnemyHisar.transform.position;
+                }
+                fog.RefreshNow();
+                scout.transform.position = cache.transform.position;
+                fog.RegisterFriendly(scout.transform);
+                fog.RefreshNow();
+                Assert.That(renderers.All(item => item.enabled), Is.True);
+                Assert.That(colliders.Any(item => item.enabled), Is.True);
+                Assert.That(economy.CurrentMatchSummary.firstContactSeconds, Is.LessThan(0f),
+                    "Revealing a neutral cache must not record hostile first contact.");
+
+                scout.transform.position = new Vector3(-20f, 0f, -10f);
+                fog.RefreshNow();
+                Assert.That(fog.StateAt(cache.transform.position), Is.EqualTo(FogState.Explored));
+                var rememberedColors = renderers.Select(item => item.material.color).ToArray();
+                var terrainColor = fog.MinimapColorAt(cache.transform.position);
+                Assert.That(terrainColor.r, Is.LessThan(0.9f),
+                    "A neutral cache must not create a hostile minimap marker.");
+
+                cache.TakeBatch(int.MaxValue);
+                fog.RefreshNow();
+                Assert.That(cache.Remaining, Is.Zero);
+                for (var index = 0; index < renderers.Length; index++)
+                    Assert.That(Vector4.Distance(renderers[index].material.color, rememberedColors[index]),
+                        Is.LessThan(0.01f),
+                        "Explored fog must preserve the last-seen cache state after unseen depletion.");
+
+                scout.transform.position = cache.transform.position;
+                fog.RefreshNow();
+                foreach (var itemRenderer in renderers)
+                {
+                    var actual = itemRenderer.material.color;
+                    Assert.That(actual.r, Is.EqualTo(0.24f).Within(0.02f));
+                    Assert.That(actual.g, Is.EqualTo(0.22f).Within(0.02f));
+                    Assert.That(actual.b, Is.EqualTo(0.19f).Within(0.02f),
+                        "Revealing a depleted cache must expose its current exhausted state.");
+                }
+            }
+            finally
+            {
+                Object.Destroy(scout);
+            }
         }
 
         [UnityTest]

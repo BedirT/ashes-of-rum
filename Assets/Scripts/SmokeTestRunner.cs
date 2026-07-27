@@ -42,8 +42,28 @@ namespace AshesOfRum
 
             var economy = FindAnyObjectByType<StartingEconomyController>();
             var economyStarted = economy != null && economy.Workers.Count == StartingEconomyController.WorkerCount;
+            var opponentCachesHiddenByFog = false;
+            var hiddenCacheDepletionStayedHidden = false;
             if (economyStarted)
             {
+                economy.FogOfWar.RefreshNow();
+                var hiddenCache = economy.OpponentCaches[0];
+                var hiddenCacheRenderers = hiddenCache.GetComponentsInChildren<Renderer>(true);
+                var hiddenCacheColliders = hiddenCache.GetComponentsInChildren<Collider>(true);
+                opponentCachesHiddenByFog = economy.FogOfWar.StateAt(hiddenCache.transform.position) ==
+                                             FogState.Unexplored &&
+                                             hiddenCacheRenderers.All(item => !item.enabled) &&
+                                             hiddenCacheColliders.All(item => !item.enabled) &&
+                                             economy.CurrentMatchSummary.firstContactSeconds < 0f;
+                var originalCacheSupplies = hiddenCache.Remaining;
+                hiddenCache.TakeBatch(int.MaxValue);
+                economy.FogOfWar.RefreshNow();
+                hiddenCacheDepletionStayedHidden = hiddenCache.Remaining == 0 &&
+                                                   hiddenCacheRenderers.All(item => !item.enabled) &&
+                                                   hiddenCacheColliders.All(item => !item.enabled) &&
+                                                   economy.CurrentMatchSummary.firstContactSeconds < 0f;
+                hiddenCache.Initialize(originalCacheSupplies);
+                economy.FogOfWar.RefreshNow();
                 economy.SetOpponentEnabledForAutomation(false);
                 economy.SetOpponentTargetsAvailableForAutomation(false);
                 economy.IssueGatherForSmoke(economy.Caches[0]);
@@ -356,6 +376,8 @@ namespace AshesOfRum
                     "Alazhan formations destroy the Karasungur Hisar",
                     "Defeat result freezes the match",
                     "Quit action is available from the result",
+                    "Unexplored opponent Supply caches are hidden by fog",
+                    "Hidden Supply-cache depletion does not leak through fog",
                     "1920x1080 window configured",
                     "Graphical frame captured"
                 }
@@ -394,7 +416,9 @@ namespace AshesOfRum
                     "Restart creates a fresh match",
                     "Alazhan formations destroy the Karasungur Hisar",
                     "Defeat result freezes the match",
-                    "Quit action is available from the result"
+                    "Quit action is available from the result",
+                    "Unexplored opponent Supply caches are hidden by fog",
+                    "Hidden Supply-cache depletion does not leak through fog"
                 };
             var result = new SmokeResult
             {
@@ -438,10 +462,12 @@ namespace AshesOfRum
                 Require(friendlyHisarDestroyed, $"{checks[31]} within {CombatTimeoutSeconds} seconds");
                 Require(defeatResultShown, checks[32]);
                 Require(quitActionAvailable, checks[33]);
+                Require(opponentCachesHiddenByFog, checks[34]);
+                Require(hiddenCacheDepletionStayedHidden, checks[35]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[34]);
-                    Require(HasContent(screenshotPath), $"{checks[35]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[36]);
+                    Require(HasContent(screenshotPath), $"{checks[37]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;

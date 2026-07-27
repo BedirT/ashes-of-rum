@@ -21,6 +21,9 @@ then see the frozen match result and either restart or quit.
       presents Victory or Defeat with elapsed time plus only working `Restart` and `Quit` actions.
 - [ ] Restart creates a fresh deterministic match without retaining economy, fog, units, buildings,
       result state, or telemetry counters from the previous match.
+- [ ] Neutral Supply caches obey three-state fog: unexplored caches and depletion changes stay
+      hidden, explored caches retain their last-seen state, and caches create no hostile minimap
+      marker or first-contact telemetry.
 - [ ] A local JSON event log and match summary record elapsed time, outcome, Supplies gathered,
       entities produced and lost, buildings constructed and destroyed, first contact, AI attack
       timings, and Hisar destruction without transmitting data.
@@ -49,7 +52,7 @@ feedback.
 ## Manual Play Check
 
 1. Launch the exact-HEAD macOS development build at 1920x1080 and confirm the match begins directly
-   with the existing Karasungur economy and the Alazhan side hidden by fog.
+   with the existing Karasungur economy and every unexplored Alazhan-side Supply cache hidden by fog.
 2. Gather Supplies, construct a House and defensive building, train a counter force, and scout the
    road without using development-only controls.
 3. Observe the Alazhan Cavalry probe, mixed pressure, and final assault leaving its real economy at
