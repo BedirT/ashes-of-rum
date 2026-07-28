@@ -331,6 +331,17 @@ other automatic or player-triggered special abilities.
 - Avoid speculative abstractions. Only the future replacement of Supplies with multiple
   resources warrants a clean data boundary now; it does not warrant implementing unused
   systems.
+- Organize runtime and test code by existing gameplay domain. Keep each hand-authored C# file
+  below 750 lines when practical and never above 1,000 lines; split at cohesive responsibility
+  boundaries rather than compressing or obscuring logic to satisfy the limit.
+- Keep the prototype composition root direct. Prefer partial files for one cohesive Unity
+  component over introducing one-use interfaces, services, factories, or forwarding layers only
+  to reduce a file's line count.
+- The user-approved codebase restructure is an exceptional behavior-preserving refactor, not a
+  gameplay slice. It may reorganize existing runtime and test code but may not disguise feature
+  work or alter gameplay, balance, tuning, UI, input, AI, art, audio, or package scope. It still
+  requires the full automated, build, runtime, review, merge, and post-merge proof required of a
+  gameplay slice.
 
 ## 16. Verification Contract
 

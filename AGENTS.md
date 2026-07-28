@@ -55,6 +55,21 @@ Documentation-only and repository-workflow changes may be delivered without a pl
 gameplay behavior, but they must not claim to be gameplay slices and must still follow the PR,
 review, verification, and merge process below.
 
+The user may explicitly approve a behavior-preserving architectural refactor as a narrow
+exception to the player-visible-improvement requirement. Such work must be labeled an
+**exceptional refactor**, not a gameplay slice, and must:
+
+- record the user's approved reason and the existing player-visible paths it preserves before
+  implementation;
+- remain behavior-preserving and must not disguise feature, balance, tuning, UI, input, AI, art,
+  audio, package, or speculative architecture work;
+- make only the structural changes needed for the approved maintainability outcome; and
+- satisfy the same full verification, runtime proof, PR, context-free review, fixer, merge, and
+  post-merge requirements as a gameplay slice.
+
+This exception is granted only by an explicit user request. Agent preference, file size, technical
+debt, or anticipated future work alone is never sufficient authorization.
+
 ## 4. Unity CLI Is The Primary Development Interface
 
 Use the repository's Unity CLI skill at
