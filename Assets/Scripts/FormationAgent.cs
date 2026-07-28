@@ -22,10 +22,15 @@ namespace AshesOfRum
         }
     }
 
+    public static class FormationMemberRules
+    {
+        public static Vector3 Slot(int index) =>
+            new((index % 4 - 1.5f) * 1.15f, 0.85f, -(index / 4) * 1.35f);
+    }
+
     public sealed class FormationAgent : MonoBehaviour
     {
-        private readonly List<GameObject> members = new();
-        private readonly List<int> memberHealth = new();
+        private readonly List<FormationMemberAgent> members = new();
         private EconomyTuning tuning;
         private FormationAgent target;
         private WorkerAgent workerTarget;
@@ -48,6 +53,7 @@ namespace AshesOfRum
         private Quaternion turnStartRotation;
         private Quaternion turnTargetRotation;
         private float turnElapsed;
+        private Vector3 lastAnchorPosition;
 
         private static readonly Color FriendlyColor = new(0.1f, 0.38f, 0.9f);
         private static readonly Color HostileColor = new(0.8f, 0.16f, 0.08f);
@@ -58,6 +64,7 @@ namespace AshesOfRum
         public FormationType Type { get; private set; }
         public bool IsFriendly { get; private set; }
         public int MemberCount => members.Count;
+        public IReadOnlyList<FormationMemberAgent> Members => members;
         public bool IsSelected { get; private set; }
         public FormationAgent Target => target;
         public WorkerAgent WorkerTarget => workerTarget;
@@ -71,7 +78,7 @@ namespace AshesOfRum
             get
             {
                 var total = 0;
-                foreach (var health in memberHealth) total += health;
+                foreach (var member in members) total += member.Health;
                 return total;
             }
         }
@@ -83,6 +90,8 @@ namespace AshesOfRum
         public float FacingDegrees => Mathf.Repeat(transform.eulerAngles.y, 360f);
         public string FacingLabel => $"{FacingCardinal(FacingDegrees)} {FacingDegrees:0} deg";
         public FlankDirection LastReceivedFlank { get; private set; }
+        public int ProjectileHitsReceived { get; private set; }
+        public int ProjectileHitsLanded { get; private set; }
 
         public void Initialize(FormationType type, bool friendly, EconomyTuning combatTuning,
             Action<int> onCasualty = null, Action<FormationAgent> onDestroyed = null,
@@ -107,6 +116,7 @@ namespace AshesOfRum
             structureVisibilityPredicate = isStructureVisible;
             damagedCallback = onDamaged;
             attackCallback = onAttack;
+            lastAnchorPosition = transform.position;
             navAgent = GetComponent<NavMeshAgent>();
             if (navAgent != null)
             {
@@ -119,7 +129,6 @@ namespace AshesOfRum
             for (var i = 0; i < 8; i++)
             {
                 members.Add(CreateMember(i));
-                memberHealth.Add(tuning.memberHealth);
             }
             CreateFrontIndicator(transform);
         }
@@ -212,10 +221,18 @@ namespace AshesOfRum
 
         public void ApplyDeterministicHit(FormationType attackerType, Vector3 attackerPosition)
         {
-            var incoming = attackerPosition - transform.position;
+            if (members.Count == 0) return;
+            ApplyDeterministicHit(members[nextHitMemberIndex % members.Count], attackerType, attackerPosition);
+        }
+
+        public void ApplyDeterministicHit(FormationMemberAgent member, FormationType attackerType,
+            Vector3 attackerPosition)
+        {
+            if (member == null || !members.Contains(member)) return;
+            var incoming = attackerPosition - member.WorldPosition;
             var flank = CombatRules.ClassifyFlank(transform.forward, incoming);
-            ApplyFixedDamage(CombatRules.Damage(attackerType, Type, tuning.baseDamage, tuning.counterMultiplier,
-                flank, tuning.sideDamageMultiplier, tuning.rearDamageMultiplier), flank);
+            ApplyDamageToMember(member, CombatRules.Damage(attackerType, Type, tuning.baseDamage,
+                tuning.counterMultiplier, flank, tuning.sideDamageMultiplier, tuning.rearDamageMultiplier), flank);
         }
 
         public void ApplyFixedDamage(int damage) => ApplyFixedDamage(damage, FlankDirection.Front);
@@ -223,22 +240,26 @@ namespace AshesOfRum
         private void ApplyFixedDamage(int damage, FlankDirection flank)
         {
             if (members.Count == 0 || damage <= 0) return;
+            ApplyDamageToMember(members[nextHitMemberIndex % members.Count], damage, flank);
+        }
+
+        private void ApplyDamageToMember(FormationMemberAgent member, int damage, FlankDirection flank)
+        {
+            if (member == null || !members.Contains(member) || damage <= 0) return;
             LastReceivedFlank = flank;
             damagedCallback?.Invoke(transform.position);
             GetComponent<WorldHealthBar>()?.RecordDamage();
-            var hitIndex = nextHitMemberIndex % members.Count;
-            memberHealth[hitIndex] -= damage;
-            members[hitIndex].GetComponent<FormationMemberVisual>().ShowHit(flank);
-            if (memberHealth[hitIndex] > 0)
+            var hitIndex = members.IndexOf(member);
+            member.ApplyDamage(damage, flank);
+            if (member.Health > 0)
             {
                 nextHitMemberIndex = (hitIndex + 1) % members.Count;
                 return;
             }
 
-            var casualty = members[hitIndex];
             members.RemoveAt(hitIndex);
-            memberHealth.RemoveAt(hitIndex);
-            Destroy(casualty);
+            member.DetachForDeath();
+            Destroy(member.gameObject);
             casualtyCallback?.Invoke(1);
             nextHitMemberIndex = members.Count == 0 ? 0 : hitIndex % members.Count;
             ReForm();
@@ -253,11 +274,13 @@ namespace AshesOfRum
 
         private void Update()
         {
+            SynchronizeMembersForAnchorTeleport();
             IsFrontlineBlocked = false;
             if (!IsValidTarget(target))
                 target = null;
             if (!IsValidWorkerTarget(workerTarget)) workerTarget = null;
             if (!IsValidStructureTarget(StructureTarget)) structureTargetComponent = null;
+            UpdateMemberMovement();
             if (CurrentOrder == FormationOrder.Focus && !HasCombatTarget)
             {
                 IsTurning = false;
@@ -322,18 +345,37 @@ namespace AshesOfRum
             var delta = target.transform.position - transform.position;
             delta.y = 0f;
             var range = AttackRange;
-            if (delta.sqrMagnitude > range * range)
+            var memberCanAttack = Type != FormationType.Archers && HasMemberInAttackRange(target);
+            if (delta.sqrMagnitude > range * range && !memberCanAttack)
             {
                 MoveAndFace(delta);
                 return;
             }
 
-            StopNavigation();
+            if (delta.sqrMagnitude <= range * range) StopNavigation();
+            else MoveAndFace(delta);
             if (!FaceCombatTarget(delta)) return;
+            if (Type != FormationType.Archers)
+            {
+                ExecuteAttackVolley(target);
+                return;
+            }
             attackRemaining -= Time.deltaTime;
             if (attackRemaining > 0f) return;
             attackRemaining = tuning.attackSeconds;
             ExecuteAttackVolley(target);
+        }
+
+        private bool HasMemberInAttackRange(FormationAgent intendedTarget)
+        {
+            var rangeSquared = AttackRange * AttackRange;
+            foreach (var member in members)
+            {
+                var nearest = intendedTarget.SelectMemberTarget(member.WorldPosition, 0);
+                if (nearest != null && (nearest.WorldPosition - member.WorldPosition).sqrMagnitude <= rangeSquared)
+                    return true;
+            }
+            return false;
         }
 
         private void MoveOrAttackWorker()
@@ -549,14 +591,34 @@ namespace AshesOfRum
             if (intendedTarget == null || intendedTarget.IsFriendly == IsFriendly ||
                 intendedTarget.MemberCount == 0 || members.Count == 0) return false;
 
+            SynchronizeMembersForAnchorTeleport();
+            intendedTarget.SynchronizeMembersForAnchorTeleport();
             LastAttackMemberCount = members.Count;
             attackCallback?.Invoke(transform.position);
             var attackers = members.ToArray();
-            foreach (var attacker in attackers)
+            var attackCount = 0;
+            for (var i = 0; i < attackers.Length; i++)
             {
-                if (Type == FormationType.Archers) StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
-                else intendedTarget.ApplyDeterministicHit(Type, transform.position);
+                var attacker = attackers[i];
+                var intendedMember = Type == FormationType.Archers
+                    ? intendedTarget.SelectVolleyMember(i)
+                    : intendedTarget.SelectMemberTarget(attacker.WorldPosition, 0);
+                if (intendedMember == null) continue;
+                if (Type == FormationType.Archers)
+                {
+                    StartCoroutine(FireArrow(attacker, intendedTarget, intendedMember));
+                    attackCount++;
+                }
+                else if (attacker.CanAttack &&
+                         (intendedMember.WorldPosition - attacker.WorldPosition).sqrMagnitude <=
+                         AttackRange * AttackRange)
+                {
+                    intendedTarget.ApplyDeterministicHit(intendedMember, Type, attacker.WorldPosition);
+                    attacker.BeginAttackCooldown(tuning.attackSeconds);
+                    attackCount++;
+                }
             }
+            LastAttackMemberCount = attackCount;
             return true;
         }
 
@@ -569,7 +631,7 @@ namespace AshesOfRum
             foreach (var attacker in attackers)
             {
                 if (Type == FormationType.Archers)
-                    StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
+                    StartCoroutine(FireArrow(attacker.WorldPosition, intendedTarget));
                 else
                     intendedTarget.ApplyFixedDamage(tuning.baseDamage);
             }
@@ -585,7 +647,7 @@ namespace AshesOfRum
             foreach (var attacker in attackers)
             {
                 if (Type == FormationType.Archers)
-                    StartCoroutine(FireArrow(attacker.transform.position, intendedTarget));
+                    StartCoroutine(FireArrow(attacker.WorldPosition, intendedTarget));
                 else
                     intendedTarget.ApplyStructuralDamage(tuning.structuralDamage);
             }
@@ -610,24 +672,32 @@ namespace AshesOfRum
             itemRenderer.sharedMaterial.shader != null &&
             itemRenderer.sharedMaterial.shader.name == SupportedShaderName;
 
-        private IEnumerator FireArrow(Vector3 memberPosition, FormationAgent intendedTarget)
+        private IEnumerator FireArrow(FormationMemberAgent attacker, FormationAgent intendedTarget,
+            FormationMemberAgent intendedMember)
         {
-            var arrow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            arrow.name = "Arrow";
-            arrow.transform.localScale = new Vector3(0.06f, 0.35f, 0.06f);
-            Destroy(arrow.GetComponent<Collider>());
-            AssignSupportedMaterial(arrow.GetComponent<Renderer>(), ArrowColor);
-            var start = memberPosition + Vector3.up * 1.4f;
+            var arrow = CreateArrow();
+            var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
+            var start = attackerPosition + Vector3.up * 1.4f;
+            var targetPosition = intendedMember == null ? intendedTarget.transform.position : intendedMember.WorldPosition;
             var elapsed = 0f;
             while (elapsed < tuning.projectileSeconds && intendedTarget != null)
             {
                 elapsed += Time.deltaTime;
                 var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
-                var end = intendedTarget.transform.position + Vector3.up;
-                arrow.transform.position = Vector3.Lerp(start, end, t) + Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                if (intendedMember != null && intendedMember.IsAlive) targetPosition = intendedMember.WorldPosition;
+                var end = targetPosition + Vector3.up;
+                var nextPosition = Vector3.Lerp(start, end, t) + Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                FaceProjectile(arrow.transform, nextPosition);
+                arrow.transform.position = nextPosition;
                 yield return null;
             }
-            if (intendedTarget != null) intendedTarget.ApplyDeterministicHit(Type, memberPosition);
+            if (intendedTarget != null && intendedMember != null && intendedMember.IsAlive)
+            {
+                intendedMember.RecordProjectileImpact(targetPosition);
+                ProjectileHitsLanded++;
+                intendedTarget.ProjectileHitsReceived++;
+                intendedTarget.ApplyDeterministicHit(intendedMember, Type, attackerPosition);
+            }
             Destroy(arrow);
         }
 
@@ -678,18 +748,27 @@ namespace AshesOfRum
             return arrow;
         }
 
-        private GameObject CreateMember(int index)
+        private static void FaceProjectile(Transform projectile, Vector3 nextPosition)
+        {
+            var direction = nextPosition - projectile.position;
+            if (direction.sqrMagnitude > 0.0001f)
+                projectile.rotation = Quaternion.FromToRotation(Vector3.up, direction.normalized);
+        }
+
+        private FormationMemberAgent CreateMember(int index)
         {
             var member = GameObject.CreatePrimitive(Type == FormationType.Cavalry ? PrimitiveType.Cube : PrimitiveType.Capsule);
             member.name = $"{Type} Member {index + 1}";
             member.transform.SetParent(transform, false);
-            member.transform.localPosition = Slot(index);
+            member.transform.localPosition = FormationMemberRules.Slot(index);
             member.transform.localScale = Type == FormationType.Cavalry
                 ? new Vector3(0.8f, 1.1f, 1.25f)
                 : new Vector3(0.7f, 0.85f, 0.7f);
             var memberRenderer = member.GetComponent<Renderer>();
             AssignSupportedMaterial(memberRenderer, IsFriendly ? FriendlyColor : HostileColor);
             member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer);
+            var memberAgent = member.AddComponent<FormationMemberAgent>();
+            memberAgent.Initialize(this, index, tuning.memberHealth);
 
             var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
             marker.name = IsFriendly ? "Black Falcon Diamond" : "Living Flame Square";
@@ -709,7 +788,7 @@ namespace AshesOfRum
             Destroy(ring.GetComponent<Collider>());
             ring.AddComponent<FormationSelectionRing>();
             ring.SetActive(false);
-            return member;
+            return memberAgent;
         }
 
         private static void CreateFrontIndicator(Transform parent)
@@ -735,11 +814,62 @@ namespace AshesOfRum
 
         private void ReForm()
         {
-            for (var i = 0; i < members.Count; i++) members[i].transform.localPosition = Slot(i);
+            for (var i = 0; i < members.Count; i++) members[i].AssignSlot(i);
         }
 
-        private static Vector3 Slot(int index) =>
-            new((index % 4 - 1.5f) * 1.15f, 0.85f, -(index / 4) * 1.35f);
+        private void UpdateMemberMovement()
+        {
+            for (var i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                var destination = MemberSlotWorldPosition(member.SlotIndex);
+                Transform faceTarget = null;
+                if (target != null)
+                {
+                    var targetMember = target.SelectMemberTarget(member.WorldPosition,
+                        Type == FormationType.Archers ? i : 0);
+                    if (targetMember != null)
+                    {
+                        faceTarget = targetMember.transform;
+                        if (Type != FormationType.Archers)
+                        {
+                            var offset = member.WorldPosition - targetMember.WorldPosition;
+                            offset.y = 0f;
+                            if (offset.sqrMagnitude <= 0.01f) offset = -transform.forward;
+                            destination = targetMember.WorldPosition + offset.normalized * (AttackRange * 0.42f);
+                        }
+                    }
+                }
+                member.TickMovement(destination, MoveSpeed, members, faceTarget);
+            }
+        }
+
+        private void SynchronizeMembersForAnchorTeleport()
+        {
+            var anchorDelta = transform.position - lastAnchorPosition;
+            lastAnchorPosition = transform.position;
+            if (anchorDelta.sqrMagnitude <= 4f) return;
+            foreach (var member in members) member.TeleportBy(anchorDelta);
+        }
+
+        private FormationMemberAgent SelectMemberTarget(Vector3 attackerPosition, int offset)
+        {
+            if (members.Count == 0) return null;
+            var ordered = new List<FormationMemberAgent>(members);
+            ordered.Sort((left, right) =>
+            {
+                var distance = (left.WorldPosition - attackerPosition).sqrMagnitude
+                    .CompareTo((right.WorldPosition - attackerPosition).sqrMagnitude);
+                return distance != 0 ? distance : left.Identity.CompareTo(right.Identity);
+            });
+            return ordered[Mathf.Abs(offset) % ordered.Count];
+        }
+
+        private FormationMemberAgent SelectVolleyMember(int index) =>
+            members.Count == 0 ? null : members[Mathf.Abs(index) % members.Count];
+
+        internal Vector3 MemberSlotWorldPosition(int slotIndex) =>
+            transform.TransformPoint(FormationMemberRules.Slot(slotIndex));
 
         private static void AssignSupportedMaterial(Renderer itemRenderer, Color color)
         {
@@ -751,6 +881,159 @@ namespace AshesOfRum
         private static bool Approximately(Color actual, Color expected) =>
             Mathf.Abs(actual.r - expected.r) < 0.01f && Mathf.Abs(actual.g - expected.g) < 0.01f &&
             Mathf.Abs(actual.b - expected.b) < 0.01f && Mathf.Abs(actual.a - expected.a) < 0.01f;
+    }
+
+    public sealed class FormationMemberAgent : MonoBehaviour
+    {
+        private const float RepathSeconds = 0.18f;
+        private const float SlotTolerance = 0.08f;
+        private const float SeparationRadius = 0.85f;
+        private NavMeshPath path;
+        private FormationAgent owner;
+        private Vector3 worldPosition;
+        private Quaternion worldRotation;
+        private Vector3 pathDestination;
+        private float repathRemaining;
+        private int pathCorner;
+        private float attackRemaining;
+
+        public int Identity { get; private set; }
+        public int SlotIndex { get; private set; }
+        public int Health { get; private set; }
+        public bool IsAlive => owner != null && Health > 0;
+        public Vector3 WorldPosition => worldPosition;
+        public Vector3 AssignedSlotWorldPosition => owner == null ? worldPosition :
+            owner.MemberSlotWorldPosition(SlotIndex);
+        public bool CanAttack => attackRemaining <= 0f;
+        public int ProjectileImpactCount { get; private set; }
+        public Vector3 LastProjectileImpactPosition { get; private set; }
+
+        public void Initialize(FormationAgent formation, int identity, int health)
+        {
+            owner = formation;
+            path = new NavMeshPath();
+            Identity = identity;
+            SlotIndex = identity;
+            Health = health;
+            worldPosition = transform.position;
+            worldRotation = transform.rotation;
+            pathDestination = worldPosition;
+        }
+
+        public void AssignSlot(int slotIndex) => SlotIndex = slotIndex;
+
+        public void ApplyDamage(int damage, FlankDirection flank)
+        {
+            Health = Mathf.Max(0, Health - Mathf.Max(0, damage));
+            GetComponent<FormationMemberVisual>()?.ShowHit(flank);
+        }
+
+        public void DetachForDeath()
+        {
+            transform.SetParent(null, true);
+            transform.position = worldPosition;
+            owner = null;
+        }
+
+        public void TeleportBy(Vector3 displacement)
+        {
+            worldPosition += displacement;
+            pathDestination += displacement;
+            transform.position = worldPosition;
+            repathRemaining = 0f;
+        }
+
+        public void TickMovement(Vector3 desiredWorldPosition, float speed,
+            IReadOnlyList<FormationMemberAgent> formationMembers, Transform faceTarget)
+        {
+            if (!IsAlive) return;
+            attackRemaining -= Time.deltaTime;
+            transform.position = worldPosition;
+            transform.rotation = worldRotation;
+            desiredWorldPosition.y = worldPosition.y;
+            repathRemaining -= Time.deltaTime;
+            if (repathRemaining <= 0f || (pathDestination - desiredWorldPosition).sqrMagnitude > 0.16f)
+                RecalculatePath(desiredWorldPosition);
+
+            var toDestination = desiredWorldPosition - worldPosition;
+            toDestination.y = 0f;
+            var direction = PathDirection(toDestination);
+            var separation = Separation(formationMembers);
+            if (separation.sqrMagnitude > 0.01f) direction = (direction + separation * 0.7f).normalized;
+
+            if (toDestination.sqrMagnitude > SlotTolerance * SlotTolerance && direction.sqrMagnitude > 0.01f)
+            {
+                var catchup = Mathf.Clamp(toDestination.magnitude * 0.18f, 0f, speed * 0.3f);
+                worldPosition += direction * ((speed + catchup) * Time.deltaTime);
+                worldPosition.y = transform.parent == null ? worldPosition.y : transform.parent.position.y + 0.85f;
+                transform.position = worldPosition;
+            }
+
+            var facing = faceTarget == null ? direction : faceTarget.position - worldPosition;
+            facing.y = 0f;
+            if (facing.sqrMagnitude > 0.01f)
+                worldRotation = Quaternion.RotateTowards(worldRotation,
+                    Quaternion.LookRotation(facing.normalized), 540f * Time.deltaTime);
+            transform.rotation = worldRotation;
+        }
+
+        public void BeginAttackCooldown(float seconds) => attackRemaining = Mathf.Max(0f, seconds);
+
+        public void RecordProjectileImpact(Vector3 position)
+        {
+            ProjectileImpactCount++;
+            LastProjectileImpactPosition = position;
+        }
+
+        private void RecalculatePath(Vector3 destination)
+        {
+            repathRemaining = RepathSeconds + Identity * 0.007f;
+            pathDestination = destination;
+            pathCorner = 1;
+            var start = Grounded(worldPosition);
+            var end = Grounded(destination);
+            if (!NavMesh.SamplePosition(start, out var sampledStart, 0.8f, NavMesh.AllAreas) ||
+                !NavMesh.SamplePosition(end, out var sampledEnd, 0.8f, NavMesh.AllAreas) ||
+                !NavMesh.CalculatePath(sampledStart.position, sampledEnd.position, NavMesh.AllAreas, path))
+                path.ClearCorners();
+        }
+
+        private Vector3 PathDirection(Vector3 fallback)
+        {
+            if (path == null) return fallback.sqrMagnitude > 0.01f ? fallback.normalized : Vector3.zero;
+            var corners = path.corners;
+            if (corners == null || corners.Length == 0)
+                return fallback.sqrMagnitude > 0.01f ? fallback.normalized : Vector3.zero;
+            while (pathCorner < corners.Length &&
+                   (Grounded(corners[pathCorner]) - Grounded(worldPosition)).sqrMagnitude < 0.09f)
+                pathCorner++;
+            if (pathCorner >= corners.Length) return fallback.sqrMagnitude > 0.01f ? fallback.normalized : Vector3.zero;
+            var direction = Grounded(corners[pathCorner]) - Grounded(worldPosition);
+            return direction.sqrMagnitude > 0.01f ? direction.normalized : Vector3.zero;
+        }
+
+        private Vector3 Separation(IReadOnlyList<FormationMemberAgent> formationMembers)
+        {
+            var result = Vector3.zero;
+            foreach (var other in formationMembers)
+            {
+                if (other == null || other == this || !other.IsAlive) continue;
+                var away = worldPosition - other.worldPosition;
+                away.y = 0f;
+                var distance = away.magnitude;
+                if (distance >= SeparationRadius) continue;
+                if (distance <= 0.01f)
+                {
+                    var angle = (Identity + 1) * 137.5f * Mathf.Deg2Rad;
+                    away = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+                    distance = 0.01f;
+                }
+                result += away.normalized * ((SeparationRadius - distance) / SeparationRadius);
+            }
+            return result;
+        }
+
+        private static Vector3 Grounded(Vector3 position) => new(position.x, 0f, position.z);
     }
 
     public sealed class FormationSelectionRing : MonoBehaviour { }

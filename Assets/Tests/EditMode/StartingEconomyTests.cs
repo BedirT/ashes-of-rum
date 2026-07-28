@@ -7,6 +7,25 @@ namespace AshesOfRum.Tests
     public sealed class StartingEconomyTests
     {
         [Test]
+        public void FormationMemberSlots_PreserveFourWideTwoDeepOrderAndCloseRanks()
+        {
+            AssertSlot(0, -1.725f, 0f);
+            AssertSlot(3, 1.725f, 0f);
+            AssertSlot(4, -1.725f, -1.35f);
+            AssertSlot(7, 1.725f, -1.35f);
+            AssertSlot(6, 0.575f, -1.35f,
+                "Seven survivors must occupy the first seven compact slots without leaving a casualty gap.");
+        }
+
+        private static void AssertSlot(int index, float x, float z, string message = null)
+        {
+            var slot = FormationMemberRules.Slot(index);
+            Assert.That(slot.x, Is.EqualTo(x).Within(0.001f), message);
+            Assert.That(slot.y, Is.EqualTo(0.85f).Within(0.001f), message);
+            Assert.That(slot.z, Is.EqualTo(z).Within(0.001f), message);
+        }
+
+        [Test]
         public void HealthBarVisibility_SelectedHoveredAndRecentDamageAreIndependentTriggers()
         {
             var state = new HealthBarVisibilityState(3f);

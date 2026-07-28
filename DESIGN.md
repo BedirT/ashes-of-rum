@@ -198,9 +198,16 @@ other automatic or player-triggered special abilities.
 - Every produced formation contains eight visible members.
 - Every type uses the same fixed four-wide, two-deep grid.
 - The player selects and commands the formation as one object.
-- The formation uses shared anchor movement while visible members attack, take damage, and
-  disappear as casualties.
-- Survivors smoothly re-form into a compact front-to-back block.
+- Each visible soldier is an individual battlefield actor with its own position, movement path,
+  facing, health, attack target, hit feedback, and casualty state.
+- A formation order assigns member-level destinations around the shared formation anchor. Members
+  may separate to navigate around obstacles or one another, then naturally close back into the
+  fixed four-wide, two-deep block when space permits.
+- Projectiles visibly travel to their selected soldier rather than the formation center and damage
+  that soldier on arrival. Melee members engage individual reachable soldiers rather than applying
+  an abstract formation-center volley.
+- Individual soldiers remain non-selectable and receive no independent player commands.
+- Survivors smoothly re-form into a compact front-to-back block without teleporting.
 - Damaged formations cannot replace members or merge.
 - Cavalry moves clearly faster. Spearmen and Archers share one foot speed.
 

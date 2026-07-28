@@ -173,6 +173,10 @@ namespace AshesOfRum
             var rearAttackAdvantage = false;
             var frontlineBlockedAndReleased = false;
             var formationRallyDispatched = false;
+            var memberFlowObserved = false;
+            var memberProjectileHitObserved = false;
+            var memberCasualtyRegrouped = false;
+            FormationAgent memberProjectileSource = null;
             if (defensiveBuildingsCompleted && storehouseDropOffUsed)
             {
                 economy.CreditSuppliesForAutomation(400);
@@ -185,6 +189,7 @@ namespace AshesOfRum
                 {
                     economy.DeployEnemyForAutomation(FormationType.Spearmen, new Vector3(0f, 0f, 17f));
                     var friendly = economy.FriendlyFormations[0];
+                    memberProjectileSource = friendly;
                     formationRallyDispatched = friendly.CurrentOrder == FormationOrder.Move &&
                                                Vector3.Distance(friendly.Destination,
                                                    economy.HisarRallyPoint ?? Vector3.zero) < 0.1f;
@@ -196,18 +201,22 @@ namespace AshesOfRum
                     while (hostile.MemberCount == 8 && Time.realtimeSinceStartup < combatDeadline)
                         yield return null;
                     watchtowerFired = tower.ShotsFired > 0 && hostile.MemberCount < 8;
-                    hostile.ApplyDeterministicHit(FormationType.Spearmen);
+                    hostile.ApplyFixedDamage(1);
                     foreach (var visual in hostile.GetComponentsInChildren<FormationMemberVisual>())
                         nonlethalHitFeedback |= visual.IsShowingHitFeedback;
                     economy.IssueFocusForSmoke(friendly, hostile);
                 }
                 while (economy.EnemyFormations.Count > 0 && Time.realtimeSinceStartup < combatDeadline)
                 {
+                    memberProjectileHitObserved |= economy.EnemyFormations.Any(formation =>
+                        formation.ProjectileHitsReceived > 0);
                     var arrow = GameObject.Find("Arrow");
                     if (arrow != null)
                         supportedArrowMaterial |= FormationAgent.UsesSupportedMaterial(arrow.GetComponent<Renderer>());
                     yield return null;
                 }
+                memberProjectileHitObserved |= memberProjectileSource != null &&
+                                               memberProjectileSource.ProjectileHitsLanded > 0;
                 combatWon = economy.FriendlyFormations.Count == 1 && economy.EnemyFormations.Count == 0 &&
                             economy.FriendlyFormations[0].MemberCount >= 4;
             }
@@ -234,6 +243,9 @@ namespace AshesOfRum
 
                     economy.IssueMoveForSelected(new Vector3(0f, 0f, 8f));
                     yield return new WaitForSeconds(0.35f);
+                    memberFlowObserved = economy.SelectedFormations.SelectMany(formation => formation.Members)
+                        .Any(member => Vector3.Distance(member.WorldPosition,
+                            member.AssignedSlotWorldPosition) > 0.15f);
                     economy.StopSelectedFormations();
                     var stoppedPositions = economy.SelectedFormations
                         .Select(formation => formation.transform.position).ToArray();
@@ -285,10 +297,26 @@ namespace AshesOfRum
                         rearTarget.transform.rotation = Quaternion.identity;
                         var frontHealth = frontTarget.TotalMemberHealth;
                         var rearHealth = rearTarget.TotalMemberHealth;
-                        flanker.ExecuteAttackVolley(frontTarget);
-                        flanker.ExecuteAttackVolley(rearTarget);
+                        frontTarget.ApplyDeterministicHit(frontTarget.Members[0], FormationType.Cavalry,
+                            flanker.transform.position);
+                        rearTarget.ApplyDeterministicHit(rearTarget.Members[0], FormationType.Cavalry,
+                            flanker.transform.position);
                         rearAttackAdvantage = rearHealth - rearTarget.TotalMemberHealth >
                                               frontHealth - frontTarget.TotalMemberHealth;
+                        var casualty = frontTarget.Members[0];
+                        var survivor = frontTarget.Members[1];
+                        casualty.TeleportBy(Vector3.right * 2f);
+                        var survivorPosition = survivor.WorldPosition;
+                        frontTarget.ApplyDeterministicHit(casualty, FormationType.Archers,
+                            casualty.WorldPosition - Vector3.forward);
+                        var casualtyRemoved = !casualty.IsAlive;
+                        var regroupDistance = Vector3.Distance(survivor.WorldPosition,
+                            survivor.AssignedSlotWorldPosition);
+                        yield return new WaitForSeconds(0.5f);
+                        memberCasualtyRegrouped = casualtyRemoved && survivor.SlotIndex == 0 &&
+                            Vector3.Distance(survivorPosition, survivor.AssignedSlotWorldPosition) > 0.01f &&
+                            Vector3.Distance(survivor.WorldPosition, survivor.AssignedSlotWorldPosition) <
+                            regroupDistance;
                         while (frontTarget.MemberCount > 0) frontTarget.ApplyFixedDamage(frontTarget.MaximumMemberHealth);
                         while (rearTarget.MemberCount > 0) rearTarget.ApplyFixedDamage(rearTarget.MaximumMemberHealth);
 
@@ -528,6 +556,9 @@ namespace AshesOfRum
                     "Combat health bars cover both factions and expose Hisar damage",
                     "Rear formation attack gains a deterministic flank advantage",
                     "Opposing frontline blocks direct movement and releases laterally",
+                    "Formation soldiers move independently and close their assigned slots",
+                    "Arrows visibly resolve against individual soldiers",
+                    "A soldier casualty leaves survivors to regroup without teleporting",
                     "1920x1080 window configured",
                     "Graphical health-bar frame captured",
                     "Graphical frame captured"
@@ -575,7 +606,10 @@ namespace AshesOfRum
                     "Procedural gameplay audio and fog-aware under-attack ping are functional",
                     "Combat health bars cover both factions and expose Hisar damage",
                     "Rear formation attack gains a deterministic flank advantage",
-                    "Opposing frontline blocks direct movement and releases laterally"
+                    "Opposing frontline blocks direct movement and releases laterally",
+                    "Formation soldiers move independently and close their assigned slots",
+                    "Arrows visibly resolve against individual soldiers",
+                    "A soldier casualty leaves survivors to regroup without teleporting"
                 };
             var result = new SmokeResult
             {
@@ -627,12 +661,15 @@ namespace AshesOfRum
                 Require(combatHealthBarsProvisioned && enemyHisarHealthReadable, checks[39]);
                 Require(rearAttackAdvantage, checks[40]);
                 Require(frontlineBlockedAndReleased, checks[41]);
+                Require(memberFlowObserved, checks[42]);
+                Require(memberProjectileHitObserved, checks[43]);
+                Require(memberCasualtyRegrouped, checks[44]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[42]);
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[45]);
                     Require(HasContent(healthScreenshotPath),
-                        $"{checks[43]} within {ScreenshotTimeoutSeconds} seconds");
-                    Require(HasContent(screenshotPath), $"{checks[44]} within {ScreenshotTimeoutSeconds} seconds");
+                        $"{checks[46]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(HasContent(screenshotPath), $"{checks[47]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
