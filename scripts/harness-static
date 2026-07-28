@@ -40,6 +40,14 @@ while IFS= read -r directory; do
 done < <(git ls-files Assets | awk -F/ 'NF > 1 {path=$1; for (i=2; i<NF; i++) {path=path "/" $i; print path}}' | sort -u)
 (( missing == 0 )) || exit 1
 
+while IFS= read -r source; do
+  lines="$(wc -l < "$source" | tr -d ' ')"
+  if (( lines > 1000 )); then
+    printf 'Hand-authored C# file exceeds 1,000 lines: %s (%s)\n' "$source" "$lines" >&2
+    exit 1
+  fi
+done < <(git ls-files --cached --others --exclude-standard -- 'Assets/*.cs' 'Assets/**/*.cs')
+
 grep -F 'm_EditorVersion: 6000.5.5f1' ProjectSettings/ProjectVersion.txt >/dev/null
 grep -F 'Assets/Scenes/Bootstrap.unity' ProjectSettings/EditorBuildSettings.asset >/dev/null
 grep -F 'defaultScreenWidth: 1920' ProjectSettings/ProjectSettings.asset >/dev/null
