@@ -8,20 +8,20 @@ keeps trying as the formation moves, and returns to its exact slot once open gro
 
 ## Acceptance
 
-- [ ] A member whose ideal slot overlaps a live carved structure chooses a complete reachable path
+- [x] A member whose ideal slot overlaps a live carved structure chooses a complete reachable path
       to nearby walkable ground instead of stopping indefinitely.
-- [ ] The member considers the reachable projected point arrived rather than continually pursuing
+- [x] The member considers the reachable projected point arrived rather than continually pursuing
       the invalid point inside the obstacle.
-- [ ] All member movement remains constrained to the NavMesh and outside the structure footprint.
-- [ ] After the formation anchor moves clear of the structure, every survivor reforms into its
+- [x] All member movement remains constrained to the NavMesh and outside the structure footprint.
+- [x] After the formation anchor moves clear of the structure, every survivor reforms into its
       exact four-wide, two-deep slot without teleporting.
-- [ ] Existing individual obstacle detours, member targeting, casualties, formation commands, and
+- [x] Existing individual obstacle detours, member targeting, casualties, formation commands, and
       the complete match remain playable.
-- [ ] Focused PlayMode coverage reproduces the obstructed-slot stall and protects recovery.
-- [ ] The built macOS player exercises member navigation and the complete match path.
-- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
-- [ ] A context-free review covers the exact final HEAD.
-- [ ] The merged game remains playable at its current scope.
+- [x] Focused PlayMode coverage reproduces the obstructed-slot stall and protects recovery.
+- [x] The built macOS player exercises member navigation and the complete match path.
+- [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
+- [x] A context-free review covers the exact final HEAD.
+- [x] The merged game remains playable at its current scope.
 
 ## Non-Goals
 
@@ -42,5 +42,14 @@ tuning, siege knockback, animation, or changes to building placement rules.
 
 ## Evidence
 
-Record the PR, final reviewed HEAD, verification summary, review round, fixer count, merge result,
-and merged-main smoke result before closing the slice.
+- Gameplay PR: [#20](https://github.com/BedirT/rts-game/pull/20)
+- Final reviewed head: `278f160585a9fe78b11b8ced03732c36093ebc4d`
+- Verification: 26/26 EditMode tests, 79/79 PlayMode tests, native ARM64 development build,
+  46/46 headless smoke checks, and 49/49 graphical smoke checks passed at the final head.
+- Runtime proof: both smoke modes carved an ideal member slot, proved same-side reachable settling,
+  removed the obstruction, and proved exact regrouping; focused tests also covered cumulative slot
+  drift, swept obstacle safety, speed bounds, and separation-pressure progress.
+- Review: round 3 reported zero blocking findings after two fixer runs.
+- Merge: squash commit `e3148e2aa9c530d55a7e214b66cf8b8f98f0f063`
+- Merged-main proof: `make post-merge` passed at `e3148e2aa9c530d55a7e214b66cf8b8f98f0f063`;
+  SHA-keyed evidence is stored under `.artifacts/verification/e3148e2aa9c530d55a7e214b66cf8b8f98f0f063/`.

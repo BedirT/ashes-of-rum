@@ -18,7 +18,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | 007 - Maneuver and flank | Read formation facing, exploit fixed reorientation, and gain a modest deterministic side or rear damage advantage. |
 | Complete | 008 - Hold the frontline | Opposing formations halt direct movement through each other while leaving room to maneuver around a flank. |
 | Complete | 009 - Give soldiers battlefield presence | Command formations as one unit while individual soldiers path, fight, take hits, die, and regroup naturally. |
-| In Progress | 010 - Unblock formation slots | Soldiers settle at reachable positions when structures cover their ideal slots, then reform when space opens. |
+| Complete | 010 - Unblock formation slots | Soldiers settle at reachable positions when structures cover their ideal slots, then reform when space opens. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
