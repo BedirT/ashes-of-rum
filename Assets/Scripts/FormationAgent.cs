@@ -1107,11 +1107,20 @@ namespace AshesOfRum
         private bool TryResolveNavMeshStep(Vector3 steeredDirection, Vector3 pathDirection, float distance,
             out Vector3 nextPosition)
         {
-            if (TryNavMeshStep(steeredDirection, distance, out nextPosition)) return true;
-            if ((steeredDirection - pathDirection).sqrMagnitude > 0.001f &&
-                TryNavMeshStep(pathDirection, distance, out nextPosition)) return true;
+            var hasSeparationSteering = (steeredDirection - pathDirection).sqrMagnitude > 0.001f;
+            if (!hasSeparationSteering) return TryNavMeshStep(pathDirection, distance, out nextPosition);
+            if (TryNavMeshStep(steeredDirection, distance, out nextPosition) &&
+                IsForwardStep(nextPosition, steeredDirection, distance)) return true;
+            if (TryNavMeshStep(pathDirection, distance, out nextPosition)) return true;
             nextPosition = worldPosition;
             return false;
+        }
+
+        private bool IsForwardStep(Vector3 nextPosition, Vector3 direction, float distance)
+        {
+            var displacement = Grounded(nextPosition) - Grounded(worldPosition);
+            var minimumForwardDistance = Mathf.Min(0.01f, distance * 0.1f);
+            return Vector3.Dot(displacement, Grounded(direction).normalized) >= minimumForwardDistance;
         }
 
         private bool TryNavMeshStep(Vector3 direction, float distance, out Vector3 nextPosition)

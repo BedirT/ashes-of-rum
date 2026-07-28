@@ -1358,6 +1358,107 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator BunchedFormationMembers_KeepMovingAtObstacleEdgeAndRegroup()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 10f));
+            yield return null;
+
+            var edgeMember = formation.Members[0];
+            var trailingMembers = new[] { formation.Members[1], formation.Members[2] };
+            var blocker = CreateRouteBlocker("Bunched Member Route Blocker", new Vector3(-4.7f, 1f, 10f),
+                new Vector3(1.5f, 2f, 4f));
+            var blockerBounds = blocker.GetComponent<Collider>().bounds;
+            yield return new WaitForSeconds(1f);
+
+            Assert.That(NavMesh.SamplePosition(new Vector3(-5.55f, 0f, 10f), out var sampledEdgeStart,
+                1f, NavMesh.AllAreas), Is.True);
+            var edgeStart = new Vector3(sampledEdgeStart.position.x, edgeMember.WorldPosition.y,
+                sampledEdgeStart.position.z);
+            edgeMember.TeleportBy(edgeStart - edgeMember.WorldPosition);
+            for (var index = 0; index < trailingMembers.Length; index++)
+            {
+                var offset = new Vector3(-0.65f, 0f, index == 0 ? -0.08f : 0.08f);
+                Assert.That(NavMesh.SamplePosition(sampledEdgeStart.position + offset,
+                    out var sampledTrailingStart, 0.2f, NavMesh.AllAreas), Is.True);
+                var trailingStart = new Vector3(sampledTrailingStart.position.x,
+                    trailingMembers[index].WorldPosition.y, sampledTrailingStart.position.z);
+                trailingMembers[index].TeleportBy(trailingStart - trailingMembers[index].WorldPosition);
+                Assert.That(Vector3.Distance(edgeMember.WorldPosition, trailingMembers[index].WorldPosition),
+                    Is.LessThan(0.85f),
+                    "The regression requires bunched members close enough to apply separation steering.");
+            }
+
+            var previousEdgePosition = edgeMember.WorldPosition;
+            var forcedBunchDeadline = Time.realtimeSinceStartup + 0.75f;
+            while (Time.realtimeSinceStartup < forcedBunchDeadline)
+            {
+                yield return null;
+                AssertSweptSegmentOutsideBounds(previousEdgePosition, edgeMember.WorldPosition, blockerBounds);
+                previousEdgePosition = edgeMember.WorldPosition;
+                for (var index = 0; index < trailingMembers.Length; index++)
+                {
+                    var offset = new Vector3(-0.65f, 0f, index == 0 ? -0.08f : 0.08f);
+                    var desiredTrailing = new Vector3(edgeMember.WorldPosition.x + offset.x, 0f,
+                        edgeMember.WorldPosition.z + offset.z);
+                    Assert.That(NavMesh.SamplePosition(desiredTrailing, out var sampledTrailing,
+                        0.2f, NavMesh.AllAreas), Is.True);
+                    var pinnedPosition = new Vector3(sampledTrailing.position.x,
+                        trailingMembers[index].WorldPosition.y, sampledTrailing.position.z);
+                    trailingMembers[index].TeleportBy(pinnedPosition - trailingMembers[index].WorldPosition);
+                }
+            }
+            Assert.That(Vector3.Distance(edgeMember.WorldPosition, edgeStart), Is.GreaterThan(0.3f),
+                "A sustained inward separation force must not suppress progress along the authoritative path.");
+
+            var trackedMembers = new[] { edgeMember, trailingMembers[0], trailingMembers[1] };
+            var starts = trackedMembers.Select(member => member.WorldPosition).ToArray();
+            var previousPositions = trackedMembers.Select(member => member.WorldPosition).ToArray();
+            var greatestProgress = new float[trackedMembers.Length];
+            var deadline = Time.realtimeSinceStartup + 6f;
+            while (trackedMembers.Any(member =>
+                       Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition) > 0.45f) &&
+                   Time.realtimeSinceStartup < deadline)
+            {
+                for (var index = 0; index < trackedMembers.Length; index++)
+                {
+                    var member = trackedMembers[index];
+                    var position = member.WorldPosition;
+                    var frameDisplacement = Vector3.Distance(position, previousPositions[index]);
+                    var maximumFrameDisplacement = formation.MoveSpeed * 1.3f * Time.deltaTime + 0.025f;
+                    Assert.That(frameDisplacement, Is.LessThanOrEqualTo(maximumFrameDisplacement),
+                        $"A bunched member must remain speed bounded. " +
+                        $"Moved={frameDisplacement:0.000}, maximum={maximumFrameDisplacement:0.000}.");
+                    AssertSweptSegmentOutsideBounds(previousPositions[index], position, blockerBounds);
+                    var groundedPosition = new Vector3(position.x, 0f, position.z);
+                    Assert.That(NavMesh.SamplePosition(groundedPosition, out var walkable, 0.1f,
+                        NavMesh.AllAreas), Is.True,
+                        "Separation-steered members must remain on the NavMesh at an obstacle edge.");
+                    Assert.That(Vector3.Distance(groundedPosition, walkable.position), Is.LessThan(0.1f));
+                    greatestProgress[index] = Mathf.Max(greatestProgress[index],
+                        Vector3.Distance(position, starts[index]));
+                    previousPositions[index] = position;
+                }
+                yield return null;
+            }
+
+            Assert.That(greatestProgress[0], Is.GreaterThan(1f),
+                "An obstacle-edge member must not let a zero-progress separation step suppress its path step.");
+            Assert.That(greatestProgress[1], Is.GreaterThan(1f));
+            Assert.That(greatestProgress[2], Is.GreaterThan(1f),
+                "Nearby members must also make forward progress after the bunch releases.");
+            Assert.That(trackedMembers.All(member =>
+                    Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition) <= 0.45f), Is.True,
+                $"All bunched members must eventually regroup. " +
+                $"Edge={edgeMember.WorldPosition}/{edgeMember.AssignedSlotWorldPosition}, " +
+                $"trailing-a={trailingMembers[0].WorldPosition}/{trailingMembers[0].AssignedSlotWorldPosition}, " +
+                $"trailing-b={trailingMembers[1].WorldPosition}/{trailingMembers[1].AssignedSlotWorldPosition}.");
+            Object.Destroy(blocker);
+        }
+
+        [UnityTest]
         public IEnumerator FormationMember_UsesReachableFallbackWhenItsSlotIsInsideStructureFootprint()
         {
             yield return LoadEconomy();
