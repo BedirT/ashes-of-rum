@@ -1,8 +1,15 @@
-# Slice 011 - Restructure The Playable Prototype
+# Exceptional Refactor 011 - Restructure The Playable Prototype
 
 State: In Progress
 
-## Player-Visible Outcome
+## User-Approved Exception
+
+The user explicitly requested a complete codebase restructure that adopts Ponytail's
+maintainability guidance because existing files exceeded 2,000 lines. This work is an exceptional
+behavior-preserving architectural refactor under `AGENTS.md`, not a gameplay slice and not a
+precedent for agent-initiated horizontal work.
+
+## Preserved Player-Visible Paths
 
 The complete current match still launches and plays from economy through Hisar victory or defeat,
 with every control, formation-member behavior, AI phase, fog rule, restart, and quit path preserved.
@@ -36,3 +43,5 @@ would be slower and riskier to change without first making the already-shipped d
 - No new service layer, dependency-injection container, interface, factory, or package.
 - No renaming public gameplay types solely for architectural aesthetics.
 - No test deletion, assertion weakening, or shortened runtime proof.
+- No exemption from the full automated, build, runtime, PR, context-free review, merge, or
+  post-merge proof required by `AGENTS.md`.

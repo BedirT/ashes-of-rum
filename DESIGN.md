@@ -337,6 +337,11 @@ other automatic or player-triggered special abilities.
 - Keep the prototype composition root direct. Prefer partial files for one cohesive Unity
   component over introducing one-use interfaces, services, factories, or forwarding layers only
   to reduce a file's line count.
+- The user-approved codebase restructure is an exceptional behavior-preserving refactor, not a
+  gameplay slice. It may reorganize existing runtime and test code but may not disguise feature
+  work or alter gameplay, balance, tuning, UI, input, AI, art, audio, or package scope. It still
+  requires the full automated, build, runtime, review, merge, and post-merge proof required of a
+  gameplay slice.
 
 ## 16. Verification Contract
 
