@@ -51,8 +51,9 @@ would be slower and riskier to change without first making the already-shipped d
 - Implementation PR: [#22](https://github.com/BedirT/rts-game/pull/22).
 - Final reviewed implementation head: `6d39bc31d4cc36342c4933fbafa6b7e7369c184a`.
 - Squash merge on `main`: `74aae99795531a8d45d62ed908a3b47f67be05f9`.
-- Review rounds: three. Round 1 recorded the exceptional-refactor contract, round 2 fixed the
-  no-trailing-newline line-count boundary, and round 3 reported zero blocking findings.
+- Review rounds: three. Round 1 identified the missing exceptional-refactor contract and fixer
+  run 1 recorded it; round 2 identified the no-trailing-newline line-count defect and fixer run 2
+  corrected it; round 3 reported zero blocking findings.
 - Fixer runs: two, both with exact-head verification and PR-posted evidence.
 - Final branch verification: `make verify` passed with 26 EditMode tests, 79 PlayMode tests, a
   macOS Apple-silicon Development build, built-player headless smoke, graphical 1920x1080 smoke,
