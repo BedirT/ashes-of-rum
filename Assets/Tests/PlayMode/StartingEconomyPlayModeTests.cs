@@ -1350,6 +1350,57 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator FormationMember_UsesReachableFallbackWhenItsSlotIsInsideStructureFootprint()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 10f));
+            yield return null;
+
+            var member = formation.Members[0];
+            var blockedSlot = member.AssignedSlotWorldPosition;
+            var blocker = CreateRouteBlocker("Blocked Formation Slot",
+                new Vector3(blockedSlot.x, 1f, blockedSlot.z), new Vector3(3f, 2f, 3f));
+            var blockerBounds = blocker.GetComponent<Collider>().bounds;
+            yield return new WaitForSeconds(1f);
+
+            member.TeleportBy(Vector3.left * 5f);
+            var displacedPosition = member.WorldPosition;
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while ((Vector3.Distance(member.WorldPosition, member.NavigationDestination) > 0.45f ||
+                    Vector3.Distance(member.WorldPosition, displacedPosition) < 2.5f) &&
+                   Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            Assert.That(Vector3.Distance(member.WorldPosition, displacedPosition), Is.GreaterThan(2.5f),
+                "A member must not freeze when its exact slot is carved out of the NavMesh.");
+            Assert.That(Vector3.Distance(member.NavigationDestination, blockedSlot), Is.LessThanOrEqualTo(3.05f),
+                "The fallback destination must stay near the obstructed formation slot.");
+            Assert.That(Vector3.Distance(member.WorldPosition, member.NavigationDestination),
+                Is.LessThanOrEqualTo(0.45f),
+                $"The member must consider the projected reachable destination arrived. " +
+                $"Position={member.WorldPosition}, navigation={member.NavigationDestination}, slot={blockedSlot}.");
+            Assert.That(blockerBounds.Contains(new Vector3(member.WorldPosition.x,
+                blockerBounds.center.y, member.WorldPosition.z)), Is.False);
+            Assert.That(NavMesh.SamplePosition(new Vector3(member.WorldPosition.x, 0f, member.WorldPosition.z),
+                out var walkable, 0.1f, NavMesh.AllAreas), Is.True);
+            Assert.That(Vector3.Distance(new Vector3(member.WorldPosition.x, 0f, member.WorldPosition.z),
+                walkable.position), Is.LessThan(0.1f));
+
+            Object.Destroy(blocker);
+            yield return new WaitForSeconds(1f);
+            deadline = Time.realtimeSinceStartup + 5f;
+            while (Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition) > 0.45f &&
+                   Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            Assert.That(Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition),
+                Is.LessThanOrEqualTo(0.45f),
+                "The member must reclaim its exact slot after the structure obstruction clears.");
+        }
+
+        [UnityTest]
         public IEnumerator MemberCasualty_DiesAtItsPositionAndSurvivorsCloseRanksSmoothly()
         {
             var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
