@@ -67,6 +67,7 @@ namespace AshesOfRum
         public string action;
         public string[] actorIds;
         public string targetId;
+        public string buildingType;
         public float x;
         public float z;
         public string condition;
@@ -116,6 +117,19 @@ namespace AshesOfRum
     }
 
     [Serializable]
+    public sealed class AgentBuildingState
+    {
+        public string id;
+        public string type;
+        public bool complete;
+        public int health;
+        public int maxHealth;
+        public float progress;
+        public string[] assignedBuilderIds;
+        public AgentVector3 position;
+    }
+
+    [Serializable]
     public sealed class AgentCameraState
     {
         public AgentVector3 position;
@@ -139,6 +153,7 @@ namespace AshesOfRum
         public string economyNotification;
         public AgentWorkerState[] workers;
         public AgentCacheState[] visibleCaches;
+        public AgentBuildingState[] buildings;
         public AgentCameraState camera;
         public string stateHash;
     }
@@ -194,8 +209,10 @@ namespace AshesOfRum
         private readonly string buildSha;
         private readonly Dictionary<WorkerAgent, string> workerIds = new();
         private readonly Dictionary<ResourceCache, string> cacheIds = new();
+        private readonly Dictionary<ConstructibleBuilding, string> buildingIds = new();
         private int nextWorkerId = 1;
         private int nextCacheId = 1;
+        private int nextBuildingId = 1;
 
         public AgentStateProjector(StartingEconomyController economyController, string verifiedBuildSha = "test")
         {
@@ -236,6 +253,9 @@ namespace AshesOfRum
                     .OrderBy(worker => workerIds[worker], StringComparer.Ordinal)
                     .Select(ProjectWorker).ToArray(),
                 visibleCaches = visibleCaches,
+                buildings = FriendlyBuildings()
+                    .OrderBy(building => buildingIds[building], StringComparer.Ordinal)
+                    .Select(ProjectBuilding).ToArray(),
                 camera = ProjectCamera(Camera.main),
                 stateHash = string.Empty
             };
@@ -262,6 +282,13 @@ namespace AshesOfRum
             return true;
         }
 
+        public bool TryResolveBuilding(string id, out ConstructibleBuilding building)
+        {
+            SynchronizeIds();
+            building = buildingIds.FirstOrDefault(pair => pair.Value == id).Key;
+            return building != null && !building.IsDestroyed && FriendlyBuildings().Contains(building);
+        }
+
         private AgentWorkerState ProjectWorker(WorkerAgent worker)
         {
             var targetId = worker.TargetCache != null && cacheIds.TryGetValue(worker.TargetCache, out var id) &&
@@ -282,6 +309,28 @@ namespace AshesOfRum
             };
         }
 
+        private AgentBuildingState ProjectBuilding(ConstructibleBuilding building) => new()
+        {
+            id = buildingIds[building],
+            type = building.Type.ToString(),
+            complete = building.IsComplete,
+            health = building.Health,
+            maxHealth = building.MaxHealth,
+            progress = Mathf.Round(building.Progress * 1000f) / 1000f,
+            assignedBuilderIds = economy.Workers
+                .Where(worker => worker != null && ReferenceEquals(worker.CurrentConstruction, building))
+                .Select(worker => workerIds[worker])
+                .OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+            position = AgentVector3.From(building.transform.position)
+        };
+
+        private IEnumerable<ConstructibleBuilding> FriendlyBuildings() =>
+            economy.Houses.Cast<ConstructibleBuilding>()
+                .Concat(economy.Storehouses)
+                .Concat(economy.Watchtowers)
+                .Where(building => building != null && !building.IsDestroyed)
+                .Distinct();
+
         private void SynchronizeIds()
         {
             foreach (var worker in economy.Workers.Where(worker => worker != null)
@@ -291,6 +340,8 @@ namespace AshesOfRum
                 .OrderBy(cache => cache.name, StringComparer.Ordinal);
             foreach (var cache in caches)
                 if (!cacheIds.ContainsKey(cache)) cacheIds.Add(cache, $"cache-{nextCacheId++}");
+            foreach (var building in FriendlyBuildings().OrderBy(building => building.name, StringComparer.Ordinal))
+                if (!buildingIds.ContainsKey(building)) buildingIds.Add(building, $"building-{nextBuildingId++}");
         }
 
         private static AgentCameraState ProjectCamera(Camera camera) => camera == null ? null : new AgentCameraState
@@ -330,6 +381,14 @@ namespace AshesOfRum
                         return false;
                     }
                     return economy.TryIssueGatherCommand(cache, out rejectionCode);
+                case "build":
+                    if (!string.Equals(step.buildingType, BuildingType.House.ToString(), StringComparison.Ordinal))
+                    {
+                        rejectionCode = "unsupported_building";
+                        return false;
+                    }
+                    return economy.TryIssueBuildCommand(BuildingType.House,
+                        new Vector3(step.x, 0f, step.z), out rejectionCode);
                 default:
                     rejectionCode = "unsupported_action";
                     return false;

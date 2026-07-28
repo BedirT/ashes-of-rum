@@ -170,6 +170,8 @@ namespace AshesOfRum
                 case "worker_idle":
                     return projector.TryResolveWorker(step.targetId, out var worker) &&
                            worker.CurrentActivity == WorkerAgent.Activity.Idle;
+                case "building_complete":
+                    return projector.TryResolveBuilding(step.targetId, out var building) && building.IsComplete;
                 default:
                     return false;
             }

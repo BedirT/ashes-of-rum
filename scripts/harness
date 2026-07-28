@@ -19,6 +19,12 @@ AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-graphical"
 AGENT_HEADLESS_RESULT="$AGENT_HEADLESS_DIR/result.json"
 AGENT_GRAPHICAL_RESULT="$AGENT_GRAPHICAL_DIR/result.json"
 AGENT_GRAPHICAL_SCREENSHOT="$AGENT_GRAPHICAL_DIR/gather-deposit.png"
+HOUSE_AGENT_SCRIPT="$ROOT/scripts/fixtures/agent-house-construction.json"
+HOUSE_AGENT_HEADLESS_DIR="$EVIDENCE/agent-house-headless"
+HOUSE_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-house-graphical"
+HOUSE_AGENT_HEADLESS_RESULT="$HOUSE_AGENT_HEADLESS_DIR/result.json"
+HOUSE_AGENT_GRAPHICAL_RESULT="$HOUSE_AGENT_GRAPHICAL_DIR/result.json"
+HOUSE_AGENT_GRAPHICAL_SCREENSHOT="$HOUSE_AGENT_GRAPHICAL_DIR/house-complete.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -289,6 +295,27 @@ graphical_smoke() {
   say "Graphical 1920x1080 smoke passed."
 }
 
+validate_agent_screenshot() {
+  local manifest="$1"
+  local screenshot="$2"
+  local graphical="$3"
+  if [[ "$graphical" == "true" ]]; then
+    [[ -s "$screenshot" ]] || fail "Agent graphical checkpoint was not created: $screenshot"
+    local dimensions expected_hash
+    dimensions="$(sips -g pixelWidth -g pixelHeight "$screenshot" 2>/dev/null)"
+    [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
+      || fail "Agent checkpoint is not 1920x1080: $dimensions"
+    expected_hash="$(shasum -a 256 "$screenshot" | awk '{print $1}')"
+    jq -e --arg path "$screenshot" --arg hash "$expected_hash" \
+      '.width == 1920 and .height == 1080 and .screenshotPath == $path and
+       .screenshotSha256 == $hash' "$manifest" >/dev/null \
+      || fail "Agent screenshot manifest does not match the captured PNG"
+  else
+    jq -e '.width == 0 and .height == 0 and .screenshotPath == "" and .screenshotSha256 == ""' \
+      "$manifest" >/dev/null || fail "Headless agent manifest unexpectedly claims a rendered frame"
+  fi
+}
+
 validate_agent_session() {
   local directory="$1"
   local result="$2"
@@ -318,21 +345,43 @@ validate_agent_session() {
     "$manifest" >/dev/null \
     || fail "Agent checkpoint manifest contract failed: $manifest"
   validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
-  if [[ "$graphical" == "true" ]]; then
-    [[ -s "$AGENT_GRAPHICAL_SCREENSHOT" ]] || fail "Agent graphical checkpoint was not created"
-    local dimensions expected_hash
-    dimensions="$(sips -g pixelWidth -g pixelHeight "$AGENT_GRAPHICAL_SCREENSHOT" 2>/dev/null)"
-    [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
-      || fail "Agent checkpoint is not 1920x1080: $dimensions"
-    expected_hash="$(shasum -a 256 "$AGENT_GRAPHICAL_SCREENSHOT" | awk '{print $1}')"
-    jq -e --arg path "$AGENT_GRAPHICAL_SCREENSHOT" --arg hash "$expected_hash" \
-      '.width == 1920 and .height == 1080 and .screenshotPath == $path and
-       .screenshotSha256 == $hash' "$manifest" >/dev/null \
-      || fail "Agent screenshot manifest does not match the captured PNG"
-  else
-    jq -e '.width == 0 and .height == 0 and .screenshotPath == "" and .screenshotSha256 == ""' \
-      "$manifest" >/dev/null || fail "Headless agent manifest unexpectedly claims a rendered frame"
-  fi
+  validate_agent_screenshot "$manifest" "$AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
+}
+
+validate_house_agent_session() {
+  local directory="$1"
+  local result="$2"
+  local graphical="$3"
+  local output="$directory/responses.jsonl"
+  local manifest="$directory/house-complete-frame.json"
+  local state="$directory/house-complete-state.json"
+  validate_json "$result"
+  jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
+    .scenario == "house-construction-completion" and .completedSteps == 6 and
+    (.checkpointManifests | length) == 1' "$result" >/dev/null \
+    || fail "House agent session result contract failed: $result"
+  [[ -s "$output" ]] || fail "House agent response trace missing: $output"
+  jq -se --arg sha "$SHA" 'length == 6 and all(.[]; .schemaVersion == 1 and .accepted == true and
+    .state.buildSha == $sha and .state.perspective == "player" and
+    (.state.workers | length) == 4 and (.state.stateHash | length) == 64) and
+    .[0].state.supplies == .[0].state.startingSupplies and .[0].state.populationCapacity == 12 and
+    (.[0].state.buildings | length) == 0 and .[1].state.workers[0].selected == true and
+    .[2].state.supplies == 0 and .[2].state.populationCapacity == 12 and
+    .[2].state.buildings == [{id:"building-1", type:"House", complete:false, health:100,
+      maxHealth:100, progress:0, assignedBuilderIds:["worker-1"], position:{x:8,y:0,z:-1}}] and
+    .[3].state.populationCapacity == 20 and .[3].state.buildings[0].complete == true and
+    .[3].state.buildings[0].progress == 1 and .[4].state.supplies == 0 and
+    .[4].state.populationCapacity == 20 and .[4].state.buildings[0].complete == true and
+    .[4].state.buildings[0].progress == 1' "$output" >/dev/null \
+    || fail "House agent response trace contract failed: $output"
+  validate_json "$manifest"
+  validate_json "$state"
+  jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
+    .checkpoint == "house-complete" and .statePath == $state and (.stateHash | length) == 64' \
+    "$manifest" >/dev/null \
+    || fail "House agent checkpoint manifest contract failed: $manifest"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
+  validate_agent_screenshot "$manifest" "$HOUSE_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
 }
 
 agent_smoke() {
@@ -377,6 +426,48 @@ agent_graphical_smoke() {
   say "Graphical code-playable starting economy passed."
 }
 
+house_agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$HOUSE_AGENT_HEADLESS_DIR"
+  mkdir -p "$HOUSE_AGENT_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$HOUSE_AGENT_HEADLESS_DIR/player.log" \
+    --agent-script "$HOUSE_AGENT_SCRIPT" \
+    --agent-output "$HOUSE_AGENT_HEADLESS_DIR/responses.jsonl" \
+    --agent-result "$HOUSE_AGENT_HEADLESS_RESULT" \
+    --agent-artifacts "$HOUSE_AGENT_HEADLESS_DIR" \
+    --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Headless House agent session"
+  validate_house_agent_session "$HOUSE_AGENT_HEADLESS_DIR" "$HOUSE_AGENT_HEADLESS_RESULT" false
+  grep -F 'AGENT_SESSION:PASS' "$HOUSE_AGENT_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless House agent pass marker missing"
+  scan_log "$HOUSE_AGENT_HEADLESS_DIR/player.log"
+  say "Headless code-playable House construction passed."
+}
+
+house_agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$HOUSE_AGENT_GRAPHICAL_DIR"
+  mkdir -p "$HOUSE_AGENT_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$HOUSE_AGENT_GRAPHICAL_DIR/player.log" \
+    --agent-script "$HOUSE_AGENT_SCRIPT" \
+    --agent-output "$HOUSE_AGENT_GRAPHICAL_DIR/responses.jsonl" \
+    --agent-result "$HOUSE_AGENT_GRAPHICAL_RESULT" \
+    --agent-artifacts "$HOUSE_AGENT_GRAPHICAL_DIR" \
+    --agent-build-sha "$SHA" \
+    --agent-screenshot "$HOUSE_AGENT_GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical House agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_house_agent_session "$HOUSE_AGENT_GRAPHICAL_DIR" "$HOUSE_AGENT_GRAPHICAL_RESULT" true
+  grep -F 'AGENT_SESSION:PASS' "$HOUSE_AGENT_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical House agent pass marker missing"
+  scan_log "$HOUSE_AGENT_GRAPHICAL_DIR/player.log"
+  say "Graphical code-playable House construction passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -389,7 +480,8 @@ write_summary() {
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
       headlessSmoke: "passed", graphicalSmoke: "passed",
-      agentHeadless: "passed", agentGraphical: "passed"}' \
+      agentHeadless: "passed", agentGraphical: "passed",
+      houseAgentHeadless: "passed", houseAgentGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -416,6 +508,8 @@ verify() {
   graphical_smoke
   agent_smoke
   agent_graphical_smoke
+  house_agent_smoke
+  house_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -494,6 +588,8 @@ case "${1:-}" in
   graphical-smoke) graphical_smoke ;;
   agent-smoke) agent_smoke ;;
   agent-graphical-smoke) agent_graphical_smoke ;;
+  house-agent-smoke) house_agent_smoke ;;
+  house-agent-graphical-smoke) house_agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -501,5 +597,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

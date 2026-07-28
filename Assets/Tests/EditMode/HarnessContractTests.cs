@@ -39,6 +39,25 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void HouseAgentScript_UsesRealBuildAndCompletionSteps()
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "scripts", "fixtures",
+                "agent-house-construction.json"));
+
+            var script = AgentProtocol.LoadScript(path);
+
+            Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
+            Assert.That(script.scenario, Is.EqualTo("house-construction-completion"));
+            Assert.That(script.steps, Has.Length.EqualTo(6));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "build" && step.buildingType == "House"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "building_complete"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+        }
+
+        [Test]
         public void AgentHash_IsStableAndUsesSha256()
         {
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"),
