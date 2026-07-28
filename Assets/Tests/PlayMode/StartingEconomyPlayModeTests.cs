@@ -251,6 +251,133 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator AgentBuildCommand_PlacesCompletesAndProjectsHouseWithoutHiddenBuildings()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var projector = new AgentStateProjector(economy);
+            var executor = new AgentCommandExecutor(economy, projector);
+            var build = new AgentScriptStep
+            {
+                action = "build",
+                buildingType = "House",
+                x = VisibleHouseSite.x,
+                z = VisibleHouseSite.z
+            };
+
+            var initial = projector.Project(1);
+            Assert.That(initial.buildings, Is.Empty,
+                "Player state must not expose the opponent's starting construction.");
+            Assert.That(executor.Execute(build, out var rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("no_selection"));
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select",
+                actorIds = new[] { "worker-1" }
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "build",
+                buildingType = "Storehouse",
+                x = VisibleHouseSite.x,
+                z = VisibleHouseSite.z
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unsupported_building"));
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "build",
+                buildingType = "House",
+                x = 0f,
+                z = 20f
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("target_not_visible"));
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+
+            Assert.That(executor.Execute(build, out rejection), Is.True, rejection);
+            Assert.That(economy.Supplies, Is.Zero);
+            var foundation = projector.Project(2);
+            Assert.That(foundation.buildings, Has.Length.EqualTo(1));
+            Assert.That(foundation.buildings[0].id, Is.EqualTo("building-1"));
+            Assert.That(foundation.buildings[0].type, Is.EqualTo("House"));
+            Assert.That(foundation.buildings[0].complete, Is.False);
+            Assert.That(foundation.buildings[0].assignedBuilderIds, Is.EqualTo(new[] { "worker-1" }));
+            Assert.That(projector.TryResolveBuilding("building-1", out var building), Is.True);
+            Assert.That(building, Is.SameAs(economy.Houses[0]));
+
+            Assert.That(executor.Execute(build, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("actors_busy"));
+            yield return WaitUntil(() => economy.Houses[0].IsComplete);
+
+            var completed = projector.Project(3);
+            Assert.That(completed.supplies, Is.Zero);
+            Assert.That(completed.populationCapacity, Is.EqualTo(20));
+            Assert.That(completed.buildings[0].complete, Is.True);
+            Assert.That(completed.buildings[0].progress, Is.EqualTo(1f));
+            Assert.That(completed.buildings[0].assignedBuilderIds, Is.Empty);
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select",
+                actorIds = new[] { "worker-2" }
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "build",
+                buildingType = "House",
+                x = 4f,
+                z = -1f
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("insufficient_supplies"));
+            Assert.That(economy.Houses, Has.Count.EqualTo(1));
+        }
+
+        [UnityTest]
+        public IEnumerator AgentBuildCommand_ReportsStablePlacementRejectionsWithoutSpending()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.TrySelectWorkersForCommand(new[] { economy.Workers[0] }, out var rejection),
+                Is.True, rejection);
+
+            Assert.That(economy.TryIssueBuildCommand(BuildingType.House,
+                new Vector3(100f, 0f, 100f), out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("invalid_position"));
+            Assert.That(economy.TryIssueBuildCommand(BuildingType.House,
+                economy.Caches[0].transform.position, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("occupied"));
+
+            var unreachableSite = VisibleHouseSite;
+            var buildPointBlocker = CreateRouteBlocker("Builder destination blocker",
+                unreachableSite + new Vector3(0f, 1f, -2.5f), new Vector3(0.8f, 2f, 0.8f));
+            yield return new WaitForSeconds(1f);
+            Assert.That(economy.Workers[0].CanReach(unreachableSite + Vector3.back * 2.4f), Is.False);
+            Assert.That(economy.TryIssueBuildCommand(BuildingType.House, unreachableSite, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unreachable"));
+            Object.Destroy(buildPointBlocker);
+            yield return new WaitForSeconds(1f);
+
+            var leftBlocker = CreateRouteBlocker("Agent left route blocker",
+                new Vector3(-13.6f, 1f, 10f), new Vector3(22.8f, 2f, 4f));
+            var rightBlocker = CreateRouteBlocker("Agent right route blocker",
+                new Vector3(13.6f, 1f, 10f), new Vector3(22.8f, 2f, 4f));
+            var scout = new GameObject("Agent route placement scout");
+            scout.transform.position = new Vector3(0f, 0f, 10f);
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            yield return new WaitForSeconds(1f);
+            economy.FogOfWar.RefreshNow();
+            Assert.That(economy.TryIssueBuildCommand(BuildingType.House,
+                new Vector3(0f, 0f, 10f), out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("route_blocked"));
+
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.Houses, Is.Empty);
+            Object.Destroy(leftBlocker);
+            Object.Destroy(rightBlocker);
+            Object.Destroy(scout);
+        }
+
+        [UnityTest]
         public IEnumerator MirroredHisars_UseEqualCacheToDropOffDistances()
         {
             yield return LoadEconomy();

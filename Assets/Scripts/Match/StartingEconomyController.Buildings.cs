@@ -27,39 +27,50 @@ namespace AshesOfRum
             CancelConstruction(worker);
         }
 
-        private bool CanPlaceBuilding(WorkerAgent worker, Vector3 position, out string reason)
+        private bool CanPlaceBuilding(WorkerAgent worker, Vector3 position, out string reason) =>
+            CanPlaceBuilding(worker, position, out _, out reason);
+
+        private bool CanPlaceBuilding(WorkerAgent worker, Vector3 position, out string rejectionCode,
+            out string reason)
         {
             if (worker.CurrentConstruction != null)
             {
+                rejectionCode = "actors_busy";
                 reason = "Invalid - worker is already constructing";
                 return false;
             }
             if (!HousePlacementRules.IsInsidePlayableBounds(position))
             {
+                rejectionCode = "invalid_position";
                 reason = "Invalid - outside buildable ground";
                 return false;
             }
             if (!IsCurrentlyVisible(position))
             {
+                rejectionCode = "target_not_visible";
                 reason = "Invalid - terrain is not currently visible";
                 return false;
             }
             var overlaps = Physics.OverlapBox(position + Vector3.up, new Vector3(2f, 0.9f, 2f));
             if (overlaps.Any(item => item.gameObject.name != "Bootstrap Ground"))
             {
+                rejectionCode = "occupied";
                 reason = "Invalid - position occupied";
                 return false;
             }
             if (!worker.CanReach(position + Vector3.back * 2.4f))
             {
+                rejectionCode = "unreachable";
                 reason = "Invalid - worker cannot reach";
                 return false;
             }
             if (!PreservesNavMeshRoute(position))
             {
+                rejectionCode = "route_blocked";
                 reason = "Invalid - must preserve a route";
                 return false;
             }
+            rejectionCode = null;
             reason = null;
             return true;
         }

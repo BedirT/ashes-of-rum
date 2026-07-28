@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "scenario": "house-construction-completion",
+  "steps": [
+    {
+      "id": "observe-initial",
+      "action": "observe"
+    },
+    {
+      "id": "select-builder",
+      "action": "select",
+      "actorIds": ["worker-1"]
+    },
+    {
+      "id": "place-house",
+      "action": "build",
+      "buildingType": "House",
+      "x": 8.0,
+      "z": -1.0
+    },
+    {
+      "id": "wait-for-house",
+      "action": "wait",
+      "condition": "building_complete",
+      "targetId": "building-1",
+      "timeoutSeconds": 20
+    },
+    {
+      "id": "capture-house",
+      "action": "capture",
+      "checkpoint": "house-complete"
+    },
+    {
+      "id": "quit-session",
+      "action": "quit"
+    }
+  ]
+}

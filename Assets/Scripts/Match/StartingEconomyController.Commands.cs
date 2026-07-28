@@ -77,6 +77,20 @@ namespace AshesOfRum
             return true;
         }
 
+        public bool TryIssueBuildCommand(BuildingType type, Vector3 position, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (selectedWorkers.Count == 0)
+                return RejectCommand("no_selection", "Select a Worker first", out rejectionCode);
+            if (type is not BuildingType.House and not BuildingType.Storehouse and not BuildingType.Watchtower)
+                return RejectCommand("unsupported_building", "Building type is unavailable", out rejectionCode);
+            var worker = selectedWorkers.FirstOrDefault(candidate => candidate.CurrentConstruction == null);
+            if (worker == null)
+                return RejectCommand("actors_busy", "Selected Workers are already constructing", out rejectionCode);
+            return TryPlaceBuilding(worker, type, position, out rejectionCode);
+        }
+
         private void IssueGatherForSelected(ResourceCache cache, IEnumerable<WorkerAgent> availableWorkers)
         {
             foreach (var worker in availableWorkers) worker.IssueGather(cache);

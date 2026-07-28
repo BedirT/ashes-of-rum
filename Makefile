@@ -1,4 +1,4 @@
-.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke agent-smoke agent-graphical-smoke pr-ready post-merge static
+.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke agent-smoke agent-graphical-smoke house-agent-smoke house-agent-graphical-smoke pr-ready post-merge static
 
 doctor:
 	@./scripts/harness doctor
@@ -23,6 +23,12 @@ agent-smoke:
 
 agent-graphical-smoke:
 	@./scripts/harness agent-graphical-smoke
+
+house-agent-smoke:
+	@./scripts/harness house-agent-smoke
+
+house-agent-graphical-smoke:
+	@./scripts/harness house-agent-graphical-smoke
 
 pr-ready:
 	@./scripts/harness pr-ready

@@ -452,11 +452,25 @@ namespace AshesOfRum
             return building.Demolish();
         }
 
-        private bool TryPlaceBuilding(WorkerAgent worker, BuildingType type, Vector3 position)
+        private bool TryPlaceBuilding(WorkerAgent worker, BuildingType type, Vector3 position) =>
+            TryPlaceBuilding(worker, type, position, out _);
+
+        private bool TryPlaceBuilding(WorkerAgent worker, BuildingType type, Vector3 position,
+            out string rejectionCode)
         {
-            if (worker == null) return false;
+            if (worker == null)
+            {
+                rejectionCode = "invalid_actor";
+                return false;
+            }
+            if (!IsFinite(position))
+            {
+                rejectionCode = "invalid_position";
+                SetOrderFeedback("Invalid - outside buildable ground");
+                return false;
+            }
             var snapped = HousePlacementRules.Snap(position);
-            if (!CanPlaceBuilding(worker, snapped, out var reason))
+            if (!CanPlaceBuilding(worker, snapped, out rejectionCode, out var reason))
             {
                 SetOrderFeedback(reason);
                 return false;
@@ -464,6 +478,7 @@ namespace AshesOfRum
             var cost = BuildingCost(type);
             if (!wallet.TrySpend(cost))
             {
+                rejectionCode = "insufficient_supplies";
                 SetOrderFeedback($"Need {cost} Supplies");
                 return false;
             }
@@ -476,6 +491,7 @@ namespace AshesOfRum
             else watchtowers.Add(building);
             worker.IssueConstruct(building, CompleteBuilding);
             SetOrderFeedback($"{type} placed - {cost} Supplies spent");
+            rejectionCode = null;
             return true;
         }
 
