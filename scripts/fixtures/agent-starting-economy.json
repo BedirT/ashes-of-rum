@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "scenario": "starting-economy-gather-deposit",
+  "steps": [
+    {
+      "id": "observe-initial",
+      "action": "observe"
+    },
+    {
+      "id": "select-worker",
+      "action": "select",
+      "actorIds": ["worker-1"]
+    },
+    {
+      "id": "move-worker",
+      "action": "move",
+      "x": -3.5,
+      "z": -2.0
+    },
+    {
+      "id": "wait-for-move",
+      "action": "wait",
+      "condition": "worker_idle",
+      "targetId": "worker-1",
+      "timeoutSeconds": 10
+    },
+    {
+      "id": "gather-supplies",
+      "action": "gather",
+      "targetId": "cache-1"
+    },
+    {
+      "id": "wait-for-deposit",
+      "action": "wait",
+      "condition": "supplies_greater_than",
+      "value": 100,
+      "timeoutSeconds": 30
+    },
+    {
+      "id": "capture-deposit",
+      "action": "capture",
+      "checkpoint": "gather-deposit"
+    },
+    {
+      "id": "quit-session",
+      "action": "quit"
+    }
+  ]
+}
