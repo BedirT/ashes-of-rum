@@ -1131,6 +1131,39 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator MeleeAttackFeedback_FiresOnlyWhenAtLeastOneMemberStrikes()
+        {
+            var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            var attackCueCount = 0;
+            var attackers = CreateFormationForTest("Cooldown attackers", FormationType.Spearmen, true, tuning,
+                onAttack: _ => attackCueCount++);
+            var target = CreateFormationForTest("Cooldown target", FormationType.Archers, false, tuning);
+
+            var healthBefore = target.TotalMemberHealth;
+            Assert.That(attackers.ExecuteAttackVolley(target), Is.True);
+            Assert.That(attackers.LastAttackMemberCount, Is.EqualTo(8));
+            Assert.That(attackCueCount, Is.EqualTo(1));
+            var healthAfterStrike = target.TotalMemberHealth;
+            Assert.That(healthAfterStrike, Is.LessThan(healthBefore));
+
+            for (var frame = 0; frame < 5; frame++)
+            {
+                Assert.That(attackers.ExecuteAttackVolley(target), Is.True);
+                Assert.That(attackers.LastAttackMemberCount, Is.Zero);
+                yield return null;
+            }
+
+            Assert.That(target.TotalMemberHealth, Is.EqualTo(healthAfterStrike),
+                "Cooldown-only frames must not apply another member strike.");
+            Assert.That(attackCueCount, Is.EqualTo(1),
+                "Cooldown-only frames must not emit formation attack feedback.");
+
+            Object.Destroy(attackers.gameObject);
+            Object.Destroy(target.gameObject);
+            Object.Destroy(tuning);
+        }
+
+        [UnityTest]
         public IEnumerator Combat_ReorientationBlocksAttacksForFixedDurationAndHudShowsFacingState()
         {
             yield return LoadEconomy();
@@ -3109,12 +3142,13 @@ namespace AshesOfRum.Tests
 
         private static FormationAgent CreateFormationForTest(string name, FormationType type, bool friendly,
             EconomyTuning tuning, System.Func<IEnumerable<FormationAgent>> availableHostiles = null,
-            System.Action<int> onCasualty = null)
+            System.Action<int> onCasualty = null, System.Action<Vector3> onAttack = null)
         {
             var root = new GameObject(name);
             root.transform.position = new Vector3(100f, 0f, 100f);
             var formation = root.AddComponent<FormationAgent>();
-            formation.Initialize(type, friendly, tuning, onCasualty, availableHostiles: availableHostiles);
+            formation.Initialize(type, friendly, tuning, onCasualty, availableHostiles: availableHostiles,
+                onAttack: onAttack);
             return formation;
         }
 

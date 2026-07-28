@@ -594,7 +594,6 @@ namespace AshesOfRum
             SynchronizeMembersForAnchorTeleport();
             intendedTarget.SynchronizeMembersForAnchorTeleport();
             LastAttackMemberCount = members.Count;
-            attackCallback?.Invoke(transform.position);
             var attackers = members.ToArray();
             var attackCount = 0;
             for (var i = 0; i < attackers.Length; i++)
@@ -625,6 +624,7 @@ namespace AshesOfRum
                 }
             }
             LastAttackMemberCount = attackCount;
+            if (attackCount > 0) attackCallback?.Invoke(transform.position);
             return true;
         }
 
