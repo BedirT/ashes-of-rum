@@ -264,7 +264,7 @@ namespace AshesOfRum
                     slotBlocker.name = "Smoke Blocked Formation Slot";
                     slotBlocker.transform.position = new Vector3(obstructedSlot.x, 1f, obstructedSlot.z);
                     slotBlocker.transform.localScale = new Vector3(3f, 2f, 3f);
-                    var blockerBounds = slotBlocker.GetComponent<Collider>().bounds;
+                    var blockerBounds = new Bounds(slotBlocker.transform.position, slotBlocker.transform.localScale);
                     var slotObstacle = slotBlocker.AddComponent<UnityEngine.AI.NavMeshObstacle>();
                     slotObstacle.shape = UnityEngine.AI.NavMeshObstacleShape.Box;
                     slotObstacle.carving = true;
@@ -275,15 +275,16 @@ namespace AshesOfRum
                     var blockedSlotDeadline = Time.realtimeSinceStartup + 5f;
                     while ((Vector3.Distance(obstructedMember.WorldPosition,
                                 obstructedMember.NavigationDestination) > 0.45f ||
-                            Vector3.Distance(obstructedMember.WorldPosition, displacedMemberPosition) < 2.5f) &&
+                            Vector3.Distance(obstructedMember.WorldPosition, displacedMemberPosition) < 2f) &&
                            Time.realtimeSinceStartup < blockedSlotDeadline)
                         yield return null;
-                    var settledBesideObstacle =
-                        Vector3.Distance(obstructedMember.WorldPosition, displacedMemberPosition) > 2.5f &&
-                        Vector3.Distance(obstructedMember.WorldPosition,
-                            obstructedMember.NavigationDestination) <= 0.45f &&
-                        !blockerBounds.Contains(new Vector3(obstructedMember.WorldPosition.x,
-                            blockerBounds.center.y, obstructedMember.WorldPosition.z));
+                    var settlePosition = obstructedMember.WorldPosition;
+                    var settleNavigation = obstructedMember.NavigationDestination;
+                    var movedFromDisplacement = Vector3.Distance(settlePosition, displacedMemberPosition) > 2f;
+                    var arrivedAtFallback = Vector3.Distance(settlePosition, settleNavigation) <= 0.45f;
+                    var remainedOutsideObstacle = !blockerBounds.Contains(new Vector3(settlePosition.x,
+                        blockerBounds.center.y, settlePosition.z));
+                    var settledBesideObstacle = movedFromDisplacement && arrivedAtFallback && remainedOutsideObstacle;
                     Destroy(slotBlocker);
                     yield return new WaitForSeconds(1f);
                     blockedSlotDeadline = Time.realtimeSinceStartup + 5f;
@@ -294,6 +295,14 @@ namespace AshesOfRum
                     blockedMemberRecovered = settledBesideObstacle &&
                         Vector3.Distance(obstructedMember.WorldPosition,
                             obstructedMember.AssignedSlotWorldPosition) <= 0.45f;
+                    Debug.Log($"SMOKE_BLOCKED_MEMBER_STATE:settled={settledBesideObstacle}:" +
+                              $"recovered={blockedMemberRecovered}:position={obstructedMember.WorldPosition}:" +
+                              $"navigation={obstructedMember.NavigationDestination}:" +
+                              $"slot={obstructedMember.AssignedSlotWorldPosition}:" +
+                              $"displaced={displacedMemberPosition}:settlePosition={settlePosition}:" +
+                              $"settleNavigation={settleNavigation}:moved={movedFromDisplacement}:" +
+                              $"arrived={arrivedAtFallback}:outside={remainedOutsideObstacle}:" +
+                              $"bounds={blockerBounds}");
                     contestDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
 
                     var hostileArcher = economy.EnemyFormations.Single(formation =>

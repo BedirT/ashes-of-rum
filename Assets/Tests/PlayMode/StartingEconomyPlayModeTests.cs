@@ -1325,11 +1325,18 @@ namespace AshesOfRum.Tests
             member.TeleportBy(Vector3.left * 6f);
 
             var greatestDetour = 0f;
+            var previousPosition = member.WorldPosition;
             var deadline = Time.realtimeSinceStartup + 5f;
             while (Vector3.Distance(member.WorldPosition, destination) > 0.45f &&
                    Time.realtimeSinceStartup < deadline)
             {
                 var position = member.WorldPosition;
+                var frameDisplacement = Vector3.Distance(position, previousPosition);
+                var maximumFrameDisplacement = formation.MoveSpeed * 1.3f * Time.deltaTime + 0.025f;
+                Assert.That(frameDisplacement, Is.LessThanOrEqualTo(maximumFrameDisplacement),
+                    $"A member must traverse path corners at its bounded movement speed. " +
+                    $"Moved={frameDisplacement:0.000}, maximum={maximumFrameDisplacement:0.000}.");
+                AssertSweptSegmentOutsideBounds(previousPosition, position, blockerBounds);
                 Assert.That(blockerBounds.Contains(new Vector3(position.x, blockerBounds.center.y, position.z)),
                     Is.False, "A member must never step through the carved obstacle.");
                 var groundedPosition = new Vector3(position.x, 0f, position.z);
@@ -1338,6 +1345,7 @@ namespace AshesOfRum.Tests
                 Assert.That(Vector3.Distance(groundedPosition,
                     new Vector3(walkable.position.x, 0f, walkable.position.z)), Is.LessThan(0.1f));
                 greatestDetour = Mathf.Max(greatestDetour, Mathf.Abs(position.z - destination.z));
+                previousPosition = position;
                 yield return null;
             }
 
@@ -1369,14 +1377,16 @@ namespace AshesOfRum.Tests
             var displacedPosition = member.WorldPosition;
             var deadline = Time.realtimeSinceStartup + 5f;
             while ((Vector3.Distance(member.WorldPosition, member.NavigationDestination) > 0.45f ||
-                    Vector3.Distance(member.WorldPosition, displacedPosition) < 2.5f) &&
+                    Vector3.Distance(member.WorldPosition, displacedPosition) < 2f) &&
                    Time.realtimeSinceStartup < deadline)
                 yield return null;
 
-            Assert.That(Vector3.Distance(member.WorldPosition, displacedPosition), Is.GreaterThan(2.5f),
+            Assert.That(Vector3.Distance(member.WorldPosition, displacedPosition), Is.GreaterThan(2f),
                 "A member must not freeze when its exact slot is carved out of the NavMesh.");
             Assert.That(Vector3.Distance(member.NavigationDestination, blockedSlot), Is.LessThanOrEqualTo(3.05f),
                 "The fallback destination must stay near the obstructed formation slot.");
+            Assert.That(member.NavigationDestination.x, Is.LessThan(blockedSlot.x),
+                "A displaced member should use a reachable fallback on its side of the blocked slot.");
             Assert.That(Vector3.Distance(member.WorldPosition, member.NavigationDestination),
                 Is.LessThanOrEqualTo(0.45f),
                 $"The member must consider the projected reachable destination arrived. " +
@@ -1398,6 +1408,64 @@ namespace AshesOfRum.Tests
             Assert.That(Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition),
                 Is.LessThanOrEqualTo(0.45f),
                 "The member must reclaim its exact slot after the structure obstruction clears.");
+        }
+
+        [UnityTest]
+        public IEnumerator FormationMember_RefreshesFallbackAsBlockedSlotDriftsIncrementally()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 10f));
+            yield return null;
+
+            var member = formation.Members[3];
+            var initialSlot = member.AssignedSlotWorldPosition;
+            var blocker = CreateRouteBlocker("Drifting Blocked Formation Slot",
+                new Vector3(initialSlot.x, 1f, initialSlot.z), new Vector3(2f, 2f, 8f));
+            var blockerBounds = new Bounds(blocker.transform.position, blocker.transform.localScale);
+            yield return new WaitForSeconds(1f);
+
+            member.TeleportBy(Vector3.left * 5f);
+            var settleDeadline = Time.realtimeSinceStartup + 5f;
+            while (Vector3.Distance(member.WorldPosition, member.NavigationDestination) > 0.45f &&
+                   Time.realtimeSinceStartup < settleDeadline)
+                yield return null;
+            var initialFallback = member.NavigationDestination;
+
+            for (var step = 0; step < 60; step++)
+            {
+                formation.transform.position += Vector3.forward * 0.02f;
+                yield return null;
+            }
+            yield return new WaitForSeconds(0.5f);
+
+            var driftingSlot = member.AssignedSlotWorldPosition;
+            Assert.That(blockerBounds.Contains(new Vector3(driftingSlot.x,
+                blockerBounds.center.y, driftingSlot.z)), Is.True,
+                $"The regression must keep the requested slot carved while it moves incrementally. " +
+                $"Slot={driftingSlot}, bounds={blockerBounds}.");
+            Assert.That(Vector3.Distance(member.NavigationDestination, initialFallback), Is.GreaterThan(0.4f),
+                $"A fallback must be resampled after cumulative slot drift instead of remaining stale. " +
+                $"Initial={initialFallback}, current={member.NavigationDestination}, slot={driftingSlot}.");
+
+            for (var step = 0; step < 180; step++)
+            {
+                formation.transform.position += Vector3.forward * 0.02f;
+                yield return null;
+            }
+            var reformDeadline = Time.realtimeSinceStartup + 5f;
+            while (Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition) > 0.45f &&
+                   Time.realtimeSinceStartup < reformDeadline)
+                yield return null;
+
+            Assert.That(blockerBounds.Contains(new Vector3(member.AssignedSlotWorldPosition.x,
+                blockerBounds.center.y, member.AssignedSlotWorldPosition.z)), Is.False,
+                "The formation anchor must finish clear of the still-carved structure.");
+            Assert.That(Vector3.Distance(member.WorldPosition, member.AssignedSlotWorldPosition),
+                Is.LessThanOrEqualTo(0.45f),
+                "The member must reform once incremental anchor movement carries its slot into open ground.");
+            Object.Destroy(blocker);
         }
 
         [UnityTest]
@@ -3214,6 +3282,19 @@ namespace AshesOfRum.Tests
             obstacle.carving = true;
             obstacle.carveOnlyStationary = false;
             return blocker;
+        }
+
+        private static void AssertSweptSegmentOutsideBounds(Vector3 start, Vector3 end, Bounds bounds)
+        {
+            var distance = Vector3.Distance(start, end);
+            var samples = Mathf.Max(1, Mathf.CeilToInt(distance / 0.02f));
+            for (var sample = 0; sample <= samples; sample++)
+            {
+                var position = Vector3.Lerp(start, end, sample / (float)samples);
+                var footprintPosition = new Vector3(position.x, bounds.center.y, position.z);
+                Assert.That(bounds.Contains(footprintPosition), Is.False,
+                    $"The swept member step must not cross the carved obstacle at {footprintPosition}.");
+            }
         }
     }
 }
