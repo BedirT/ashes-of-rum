@@ -893,17 +893,27 @@ namespace AshesOfRum
     {
         private const float RepathSeconds = 0.18f;
         private const float SlotTolerance = 0.08f;
+        private const float PathCornerAdvanceDistance = 0.02f;
+        private const float PathCornerSteeringDistance = 0.15f;
         private const float SeparationRadius = 0.85f;
+        private const float ExactSlotSampleRadius = 0.12f;
+        private const float PreviousDestinationSampleRadius = 0.5f;
+        private const float BlockedSlotSearchRadius = 3f;
+        private const float BlockedSlotClearance = 0.2f;
+        private const float BlockedSlotProbeStep = 0.5f;
         private NavMeshPath path;
         private NavMeshPath stepPath;
         private FormationAgent owner;
         private Vector3 worldPosition;
         private Quaternion worldRotation;
         private Vector3 pathDestination;
+        private Vector3 reachableDestination;
+        private Vector3 reachableDestinationRequest;
         private float repathRemaining;
         private int pathCorner;
         private float attackRemaining;
         private bool hasCompletePath;
+        private bool hasReachableDestination;
 
         public int Identity { get; private set; }
         public int SlotIndex { get; private set; }
@@ -912,6 +922,7 @@ namespace AshesOfRum
         public Vector3 WorldPosition => worldPosition;
         public Vector3 AssignedSlotWorldPosition => owner == null ? worldPosition :
             owner.MemberSlotWorldPosition(SlotIndex);
+        public Vector3 NavigationDestination => reachableDestination;
         public bool CanAttack => attackRemaining <= 0f;
         public FormationMemberAgent AttackTarget { get; private set; }
         public int ProjectileImpactCount { get; private set; }
@@ -928,6 +939,9 @@ namespace AshesOfRum
             worldPosition = transform.position;
             worldRotation = transform.rotation;
             pathDestination = worldPosition;
+            reachableDestination = worldPosition;
+            reachableDestinationRequest = worldPosition;
+            hasReachableDestination = true;
         }
 
         public void AssignSlot(int slotIndex) => SlotIndex = slotIndex;
@@ -949,6 +963,8 @@ namespace AshesOfRum
         {
             worldPosition += displacement;
             pathDestination += displacement;
+            reachableDestination += displacement;
+            reachableDestinationRequest += displacement;
             transform.position = worldPosition;
             repathRemaining = 0f;
         }
@@ -968,13 +984,14 @@ namespace AshesOfRum
             if (repathRemaining <= 0f || (pathDestination - desiredWorldPosition).sqrMagnitude > 0.16f)
                 RecalculatePath(desiredWorldPosition);
 
-            var toDestination = desiredWorldPosition - worldPosition;
+            var toDestination = reachableDestination - worldPosition;
             toDestination.y = 0f;
             var pathStep = PathStep();
-            var pathDirection = pathStep.sqrMagnitude > 0.01f ? pathStep.normalized : Vector3.zero;
+            var pathDirection = pathStep.sqrMagnitude > 0.000001f ? pathStep.normalized : Vector3.zero;
             var direction = pathDirection;
             var separation = Separation(formationMembers);
-            if (separation.sqrMagnitude > 0.01f) direction = (direction + separation * 0.7f).normalized;
+            if (pathStep.magnitude > PathCornerSteeringDistance && separation.sqrMagnitude > 0.01f)
+                direction = (direction + separation * 0.7f).normalized;
 
             if (toDestination.sqrMagnitude > SlotTolerance * SlotTolerance && direction.sqrMagnitude > 0.01f)
             {
@@ -1010,15 +1027,66 @@ namespace AshesOfRum
             hasCompletePath = false;
             var start = Grounded(worldPosition);
             var end = Grounded(destination);
-            if (!NavMesh.SamplePosition(start, out var sampledStart, 0.8f, NavMesh.AllAreas) ||
-                !NavMesh.SamplePosition(end, out var sampledEnd, 0.8f, NavMesh.AllAreas) ||
-                !NavMesh.CalculatePath(sampledStart.position, sampledEnd.position, NavMesh.AllAreas, path) ||
-                path.status != NavMeshPathStatus.PathComplete)
+            if (!NavMesh.SamplePosition(start, out var sampledStart, 0.8f, NavMesh.AllAreas))
             {
                 path.ClearCorners();
                 return;
             }
+
+            if (NavMesh.SamplePosition(end, out var exactEnd, ExactSlotSampleRadius, NavMesh.AllAreas) &&
+                TrySetCompletePath(sampledStart.position, exactEnd.position, destination, true)) return;
+
+            if ((reachableDestinationRequest - destination).sqrMagnitude <= 0.16f &&
+                hasReachableDestination &&
+                NavMesh.SamplePosition(Grounded(reachableDestination), out var previousEnd,
+                    PreviousDestinationSampleRadius, NavMesh.AllAreas) &&
+                TrySetCompletePath(sampledStart.position, previousEnd.position, destination, false)) return;
+
+            var towardMember = start - end;
+            if (towardMember.sqrMagnitude > 0.0001f)
+            {
+                towardMember.Normalize();
+                for (var radius = BlockedSlotProbeStep; radius <= BlockedSlotSearchRadius;
+                     radius += BlockedSlotProbeStep)
+                {
+                    var probe = end + towardMember * radius;
+                    if (!NavMesh.SamplePosition(probe, out var sampledProbe, ExactSlotSampleRadius,
+                            NavMesh.AllAreas)) continue;
+                    var clearedProbe = sampledProbe.position + towardMember * BlockedSlotClearance;
+                    if (NavMesh.SamplePosition(clearedProbe, out var clearedFallback, BlockedSlotClearance,
+                            NavMesh.AllAreas) &&
+                        TrySetCompletePath(sampledStart.position, clearedFallback.position, destination, true))
+                        return;
+                }
+            }
+
+            if (NavMesh.SamplePosition(end, out var fallbackEnd, BlockedSlotSearchRadius, NavMesh.AllAreas))
+            {
+                var awayFromBlockedSlot = Grounded(fallbackEnd.position) - end;
+                if (awayFromBlockedSlot.sqrMagnitude > 0.0001f)
+                {
+                    var clearedEnd = fallbackEnd.position + awayFromBlockedSlot.normalized * BlockedSlotClearance;
+                    if (NavMesh.SamplePosition(clearedEnd, out var clearedFallback, BlockedSlotClearance,
+                            NavMesh.AllAreas) &&
+                        TrySetCompletePath(sampledStart.position, clearedFallback.position, destination, true))
+                        return;
+                }
+                if (TrySetCompletePath(sampledStart.position, fallbackEnd.position, destination, true)) return;
+            }
+
+            path.ClearCorners();
+        }
+
+        private bool TrySetCompletePath(Vector3 start, Vector3 end, Vector3 requestedDestination,
+            bool rememberRequest)
+        {
+            if (!NavMesh.CalculatePath(start, end, NavMesh.AllAreas, path) ||
+                path.status != NavMeshPathStatus.PathComplete) return false;
+            reachableDestination = new Vector3(end.x, requestedDestination.y, end.z);
+            if (rememberRequest) reachableDestinationRequest = requestedDestination;
+            hasReachableDestination = true;
             hasCompletePath = true;
+            return true;
         }
 
         private Vector3 PathStep()
@@ -1026,22 +1094,33 @@ namespace AshesOfRum
             if (!hasCompletePath || path == null) return Vector3.zero;
             var corners = path.corners;
             if (corners == null || corners.Length == 0) return Vector3.zero;
-            while (pathCorner < corners.Length &&
-                   (Grounded(corners[pathCorner]) - Grounded(worldPosition)).sqrMagnitude < 0.09f)
+            while (pathCorner < corners.Length)
+            {
+                var cornerStep = Grounded(corners[pathCorner]) - Grounded(worldPosition);
+                if (cornerStep.sqrMagnitude > PathCornerAdvanceDistance * PathCornerAdvanceDistance)
+                    return cornerStep;
                 pathCorner++;
-            return pathCorner >= corners.Length
-                ? Vector3.zero
-                : Grounded(corners[pathCorner]) - Grounded(worldPosition);
+            }
+            return Vector3.zero;
         }
 
         private bool TryResolveNavMeshStep(Vector3 steeredDirection, Vector3 pathDirection, float distance,
             out Vector3 nextPosition)
         {
-            if (TryNavMeshStep(steeredDirection, distance, out nextPosition)) return true;
-            if ((steeredDirection - pathDirection).sqrMagnitude > 0.001f &&
-                TryNavMeshStep(pathDirection, distance, out nextPosition)) return true;
+            var hasSeparationSteering = (steeredDirection - pathDirection).sqrMagnitude > 0.001f;
+            if (!hasSeparationSteering) return TryNavMeshStep(pathDirection, distance, out nextPosition);
+            if (TryNavMeshStep(steeredDirection, distance, out nextPosition) &&
+                IsForwardStep(nextPosition, steeredDirection, distance)) return true;
+            if (TryNavMeshStep(pathDirection, distance, out nextPosition)) return true;
             nextPosition = worldPosition;
             return false;
+        }
+
+        private bool IsForwardStep(Vector3 nextPosition, Vector3 direction, float distance)
+        {
+            var displacement = Grounded(nextPosition) - Grounded(worldPosition);
+            var minimumForwardDistance = Mathf.Min(0.01f, distance * 0.1f);
+            return Vector3.Dot(displacement, Grounded(direction).normalized) >= minimumForwardDistance;
         }
 
         private bool TryNavMeshStep(Vector3 direction, float distance, out Vector3 nextPosition)
@@ -1053,11 +1132,12 @@ namespace AshesOfRum
 
             var groundedDirection = Grounded(direction).normalized;
             var candidate = sampledStart.position + groundedDirection * distance;
-            if (!NavMesh.SamplePosition(candidate, out var sampledCandidate, 0.05f, NavMesh.AllAreas) ||
-                (sampledCandidate.position - candidate).sqrMagnitude > 0.01f)
+            if (!NavMesh.SamplePosition(candidate, out var sampledCandidate, 0.15f, NavMesh.AllAreas))
                 return false;
+            var actualDistance = Vector3.Distance(Grounded(worldPosition), Grounded(sampledCandidate.position));
+            if (actualDistance > distance + 0.01f) return false;
             if (NavMesh.Raycast(sampledStart.position, sampledCandidate.position, out _, NavMesh.AllAreas) &&
-                !HasDirectCompleteStep(sampledStart.position, sampledCandidate.position, distance))
+                !HasDirectCompleteStep(sampledStart.position, sampledCandidate.position, actualDistance))
                 return false;
 
             nextPosition = new Vector3(sampledCandidate.position.x, worldPosition.y, sampledCandidate.position.z);

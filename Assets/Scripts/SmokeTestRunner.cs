@@ -174,6 +174,7 @@ namespace AshesOfRum
             var frontlineBlockedAndReleased = false;
             var formationRallyDispatched = false;
             var memberFlowObserved = false;
+            var blockedMemberRecovered = false;
             var memberProjectileHitObserved = false;
             var memberCasualtyRegrouped = false;
             FormationAgent memberProjectileSource = null;
@@ -255,6 +256,54 @@ namespace AshesOfRum
                     for (var index = 0; index < stoppedPositions.Length; index++)
                         formationGroupStopped &= Vector3.Distance(stoppedPositions[index],
                             economy.SelectedFormations[index].transform.position) < 0.15f;
+
+                    var obstructionFormation = economy.SelectedFormations[0];
+                    var obstructedMember = obstructionFormation.Members[0];
+                    var obstructedSlot = obstructedMember.AssignedSlotWorldPosition;
+                    var slotBlocker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    slotBlocker.name = "Smoke Blocked Formation Slot";
+                    slotBlocker.transform.position = new Vector3(obstructedSlot.x, 1f, obstructedSlot.z);
+                    slotBlocker.transform.localScale = new Vector3(3f, 2f, 3f);
+                    var blockerBounds = new Bounds(slotBlocker.transform.position, slotBlocker.transform.localScale);
+                    var slotObstacle = slotBlocker.AddComponent<UnityEngine.AI.NavMeshObstacle>();
+                    slotObstacle.shape = UnityEngine.AI.NavMeshObstacleShape.Box;
+                    slotObstacle.carving = true;
+                    slotObstacle.carveOnlyStationary = false;
+                    yield return new WaitForSeconds(1f);
+                    obstructedMember.TeleportBy(Vector3.left * 5f);
+                    var displacedMemberPosition = obstructedMember.WorldPosition;
+                    var blockedSlotDeadline = Time.realtimeSinceStartup + 5f;
+                    while ((Vector3.Distance(obstructedMember.WorldPosition,
+                                obstructedMember.NavigationDestination) > 0.45f ||
+                            Vector3.Distance(obstructedMember.WorldPosition, displacedMemberPosition) < 2f) &&
+                           Time.realtimeSinceStartup < blockedSlotDeadline)
+                        yield return null;
+                    var settlePosition = obstructedMember.WorldPosition;
+                    var settleNavigation = obstructedMember.NavigationDestination;
+                    var movedFromDisplacement = Vector3.Distance(settlePosition, displacedMemberPosition) > 2f;
+                    var arrivedAtFallback = Vector3.Distance(settlePosition, settleNavigation) <= 0.45f;
+                    var remainedOutsideObstacle = !blockerBounds.Contains(new Vector3(settlePosition.x,
+                        blockerBounds.center.y, settlePosition.z));
+                    var settledBesideObstacle = movedFromDisplacement && arrivedAtFallback && remainedOutsideObstacle;
+                    Destroy(slotBlocker);
+                    yield return new WaitForSeconds(1f);
+                    blockedSlotDeadline = Time.realtimeSinceStartup + 5f;
+                    while (Vector3.Distance(obstructedMember.WorldPosition,
+                               obstructedMember.AssignedSlotWorldPosition) > 0.45f &&
+                           Time.realtimeSinceStartup < blockedSlotDeadline)
+                        yield return null;
+                    blockedMemberRecovered = settledBesideObstacle &&
+                        Vector3.Distance(obstructedMember.WorldPosition,
+                            obstructedMember.AssignedSlotWorldPosition) <= 0.45f;
+                    Debug.Log($"SMOKE_BLOCKED_MEMBER_STATE:settled={settledBesideObstacle}:" +
+                              $"recovered={blockedMemberRecovered}:position={obstructedMember.WorldPosition}:" +
+                              $"navigation={obstructedMember.NavigationDestination}:" +
+                              $"slot={obstructedMember.AssignedSlotWorldPosition}:" +
+                              $"displaced={displacedMemberPosition}:settlePosition={settlePosition}:" +
+                              $"settleNavigation={settleNavigation}:moved={movedFromDisplacement}:" +
+                              $"arrived={arrivedAtFallback}:outside={remainedOutsideObstacle}:" +
+                              $"bounds={blockerBounds}");
+                    contestDeadline = Time.realtimeSinceStartup + CombatTimeoutSeconds;
 
                     var hostileArcher = economy.EnemyFormations.Single(formation =>
                         formation.Type == FormationType.Archers);
@@ -557,6 +606,7 @@ namespace AshesOfRum
                     "Rear formation attack gains a deterministic flank advantage",
                     "Opposing frontline blocks direct movement and releases laterally",
                     "Formation soldiers move independently and close their assigned slots",
+                    "Formation soldiers settle beside blocked slots and reform when space opens",
                     "Arrows visibly resolve against individual soldiers",
                     "A soldier casualty leaves survivors to regroup without teleporting",
                     "1920x1080 window configured",
@@ -608,6 +658,7 @@ namespace AshesOfRum
                     "Rear formation attack gains a deterministic flank advantage",
                     "Opposing frontline blocks direct movement and releases laterally",
                     "Formation soldiers move independently and close their assigned slots",
+                    "Formation soldiers settle beside blocked slots and reform when space opens",
                     "Arrows visibly resolve against individual soldiers",
                     "A soldier casualty leaves survivors to regroup without teleporting"
                 };
@@ -662,14 +713,15 @@ namespace AshesOfRum
                 Require(rearAttackAdvantage, checks[40]);
                 Require(frontlineBlockedAndReleased, checks[41]);
                 Require(memberFlowObserved, checks[42]);
-                Require(memberProjectileHitObserved, checks[43]);
-                Require(memberCasualtyRegrouped, checks[44]);
+                Require(blockedMemberRecovered, checks[43]);
+                Require(memberProjectileHitObserved, checks[44]);
+                Require(memberCasualtyRegrouped, checks[45]);
                 if (graphical)
                 {
-                    Require(Screen.width == 1920 && Screen.height == 1080, checks[45]);
+                    Require(Screen.width == 1920 && Screen.height == 1080, checks[46]);
                     Require(HasContent(healthScreenshotPath),
-                        $"{checks[46]} within {ScreenshotTimeoutSeconds} seconds");
-                    Require(HasContent(screenshotPath), $"{checks[47]} within {ScreenshotTimeoutSeconds} seconds");
+                        $"{checks[47]} within {ScreenshotTimeoutSeconds} seconds");
+                    Require(HasContent(screenshotPath), $"{checks[48]} within {ScreenshotTimeoutSeconds} seconds");
                 }
 
                 result.passed = true;
