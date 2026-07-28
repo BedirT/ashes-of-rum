@@ -19,7 +19,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | 008 - Hold the frontline | Opposing formations halt direct movement through each other while leaving room to maneuver around a flank. |
 | Complete | 009 - Give soldiers battlefield presence | Command formations as one unit while individual soldiers path, fight, take hits, die, and regroup naturally. |
 | Complete | 010 - Unblock formation slots | Soldiers settle at reachable positions when structures cover their ideal slots, then reform when space opens. |
-| In Progress | Exceptional refactor 011 - Restructure the playable prototype | User-approved behavior-preserving restructure that keeps the complete current match playable while making each gameplay domain and test area small enough to understand and change safely. |
+| Complete | Exceptional refactor 011 - Restructure the playable prototype | User-approved behavior-preserving restructure that keeps the complete current match playable while making each gameplay domain and test area small enough to understand and change safely. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
