@@ -1197,17 +1197,30 @@ namespace AshesOfRum.Tests
         public IEnumerator ArcherProjectiles_TrackAndDamageEightIndividualMembers()
         {
             var tuning = ScriptableObject.CreateInstance<EconomyTuning>();
+            tuning.reorientationSeconds = 2f;
             var archers = CreateFormationForTest("Individual Archers", FormationType.Archers, true, tuning);
             var cavalry = CreateFormationForTest("Individual Cavalry", FormationType.Cavalry, false, tuning);
             archers.transform.position = Vector3.zero;
-            cavalry.transform.position = new Vector3(0f, 0f, 6f);
+            cavalry.transform.position = new Vector3(4f, 0f, 6f);
             yield return null;
             var displacedTarget = cavalry.Members[0];
             displacedTarget.TeleportBy(Vector3.right * 2f);
             var healthBefore = cavalry.Members.ToDictionary(member => member.Identity, member => member.Health);
+            archers.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            Assert.That(archers.IssueFocus(cavalry), Is.True);
+            yield return new WaitForSeconds(0.3f);
+
+            foreach (var archer in archers.Members)
+            {
+                var expectedTarget = cavalry.Members[archer.Identity % cavalry.MemberCount];
+                Assert.That(archer.AttackTarget, Is.SameAs(expectedTarget));
+                Assert.That(Vector3.Angle(archer.transform.forward,
+                        expectedTarget.WorldPosition - archer.WorldPosition), Is.LessThan(3f),
+                    $"Archer {archer.Identity} must face the same soldier reserved for its projectile.");
+            }
 
             Assert.That(archers.ExecuteAttackVolley(cavalry), Is.True);
-            yield return new WaitForSeconds(tuning.projectileSeconds + 0.1f);
+            yield return WaitUntil(() => archers.ProjectileHitsLanded == 8);
 
             Assert.That(cavalry.Members, Has.Count.EqualTo(8));
             Assert.That(cavalry.Members.All(member => member.ProjectileImpactCount == 1), Is.True,
@@ -1245,6 +1258,62 @@ namespace AshesOfRum.Tests
 
             Object.Destroy(formation.gameObject);
             Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator FormationMember_RoutesAroundCarvedObstacleWithoutLeavingNavMesh()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 10f));
+            yield return null;
+            var member = formation.Members[0];
+            var destination = member.AssignedSlotWorldPosition;
+            var startPosition = member.WorldPosition + Vector3.left * 6f;
+            var blocker = CreateRouteBlocker("Member Route Blocker", new Vector3(-4.7f, 1f, 10f),
+                new Vector3(1.5f, 2f, 4f));
+            var blockerBounds = blocker.GetComponent<Collider>().bounds;
+            var route = new NavMeshPath();
+            var groundedStart = new Vector3(startPosition.x, 0f, startPosition.z);
+            var groundedDestination = new Vector3(destination.x, 0f, destination.z);
+
+            yield return new WaitForSeconds(1f);
+            var sampledStart = NavMesh.SamplePosition(groundedStart, out var start, 0.35f, NavMesh.AllAreas);
+            var sampledEnd = NavMesh.SamplePosition(groundedDestination, out var end, 0.35f, NavMesh.AllAreas);
+            var calculated = sampledStart && sampledEnd &&
+                             NavMesh.CalculatePath(start.position, end.position, NavMesh.AllAreas, route);
+            Assert.That(sampledStart, Is.True, $"No NavMesh near member start {groundedStart}.");
+            Assert.That(sampledEnd, Is.True, $"No NavMesh near member slot {groundedDestination}.");
+            Assert.That(calculated, Is.True, "The carved obstacle must leave a route around its sides.");
+            Assert.That(route.status, Is.EqualTo(NavMeshPathStatus.PathComplete));
+            Assert.That(route.corners.Length, Is.GreaterThan(2),
+                $"The carved obstacle must force a detour, but the route had {route.corners.Length} corners.");
+            member.TeleportBy(Vector3.left * 6f);
+
+            var greatestDetour = 0f;
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (Vector3.Distance(member.WorldPosition, destination) > 0.45f &&
+                   Time.realtimeSinceStartup < deadline)
+            {
+                var position = member.WorldPosition;
+                Assert.That(blockerBounds.Contains(new Vector3(position.x, blockerBounds.center.y, position.z)),
+                    Is.False, "A member must never step through the carved obstacle.");
+                var groundedPosition = new Vector3(position.x, 0f, position.z);
+                Assert.That(NavMesh.SamplePosition(groundedPosition, out var walkable, 0.1f, NavMesh.AllAreas), Is.True,
+                    "Every independently steered member step must remain on the NavMesh.");
+                Assert.That(Vector3.Distance(groundedPosition,
+                    new Vector3(walkable.position.x, 0f, walkable.position.z)), Is.LessThan(0.1f));
+                greatestDetour = Mathf.Max(greatestDetour, Mathf.Abs(position.z - destination.z));
+                yield return null;
+            }
+
+            Assert.That(Vector3.Distance(member.WorldPosition, destination), Is.LessThanOrEqualTo(0.45f),
+                $"The member must follow the valid route and regroup on the far side. " +
+                $"Final={member.WorldPosition}, destination={destination}, detour={greatestDetour:0.00}.");
+            Assert.That(greatestDetour, Is.GreaterThan(1.8f),
+                "The member must visibly detour around the blocker rather than crossing its footprint.");
+            Object.Destroy(blocker);
         }
 
         [UnityTest]
@@ -3049,7 +3118,7 @@ namespace AshesOfRum.Tests
             return formation;
         }
 
-        private static void CreateRouteBlocker(string name, Vector3 position, Vector3 scale)
+        private static GameObject CreateRouteBlocker(string name, Vector3 position, Vector3 scale)
         {
             var blocker = GameObject.CreatePrimitive(PrimitiveType.Cube);
             blocker.name = name;
@@ -3059,6 +3128,7 @@ namespace AshesOfRum.Tests
             obstacle.shape = NavMeshObstacleShape.Box;
             obstacle.carving = true;
             obstacle.carveOnlyStationary = false;
+            return blocker;
         }
     }
 }
