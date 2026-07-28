@@ -168,6 +168,9 @@ namespace AshesOfRum
                    path.status == NavMeshPathStatus.PathComplete;
         }
 
+        public bool CanReachGatherPoint(ResourceCache cache) =>
+            cache != null && CanReach(cache.GetGatherPoint(gatherSlot));
+
         public void ApplyFixedDamage(int amount)
         {
             if (!IsAlive || amount <= 0) return;

@@ -214,6 +214,43 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator AgentCommands_RejectWhenAnyWorkerDestinationIsUnreachable()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var workers = economy.Workers.Take(2).ToArray();
+            Assert.That(economy.TrySelectWorkersForCommand(workers, out var rejection), Is.True, rejection);
+
+            var moveCenter = new Vector3(5f, 0f, -2f);
+            var blockedMoveSlot = moveCenter + new Vector3(0.55f, 0f, 0f);
+            var moveBlocker = CreateRouteBlocker("Second worker move slot blocker",
+                blockedMoveSlot + Vector3.up, new Vector3(0.8f, 2f, 0.8f));
+            yield return new WaitForSeconds(1f);
+            Assert.That(workers[0].CanReach(moveCenter + new Vector3(-0.55f, 0f, 0f)), Is.True,
+                "The first formation slot must remain reachable so the test exercises all-worker validation.");
+            Assert.That(workers[1].CanReach(blockedMoveSlot), Is.False);
+            Assert.That(economy.TryIssueWorkerMoveCommand(moveCenter, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unreachable"));
+            Assert.That(workers.All(worker => worker.CurrentActivity == WorkerAgent.Activity.Idle), Is.True,
+                "A rejected multi-worker move must not dispatch any actor.");
+            Object.Destroy(moveBlocker);
+            yield return new WaitForSeconds(1f);
+
+            var cache = economy.Caches[0];
+            var gatherBlocker = CreateRouteBlocker("Second worker gather slot blocker",
+                cache.GetGatherPoint(1) + Vector3.up, new Vector3(0.8f, 2f, 0.8f));
+            yield return new WaitForSeconds(1f);
+            Assert.That(workers[0].CanReachGatherPoint(cache), Is.True,
+                "The first gather slot must remain reachable so the test exercises all-worker validation.");
+            Assert.That(workers[1].CanReachGatherPoint(cache), Is.False);
+            Assert.That(economy.TryIssueGatherCommand(cache, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unreachable"));
+            Assert.That(workers.All(worker => worker.CurrentActivity == WorkerAgent.Activity.Idle), Is.True,
+                "A rejected multi-worker gather must not dispatch any actor.");
+            Object.Destroy(gatherBlocker);
+        }
+
+        [UnityTest]
         public IEnumerator MirroredHisars_UseEqualCacheToDropOffDistances()
         {
             yield return LoadEconomy();

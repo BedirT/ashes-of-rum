@@ -40,8 +40,13 @@ namespace AshesOfRum
             if (available.Count == 0)
                 return RejectCommand("actors_busy", "Cancel construction before issuing another order",
                     out rejectionCode);
-            if (!available.Any(worker => worker.CanReach(destination)))
-                return RejectCommand("unreachable", "Selected Workers cannot reach that position", out rejectionCode);
+            for (var index = 0; index < available.Count; index++)
+            {
+                var workerDestination = destination + FormationOffset(index, available.Count);
+                if (!available[index].CanReach(workerDestination))
+                    return RejectCommand("unreachable", "Every selected Worker must be able to reach its position",
+                        out rejectionCode);
+            }
 
             IssueMoveForSelected(destination);
             rejectionCode = null;
@@ -63,8 +68,8 @@ namespace AshesOfRum
             if (available.Count == 0)
                 return RejectCommand("actors_busy", "Cancel construction before issuing another order",
                     out rejectionCode);
-            if (!available.Any(worker => worker.CanReach(cache.transform.position)))
-                return RejectCommand("unreachable", "Selected Workers cannot reach that Supply cache",
+            if (available.Any(worker => !worker.CanReachGatherPoint(cache)))
+                return RejectCommand("unreachable", "Every selected Worker must reach its Supply cache position",
                     out rejectionCode);
 
             IssueGatherForSelected(cache, available);

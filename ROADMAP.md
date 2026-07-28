@@ -20,7 +20,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | 009 - Give soldiers battlefield presence | Command formations as one unit while individual soldiers path, fight, take hits, die, and regroup naturally. |
 | Complete | 010 - Unblock formation slots | Soldiers settle at reachable positions when structures cover their ideal slots, then reform when space opens. |
 | Complete | Exceptional refactor 011 - Restructure the playable prototype | User-approved behavior-preserving restructure that keeps the complete current match playable while making each gameplay domain and test area small enough to understand and change safely. |
-| In Progress | Exceptional refactor 012 - Make the starting economy code-playable | Run a development player from versioned Worker move/gather commands, inspect fog-safe JSON state, and review a state-paired rendered checkpoint. |
+| Complete | Exceptional refactor 012 - Make the starting economy code-playable | Run a development player from versioned Worker move/gather commands, inspect fog-safe JSON state, and review a state-paired rendered checkpoint. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.

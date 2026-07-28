@@ -123,6 +123,59 @@ validate_json() {
   jq -e . "$json_file" >/dev/null || fail "Invalid JSON: $json_file"
 }
 
+validate_agent_checkpoint_contract() {
+  local result="$1"
+  local output="$2"
+  local manifest="$3"
+  local state="$4"
+  jq -e --arg manifest "$manifest" '.checkpointManifests == [$manifest]' "$result" >/dev/null \
+    || fail "Agent result does not identify the exact checkpoint manifest: $result"
+  jq -e --slurpfile saved "$state" --arg state "$state" \
+    '.statePath == $state and .stateHash == $saved[0].stateHash and
+     .sequence == $saved[0].sequence and .elapsedMilliseconds == $saved[0].elapsedMilliseconds and
+     .buildSha == $saved[0].buildSha and .camera == $saved[0].camera' "$manifest" >/dev/null \
+    || fail "Agent manifest does not match the saved checkpoint state: $manifest"
+  jq -se --slurpfile saved "$state" --arg state "$state" --arg manifest "$manifest" \
+    '[.[] | select(.action == "capture")] as $captures |
+     ($captures | length) == 1 and $captures[0].accepted == true and
+     $captures[0].checkpointStatePath == $state and $captures[0].frameManifestPath == $manifest and
+     $captures[0].state == $saved[0]' "$output" >/dev/null \
+    || fail "Agent capture response does not match the saved checkpoint state and manifest: $output"
+}
+
+agent_checkpoint_self_test() {
+  local fixture_dir state manifest output result hash
+  fixture_dir="$(mktemp -d)"
+  state="$fixture_dir/checkpoint-state.json"
+  manifest="$fixture_dir/checkpoint-frame.json"
+  output="$fixture_dir/responses.jsonl"
+  result="$fixture_dir/result.json"
+  hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  jq -n --arg hash "$hash" '{schemaVersion: 1, buildSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    sequence: 7, elapsedMilliseconds: 42, supplies: 100, stateHash: $hash,
+    camera: {position: {x: 0, y: 19, z: -18}, rotationEuler: {x: 48, y: 0, z: 0}, fieldOfView: 60}}' \
+    > "$state"
+  jq -n --arg state "$state" --arg hash "$hash" '{schemaVersion: 1,
+    buildSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", checkpoint: "fixture", sequence: 7,
+    elapsedMilliseconds: 42, statePath: $state, stateHash: $hash,
+    camera: {position: {x: 0, y: 19, z: -18}, rotationEuler: {x: 48, y: 0, z: 0}, fieldOfView: 60}}' \
+    > "$manifest"
+  jq -cn --slurpfile state "$state" --arg state_path "$state" --arg manifest "$manifest" \
+    '{action: "capture", accepted: true, checkpointStatePath: $state_path,
+      frameManifestPath: $manifest, state: $state[0]}' > "$output"
+  jq -n --arg manifest "$manifest" '{checkpointManifests: [$manifest]}' > "$result"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
+  jq '.supplies = 101' "$state" > "$fixture_dir/corrupt-state.json"
+  mv "$fixture_dir/corrupt-state.json" "$state"
+  if (validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state") \
+      >"$fixture_dir/corrupt-result.log" 2>&1; then
+    fail "Corrupted agent checkpoint state unexpectedly passed"
+  fi
+  grep -F 'capture response does not match' "$fixture_dir/corrupt-result.log" >/dev/null \
+    || fail "Corrupted checkpoint fixture did not report the expected cross-file mismatch"
+  rm -rf "$fixture_dir"
+}
+
 assert_arm64_development_build() {
   local executable="$BUILD_APP/Contents/MacOS/Ashes of Rum"
   local architecture
@@ -264,6 +317,7 @@ validate_agent_session() {
     .checkpoint == "gather-deposit" and .statePath == $state and (.stateHash | length) == 64' \
     "$manifest" >/dev/null \
     || fail "Agent checkpoint manifest contract failed: $manifest"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
   if [[ "$graphical" == "true" ]]; then
     [[ -s "$AGENT_GRAPHICAL_SCREENSHOT" ]] || fail "Agent graphical checkpoint was not created"
     local dimensions expected_hash
@@ -445,6 +499,7 @@ case "${1:-}" in
   watchdog-self-test) watchdog_self_test ;;
   head-freshness-self-test) head_freshness_self_test ;;
   scan-log-self-test) scan_log_self_test ;;
+  agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
   *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac
