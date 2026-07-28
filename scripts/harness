@@ -13,6 +13,12 @@ GRAPHICAL_RESULT="$EVIDENCE/graphical-smoke-result.json"
 GRAPHICAL_LOG="$EVIDENCE/graphical-player.log"
 GRAPHICAL_SCREENSHOT="$EVIDENCE/graphical-smoke.png"
 GRAPHICAL_HEALTH_SCREENSHOT="$EVIDENCE/graphical-health-bars.png"
+AGENT_SCRIPT="$ROOT/scripts/fixtures/agent-starting-economy.json"
+AGENT_HEADLESS_DIR="$EVIDENCE/agent-headless"
+AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-graphical"
+AGENT_HEADLESS_RESULT="$AGENT_HEADLESS_DIR/result.json"
+AGENT_GRAPHICAL_RESULT="$AGENT_GRAPHICAL_DIR/result.json"
+AGENT_GRAPHICAL_SCREENSHOT="$AGENT_GRAPHICAL_DIR/gather-deposit.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -230,6 +236,93 @@ graphical_smoke() {
   say "Graphical 1920x1080 smoke passed."
 }
 
+validate_agent_session() {
+  local directory="$1"
+  local result="$2"
+  local graphical="$3"
+  local output="$directory/responses.jsonl"
+  local manifest="$directory/gather-deposit-frame.json"
+  local state="$directory/gather-deposit-state.json"
+  validate_json "$result"
+  jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
+    .scenario == "starting-economy-gather-deposit" and .completedSteps == 8 and
+    (.checkpointManifests | length) == 1' "$result" >/dev/null \
+    || fail "Agent session result contract failed: $result"
+  [[ -s "$output" ]] || fail "Agent response trace missing: $output"
+  jq -se --arg sha "$SHA" 'length == 8 and all(.[]; .schemaVersion == 1 and .accepted == true and
+    .state.buildSha == $sha and
+    .state.perspective == "player" and (.state.workers | length) == 4 and
+    (.state.stateHash | length) == 64) and
+    .[0].state.supplies == .[0].state.startingSupplies and
+    .[5].state.supplies > .[5].state.startingSupplies and
+    .[1].state.workers[0].selected == true and
+    .[4].state.workers[0].targetCacheId == "cache-1"' "$output" >/dev/null \
+    || fail "Agent response trace contract failed: $output"
+  validate_json "$manifest"
+  validate_json "$state"
+  jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
+    .checkpoint == "gather-deposit" and .statePath == $state and (.stateHash | length) == 64' \
+    "$manifest" >/dev/null \
+    || fail "Agent checkpoint manifest contract failed: $manifest"
+  if [[ "$graphical" == "true" ]]; then
+    [[ -s "$AGENT_GRAPHICAL_SCREENSHOT" ]] || fail "Agent graphical checkpoint was not created"
+    local dimensions expected_hash
+    dimensions="$(sips -g pixelWidth -g pixelHeight "$AGENT_GRAPHICAL_SCREENSHOT" 2>/dev/null)"
+    [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
+      || fail "Agent checkpoint is not 1920x1080: $dimensions"
+    expected_hash="$(shasum -a 256 "$AGENT_GRAPHICAL_SCREENSHOT" | awk '{print $1}')"
+    jq -e --arg path "$AGENT_GRAPHICAL_SCREENSHOT" --arg hash "$expected_hash" \
+      '.width == 1920 and .height == 1080 and .screenshotPath == $path and
+       .screenshotSha256 == $hash' "$manifest" >/dev/null \
+      || fail "Agent screenshot manifest does not match the captured PNG"
+  else
+    jq -e '.width == 0 and .height == 0 and .screenshotPath == "" and .screenshotSha256 == ""' \
+      "$manifest" >/dev/null || fail "Headless agent manifest unexpectedly claims a rendered frame"
+  fi
+}
+
+agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$AGENT_HEADLESS_DIR"
+  mkdir -p "$AGENT_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$AGENT_HEADLESS_DIR/player.log" \
+    --agent-script "$AGENT_SCRIPT" \
+    --agent-output "$AGENT_HEADLESS_DIR/responses.jsonl" \
+    --agent-result "$AGENT_HEADLESS_RESULT" \
+    --agent-artifacts "$AGENT_HEADLESS_DIR" \
+    --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Headless agent session"
+  validate_agent_session "$AGENT_HEADLESS_DIR" "$AGENT_HEADLESS_RESULT" false
+  grep -F 'AGENT_SESSION:PASS' "$AGENT_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless agent pass marker missing"
+  scan_log "$AGENT_HEADLESS_DIR/player.log"
+  say "Headless code-playable starting economy passed."
+}
+
+agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$AGENT_GRAPHICAL_DIR"
+  mkdir -p "$AGENT_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$AGENT_GRAPHICAL_DIR/player.log" \
+    --agent-script "$AGENT_SCRIPT" \
+    --agent-output "$AGENT_GRAPHICAL_DIR/responses.jsonl" \
+    --agent-result "$AGENT_GRAPHICAL_RESULT" \
+    --agent-artifacts "$AGENT_GRAPHICAL_DIR" \
+    --agent-build-sha "$SHA" \
+    --agent-screenshot "$AGENT_GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_agent_session "$AGENT_GRAPHICAL_DIR" "$AGENT_GRAPHICAL_RESULT" true
+  grep -F 'AGENT_SESSION:PASS' "$AGENT_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical agent pass marker missing"
+  scan_log "$AGENT_GRAPHICAL_DIR/player.log"
+  say "Graphical code-playable starting economy passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -241,7 +334,8 @@ write_summary() {
       platform: "StandaloneOSX-arm64", developmentBuild: true, resolution: "1920x1080",
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
-      headlessSmoke: "passed", graphicalSmoke: "passed"}' \
+      headlessSmoke: "passed", graphicalSmoke: "passed",
+      agentHeadless: "passed", agentGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -266,6 +360,8 @@ verify() {
   assert_unused_player_modules
   smoke
   graphical_smoke
+  agent_smoke
+  agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -342,11 +438,13 @@ case "${1:-}" in
   verify) verify ;;
   smoke) smoke ;;
   graphical-smoke) graphical_smoke ;;
+  agent-smoke) agent_smoke ;;
+  agent-graphical-smoke) agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
   head-freshness-self-test) head_freshness_self_test ;;
   scan-log-self-test) scan_log_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

@@ -311,6 +311,20 @@ other automatic or player-triggered special abilities.
 - There is no replay system.
 - Development-only diagnostics and test controls may exist but must remain outside the player
   HUD and shipped interaction contract.
+- Development builds expose a versioned, local-only agent verification protocol. It may project
+  fog-safe player state, accept the same semantic commands reached through normal input, advance
+  bounded verification scenarios, and pair named checkpoints with structured state and rendered
+  frames. It must be inactive unless explicitly requested at process launch.
+- Agent commands may select and command Workers or formations only at the same authority boundary
+  as the player. Privileged fixture controls such as spawning, Supply credits, direct damage, time
+  jumps, visibility overrides, or AI suspension are not player commands and must remain a separate
+  test-only surface.
+- Structured observations are the primary automation interface. Rendered frames remain required
+  evidence for presentation rules, but agents must not need pixels to operate the gameplay loop.
+- Player-perspective observations must obey fog and stale-building memory. Any omniscient test
+  oracle must use a structurally separate diagnostic contract and must never inform agent actions.
+- Diagnostic action/state traces are verification artifacts, not restorable saves or a player
+  replay feature.
 
 ## 15. Technical Direction
 
@@ -356,6 +370,9 @@ Implementation is not complete until there is evidence for all of the following:
 - The full relevant test suite passes headlessly.
 - A macOS Apple-silicon development build succeeds.
 - A live complete match proves the launch-to-result path, including Restart and Quit.
+- A development-player agent scenario proves its covered path can be operated from versioned
+  structured commands and observations without visual input, with any graphical checkpoint paired
+  to the exact structured state used for review.
 - Match logs are produced and contain the required summary fields.
 - Generated folders such as `Library`, `Temp`, `obj`, and builds are excluded from version
   control, while every committed Unity asset is accompanied by its `.meta` file.

@@ -132,10 +132,7 @@ namespace AshesOfRum
                     SetOrderFeedback("Cancel construction before issuing another order");
                     return;
                 }
-                foreach (var worker in availableWorkers) worker.IssueGather(cache);
-                SetOrderFeedback($"Gather {cache.name}");
-                PlayCue(GameplayCue.Order);
-                CreateOrderMarker(cache.transform.position, new Color(0.95f, 0.68f, 0.2f));
+                IssueGatherForSelected(cache, availableWorkers);
                 return;
             }
             IssueMoveForSelected(hit.point);

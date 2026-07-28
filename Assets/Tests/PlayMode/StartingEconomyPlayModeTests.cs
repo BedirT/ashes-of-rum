@@ -102,8 +102,10 @@ namespace AshesOfRum.Tests
             Assert.That(GameObject.Find(StartingEconomyController.HisarObjectName), Is.Not.Null);
 
             var worker = economy.Workers[0];
-            economy.SelectOnly(worker);
-            economy.IssueGatherForSmoke(economy.Caches[0]);
+            Assert.That(economy.TrySelectWorkersForCommand(new[] { worker }, out var selectRejection), Is.True,
+                selectRejection);
+            Assert.That(economy.TryIssueGatherCommand(economy.Caches[0], out var gatherRejection), Is.True,
+                gatherRejection);
             var deadline = Time.realtimeSinceStartup + 12f;
             while (economy.Supplies <= economy.StartingSupplies && Time.realtimeSinceStartup < deadline)
                 yield return null;
@@ -112,6 +114,103 @@ namespace AshesOfRum.Tests
             Assert.That(economy.Caches[0].Remaining, Is.EqualTo(390));
             Assert.That(worker.IsSelected, Is.True);
             Assert.That(worker.CurrentActivity, Is.EqualTo(WorkerAgent.Activity.GoingToCache));
+        }
+
+        [UnityTest]
+        public IEnumerator AgentProtocol_ProjectsFogSafeStableStateAndUsesPlayerCommands()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var projector = new AgentStateProjector(economy);
+            var executor = new AgentCommandExecutor(economy, projector);
+
+            var initial = projector.Project(1);
+            var repeated = projector.Project(1);
+            Assert.That(initial.perspective, Is.EqualTo("player"));
+            Assert.That(initial.workers.Select(worker => worker.id),
+                Is.EqualTo(new[] { "worker-1", "worker-2", "worker-3", "worker-4" }));
+            Assert.That(initial.visibleCaches.Select(cache => cache.id), Does.Contain("cache-1"));
+            Assert.That(initial.visibleCaches.Select(cache => cache.id), Does.Not.Contain("cache-3"));
+            Assert.That(repeated.stateHash, Is.EqualTo(initial.stateHash));
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select",
+                actorIds = new[] { "worker-unknown" }
+            }, out var rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unknown_actor"));
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select",
+                actorIds = new[] { "worker-1" }
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "move",
+                x = FogOfWarSystem.MaxX + 1f,
+                z = -2f
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("invalid_position"));
+
+            var blockedDestination = new Vector3(5f, 0f, -2f);
+            var blocker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            blocker.transform.position = blockedDestination + Vector3.up;
+            blocker.transform.localScale = new Vector3(3f, 2f, 3f);
+            var obstacle = blocker.AddComponent<NavMeshObstacle>();
+            obstacle.carving = true;
+            obstacle.carveOnlyStationary = false;
+            yield return new WaitForSeconds(1f);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "move",
+                x = blockedDestination.x,
+                z = blockedDestination.z
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unreachable"));
+            Object.Destroy(blocker);
+            yield return new WaitForSeconds(1f);
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "move",
+                x = -3.5f,
+                z = -2f
+            }, out rejection), Is.True, rejection);
+            yield return WaitUntil(() => economy.Workers[0].CurrentActivity == WorkerAgent.Activity.Idle);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "gather",
+                targetId = "cache-1"
+            }, out rejection), Is.True, rejection);
+            yield return WaitUntil(() => economy.Supplies > economy.StartingSupplies);
+
+            var deposited = projector.Project(2);
+            Assert.That(deposited.supplies, Is.GreaterThan(deposited.startingSupplies));
+            Assert.That(deposited.workers[0].id, Is.EqualTo("worker-1"));
+            Assert.That(deposited.workers[0].selected, Is.True);
+            Assert.That(deposited.stateHash, Has.Length.EqualTo(64));
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "gather",
+                targetId = "cache-3"
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unknown_target"),
+                "Hidden target guesses must not reveal whether an entity exists.");
+
+            Assert.That(economy.TryPlaceHouse(economy.Workers[1], VisibleHouseSite), Is.True);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select",
+                actorIds = new[] { "worker-2" }
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "move",
+                x = -1f,
+                z = -2f
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("actors_busy"));
         }
 
         [UnityTest]
