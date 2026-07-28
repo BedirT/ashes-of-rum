@@ -17,7 +17,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | 006 - Win a complete match | Add fair scripted AI, both Hisar destruction outcomes, restart, quit, and a 10-15 minute match tune. |
 | Complete | 007 - Maneuver and flank | Read formation facing, exploit fixed reorientation, and gain a modest deterministic side or rear damage advantage. |
 | Complete | 008 - Hold the frontline | Opposing formations halt direct movement through each other while leaving room to maneuver around a flank. |
-| In Progress | 009 - Give soldiers battlefield presence | Command formations as one unit while individual soldiers path, fight, take hits, die, and regroup naturally. |
+| Complete | 009 - Give soldiers battlefield presence | Command formations as one unit while individual soldiers path, fight, take hits, die, and regroup naturally. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.

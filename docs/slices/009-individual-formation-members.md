@@ -8,28 +8,28 @@ die individually, and naturally regroup into the formation afterward.
 
 ## Acceptance
 
-- [ ] One click, control-group entry, and order still select and command the complete formation;
+- [x] One click, control-group entry, and order still select and command the complete formation;
       individual soldiers cannot be selected or ordered separately.
-- [ ] Each living soldier owns a persistent world position, facing, health value, movement path,
+- [x] Each living soldier owns a persistent world position, facing, health value, movement path,
       and formation slot rather than inheriting every anchor translation and rotation rigidly.
-- [ ] Soldiers follow individual NavMesh paths toward their assigned slots, separate around an
+- [x] Soldiers follow individual NavMesh paths toward their assigned slots, separate around an
       obstacle or neighboring soldier when needed, and close ranks smoothly without teleporting.
-- [ ] Every Archer projectile visibly tracks one deterministic living enemy soldier and damages
+- [x] Every Archer projectile visibly tracks one deterministic living enemy soldier and damages
       only that soldier on arrival rather than resolving against the formation center.
-- [ ] Melee soldiers close on and damage individual reachable enemy soldiers while the formation
+- [x] Melee soldiers close on and damage individual reachable enemy soldiers while the formation
       remains the combat command and counter-resolution boundary.
-- [ ] A lethal hit removes only its targeted soldier at that soldier's position, immediately frees
+- [x] A lethal hit removes only its targeted soldier at that soldier's position, immediately frees
       one population, and causes survivors to close ranks smoothly.
-- [ ] Existing counter modifiers, member-count combat output, projectile timing, formation facing,
+- [x] Existing counter modifiers, member-count combat output, projectile timing, formation facing,
       flank bonuses, frontline blocking, fog, health bars, AI orders, and structure combat remain
       deterministic and playable.
-- [ ] Focused EditMode and PlayMode coverage protects member slot assignment, individual movement,
+- [x] Focused EditMode and PlayMode coverage protects member slot assignment, individual movement,
       projectile targeting, member-specific damage, casualty position, and regrouping.
-- [ ] The native macOS player visibly exercises obstacle separation, member-targeted Archer fire,
+- [x] The native macOS player visibly exercises obstacle separation, member-targeted Archer fire,
       an individual casualty, and survivor regrouping while preserving the complete match loop.
-- [ ] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
-- [ ] A context-free review covers the exact final HEAD.
-- [ ] The merged game remains playable at its current scope.
+- [x] `make verify` passes on the exact PR HEAD and its local SHA-keyed evidence is recorded in the PR.
+- [x] A context-free review covers the exact final HEAD.
+- [x] The merged game remains playable at its current scope.
 
 ## Non-Goals
 
@@ -55,5 +55,11 @@ terrain-derived combat modifiers, or production-art polish.
 
 ## Evidence
 
-Record the PR, final reviewed HEAD, verification summary, review round, fixer count, merge result,
-and merged-main smoke result before closing the slice.
+- Gameplay PR: [#18](https://github.com/BedirT/rts-game/pull/18)
+- Final reviewed head: `a64741d57b11b98a626083b8a6d2de968dd67c0a`
+- Verification: 26/26 EditMode tests, 76/76 PlayMode tests, native ARM64 development build,
+  45/45 headless smoke checks, and 48/48 graphical smoke checks passed at the final head.
+- Review: round 3 reported zero blocking findings after two fixer runs.
+- Merge: squash commit `6e68327ce02b61cb454814cb4392cd32159167ba`
+- Merged-main proof: `make post-merge` passed at `6e68327ce02b61cb454814cb4392cd32159167ba`;
+  SHA-keyed evidence is stored under `.artifacts/verification/6e68327ce02b61cb454814cb4392cd32159167ba/`.
