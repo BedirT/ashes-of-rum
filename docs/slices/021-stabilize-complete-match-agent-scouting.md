@@ -1,6 +1,6 @@
 # Exceptional Refactor 021 - Stabilize Complete-Match Agent Scouting
 
-State: In Progress
+State: Complete
 
 ## User-Approved Exception
 
@@ -40,5 +40,14 @@ longer depends on every worker occupying an exact shared-destination slot.
 
 ## Evidence
 
-Record the PR, final reviewed head, verification, review/fixer count, merge, and post-merge proof
-before marking this corrective refactor complete.
+- PR: [#34](https://github.com/BedirT/rts-game/pull/34)
+- Final reviewed head: `1f3c105e138e5e2a5223e491aa798cc6ce36f598`
+- Review: round 1 reported no blocking findings after independently running both parameterized
+  fixture contract cases and inspecting exact-head lifecycle artifacts; no fixer run was needed.
+- Exact-head verification: 46/46 Edit Mode, 92/92 Play Mode, macOS ARM64 Development build,
+  launch-mode conflict proof, every normal/scripted headless and graphical smoke, real-economy
+  Victory with both Restart and graphical Quit, both adaptive live runs, clean logs, static checks,
+  and artifact/hash validation passed.
+- Merge: squash-merged as `5720b32672e1f97a2c88040f865f957efc03fbbc`; the branch was deleted.
+- Post-merge: `make post-merge` passed on merged `main` at that exact SHA with the same full ladder,
+  including the graphical complete-match Quit path that originally exposed this defect.
