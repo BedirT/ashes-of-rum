@@ -298,8 +298,8 @@ namespace AshesOfRum
 
         public AgentMatchState Project(int sequence)
         {
-            SynchronizeIds();
             economy.FogOfWar.RefreshNow();
+            SynchronizeIds();
             var visibleCaches = cacheIds
                 .Where(pair => pair.Key != null &&
                                economy.FogOfWar.StateAt(pair.Key.transform.position) == FogState.Visible)

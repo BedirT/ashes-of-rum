@@ -55,7 +55,6 @@ namespace AshesOfRum.Tests
             var scout = new GameObject("Agent combat visibility scout");
             scout.transform.position = hostile.transform.position;
             economy.FogOfWar.RegisterFriendly(scout.transform);
-            economy.FogOfWar.RefreshNow();
             var visible = projector.Project(2);
             Assert.That(visible.visibleHostileFormations, Has.Length.EqualTo(1));
             Assert.That(visible.visibleHostileFormations[0].id, Is.EqualTo("hostile-formation-1"));
