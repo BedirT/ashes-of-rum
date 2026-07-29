@@ -16,6 +16,7 @@ namespace AshesOfRum
         private static void StartWhenRequested()
         {
             if (GetArgumentValue("--agent-script") == null) return;
+            if (FindAnyObjectByType<AgentSessionRunner>() != null) return;
             var runner = new GameObject("Agent Session Runner");
             DontDestroyOnLoad(runner);
             runner.AddComponent<AgentSessionRunner>().StartCoroutine(runner.GetComponent<AgentSessionRunner>().Run());
@@ -32,6 +33,11 @@ namespace AshesOfRum
             AgentScript script = null;
             var completedSteps = 0;
             var manifests = new List<string>();
+            var matchSummaryPath = string.Empty;
+            var matchSummarySha256 = string.Empty;
+            var matchEventLogPath = string.Empty;
+            var matchEventLogSha256 = string.Empty;
+            var requestShippedQuit = false;
             string failure = null;
 
             try
@@ -58,6 +64,8 @@ namespace AshesOfRum
             }
 
             StartingEconomyController economy = null;
+            AgentStateProjector projector = null;
+            AgentCommandExecutor executor = null;
             if (failure == null)
             {
                 var startupDeadline = Time.realtimeSinceStartup + StartupTimeoutSeconds;
@@ -71,8 +79,8 @@ namespace AshesOfRum
 
             if (failure == null)
             {
-                var projector = new AgentStateProjector(economy, buildSha);
-                var executor = new AgentCommandExecutor(economy, projector);
+                projector = new AgentStateProjector(economy, buildSha);
+                executor = new AgentCommandExecutor(economy, projector);
                 for (var index = 0; index < script.steps.Length; index++)
                 {
                     var step = script.steps[index];
@@ -99,9 +107,48 @@ namespace AshesOfRum
                         response.accepted = captureSucceeded;
                         if (!captureSucceeded) response.rejectionCode = "capture_failed";
                     }
-                    else if (step.action == "quit")
+                    else if (step.action == "end_session")
                     {
                         response.accepted = true;
+                    }
+                    else if (step.action == "restart")
+                    {
+                        if (!executor.TryAuthorizeResultAction(out var resultRejection))
+                        {
+                            response.accepted = false;
+                            response.rejectionCode = resultRejection;
+                        }
+                        else
+                        {
+                            CaptureTelemetry(economy, ref matchSummaryPath, ref matchSummarySha256,
+                                ref matchEventLogPath, ref matchEventLogSha256);
+                            var previous = economy;
+                            executor.RestartMatch();
+                            var rebound = false;
+                            yield return RebindAfterRestart(previous, value =>
+                            {
+                                economy = value;
+                                rebound = value != null;
+                            });
+                            response.accepted = rebound && economy.Outcome == MatchOutcome.InProgress;
+                            response.rejectionCode = response.accepted ? null : "restart_failed";
+                            if (response.accepted)
+                            {
+                                projector = new AgentStateProjector(economy, buildSha);
+                                executor = new AgentCommandExecutor(economy, projector);
+                            }
+                        }
+                    }
+                    else if (step.action == "quit")
+                    {
+                        response.accepted = executor.TryAuthorizeResultAction(out var resultRejection);
+                        response.rejectionCode = resultRejection;
+                        if (response.accepted)
+                        {
+                            CaptureTelemetry(economy, ref matchSummaryPath, ref matchSummarySha256,
+                                ref matchEventLogPath, ref matchEventLogSha256);
+                            requestShippedQuit = true;
+                        }
                     }
                     else
                     {
@@ -117,7 +164,7 @@ namespace AshesOfRum
                         failure = $"Step {step.id} was rejected: {response.rejectionCode}.";
                         break;
                     }
-                    if (step.action == "quit") break;
+                    if (step.action is "end_session" or "quit") break;
                     yield return null;
                 }
             }
@@ -131,6 +178,10 @@ namespace AshesOfRum
                 completedSteps = completedSteps,
                 outputPath = outputPath,
                 checkpointManifests = manifests.ToArray(),
+                matchSummaryPath = matchSummaryPath,
+                matchSummarySha256 = matchSummarySha256,
+                matchEventLogPath = matchEventLogPath,
+                matchEventLogSha256 = matchEventLogSha256,
                 error = failure
             };
             if (!string.IsNullOrWhiteSpace(resultPath))
@@ -140,6 +191,11 @@ namespace AshesOfRum
             }
             Debug.Log($"AGENT_SESSION:{(result.passed ? "PASS" : "FAIL")}:{resultPath}");
             yield return null;
+            if (result.passed && requestShippedQuit)
+            {
+                executor.QuitMatch();
+                yield break;
+            }
             Application.Quit(result.passed ? 0 : 1);
         }
 
@@ -209,6 +265,9 @@ namespace AshesOfRum
                     if (projector.TryResolveVisibleHostileStructure(step.targetId, out var hostileStructure))
                         return hostileStructure.Health < hostileStructure.MaxHealth;
                     return false;
+                case "outcome_is":
+                    return string.Equals(economy.Outcome.ToString(), step.targetId, StringComparison.Ordinal) &&
+                           economy.Outcome != MatchOutcome.InProgress;
                 default:
                     return false;
             }
@@ -229,24 +288,33 @@ namespace AshesOfRum
             var state = projector.Project(sequence);
             var statePath = Path.Combine(artifactDirectory, $"{step.checkpoint}-state.json");
             var manifestPath = Path.Combine(artifactDirectory, $"{step.checkpoint}-frame.json");
+            var checkpointScreenshotPath = string.IsNullOrWhiteSpace(screenshotPath)
+                ? string.Empty
+                : Path.Combine(artifactDirectory, $"{step.checkpoint}.png");
+            if (File.Exists(statePath) || File.Exists(manifestPath) ||
+                (!string.IsNullOrWhiteSpace(checkpointScreenshotPath) && File.Exists(checkpointScreenshotPath)))
+            {
+                Time.timeScale = previousTimeScale;
+                completed(false);
+                yield break;
+            }
             File.WriteAllText(statePath, JsonUtility.ToJson(state, true));
 
             var screenshotSha = string.Empty;
-            if (!string.IsNullOrWhiteSpace(screenshotPath))
+            if (!string.IsNullOrWhiteSpace(checkpointScreenshotPath))
             {
-                if (File.Exists(screenshotPath)) File.Delete(screenshotPath);
-                ScreenCapture.CaptureScreenshot(screenshotPath);
+                ScreenCapture.CaptureScreenshot(checkpointScreenshotPath);
                 var deadline = Time.realtimeSinceStartup + CaptureTimeoutSeconds;
-                while ((!File.Exists(screenshotPath) || new FileInfo(screenshotPath).Length == 0) &&
+                while ((!File.Exists(checkpointScreenshotPath) || new FileInfo(checkpointScreenshotPath).Length == 0) &&
                        Time.realtimeSinceStartup < deadline)
                     yield return null;
-                if (!File.Exists(screenshotPath) || new FileInfo(screenshotPath).Length == 0)
+                if (!File.Exists(checkpointScreenshotPath) || new FileInfo(checkpointScreenshotPath).Length == 0)
                 {
                     Time.timeScale = previousTimeScale;
                     completed(false);
                     yield break;
                 }
-                screenshotSha = AgentProtocol.Sha256File(screenshotPath);
+                screenshotSha = AgentProtocol.Sha256File(checkpointScreenshotPath);
             }
 
             var manifest = new AgentFrameManifest
@@ -256,11 +324,12 @@ namespace AshesOfRum
                 checkpoint = step.checkpoint,
                 sequence = sequence,
                 elapsedMilliseconds = state.elapsedMilliseconds,
-                width = string.IsNullOrWhiteSpace(screenshotPath) ? 0 : Screen.width,
-                height = string.IsNullOrWhiteSpace(screenshotPath) ? 0 : Screen.height,
+                width = string.IsNullOrWhiteSpace(checkpointScreenshotPath) ? 0 : Screen.width,
+                height = string.IsNullOrWhiteSpace(checkpointScreenshotPath) ? 0 : Screen.height,
                 statePath = statePath,
                 stateHash = state.stateHash,
-                screenshotPath = screenshotPath,
+                stateSha256 = AgentProtocol.Sha256File(statePath),
+                screenshotPath = checkpointScreenshotPath,
                 screenshotSha256 = screenshotSha,
                 camera = state.camera
             };
@@ -268,7 +337,7 @@ namespace AshesOfRum
             response.state = state;
             response.checkpointStatePath = statePath;
             response.frameManifestPath = manifestPath;
-            response.screenshotPath = screenshotPath;
+            response.screenshotPath = checkpointScreenshotPath;
             manifests.Add(manifestPath);
             Time.timeScale = previousTimeScale;
             completed(true);
@@ -276,6 +345,39 @@ namespace AshesOfRum
 
         private static bool IsSafeCheckpoint(string value) => !string.IsNullOrWhiteSpace(value) &&
             value.All(character => char.IsLetterOrDigit(character) || character is '-' or '_');
+
+        private static IEnumerator RebindAfterRestart(StartingEconomyController previous,
+            Action<StartingEconomyController> completed)
+        {
+            var deadline = Time.realtimeSinceStartup + StartupTimeoutSeconds;
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                var current = FindAnyObjectByType<StartingEconomyController>();
+                if (current != null && current != previous)
+                {
+                    completed(current);
+                    yield break;
+                }
+                yield return null;
+            }
+            completed(null);
+        }
+
+        private static void CaptureTelemetry(StartingEconomyController economy,
+            ref string summaryPath, ref string summaryHash, ref string eventPath, ref string eventHash)
+        {
+            if (economy == null || economy.Outcome == MatchOutcome.InProgress) return;
+            if (!string.IsNullOrWhiteSpace(economy.MatchSummaryPath) && File.Exists(economy.MatchSummaryPath))
+            {
+                summaryPath = economy.MatchSummaryPath;
+                summaryHash = AgentProtocol.Sha256File(summaryPath);
+            }
+            if (!string.IsNullOrWhiteSpace(economy.MatchEventLogPath) && File.Exists(economy.MatchEventLogPath))
+            {
+                eventPath = economy.MatchEventLogPath;
+                eventHash = AgentProtocol.Sha256File(eventPath);
+            }
+        }
 
         private static bool IsSha(string value) => value?.Length == 40 &&
             value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');

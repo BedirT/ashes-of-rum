@@ -10,6 +10,9 @@ namespace AshesOfRum
         public int health;
         public int maxHealth;
         public bool selected;
+        public bool attackable;
+        public bool destroyed;
+        public bool resultActionsAvailable;
         public bool hasRally;
         public AgentVector3 rallyPosition;
         public string rallyCacheId;
@@ -29,9 +32,12 @@ namespace AshesOfRum
             return new AgentHisarState
             {
                 id = "hisar",
-                health = economy.FriendlyHisar.Health,
-                maxHealth = economy.FriendlyHisar.MaxHealth,
-                selected = economy.FriendlyHisar.IsSelected,
+                health = economy.FriendlyHisar != null ? economy.FriendlyHisar.Health : 0,
+                maxHealth = economy.FriendlyHisar != null ? economy.FriendlyHisar.MaxHealth : 0,
+                selected = economy.FriendlyHisar != null && economy.FriendlyHisar.IsSelected,
+                attackable = economy.FriendlyHisar != null && economy.FriendlyHisar.IsAttackable,
+                destroyed = economy.FriendlyHisar == null || economy.FriendlyHisar.IsDestroyed,
+                resultActionsAvailable = economy.Outcome != MatchOutcome.InProgress,
                 hasRally = rally.HasValue,
                 rallyPosition = rally.HasValue ? AgentVector3.From(rally.Value) : null,
                 rallyCacheId = visibleRallyCacheId

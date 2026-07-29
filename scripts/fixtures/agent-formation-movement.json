@@ -45,6 +45,6 @@
       "timeoutSeconds": 30
     },
     { "id": "capture-moved-spearmen", "action": "capture", "checkpoint": "spearmen-moved" },
-    { "id": "quit-session", "action": "quit" }
+    { "id": "end-session", "action": "end_session" }
   ]
 }
