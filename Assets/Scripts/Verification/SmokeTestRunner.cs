@@ -34,6 +34,7 @@ namespace AshesOfRum
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void StartWhenRequested()
         {
+            if (!VerificationLaunchModeValidator.AllowsCurrentProcess()) return;
             if (!HasArgument("--smoke-test")) return;
             var runner = new GameObject("SmokeTestRunner");
             DontDestroyOnLoad(runner);

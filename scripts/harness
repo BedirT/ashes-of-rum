@@ -57,6 +57,7 @@ COMPLETE_QUIT_DIR="$EVIDENCE/agent-complete-quit-graphical"
 COMPLETE_QUIT_RESULT="$COMPLETE_QUIT_DIR/result.json"
 LIVE_HEADLESS_DIR="$EVIDENCE/agent-live-headless"
 LIVE_GRAPHICAL_DIR="$EVIDENCE/agent-live-graphical"
+VERIFICATION_CONFLICT_DIR="$EVIDENCE/verification-launch-conflict"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -271,6 +272,27 @@ wait_for_player() {
   wait "$pid" || fail "$label exited with a failure status"
 }
 
+wait_for_player_failure() {
+  local pid="$1"
+  local label="$2"
+  local timeout_seconds="${3:-15}"
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= timeout_seconds )); then
+      kill "$pid" 2>/dev/null || true
+      sleep 2
+      kill -9 "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fail "$label did not fail closed within $timeout_seconds seconds"
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  local status=0
+  wait "$pid" || status=$?
+  (( status != 0 )) || fail "$label unexpectedly exited successfully"
+}
+
 smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   mkdir -p "$EVIDENCE"
@@ -291,6 +313,28 @@ smoke() {
     || fail "Smoke did not reach the shipped Quit listener"
   scan_log "$PLAYER_LOG"
   say "Built-player smoke passed."
+}
+
+verification_conflict_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$VERIFICATION_CONFLICT_DIR"
+  mkdir -p "$VERIFICATION_CONFLICT_DIR"
+  local log="$VERIFICATION_CONFLICT_DIR/player.log"
+  local smoke_result="$VERIFICATION_CONFLICT_DIR/smoke-result.json"
+  local live_session="$VERIFICATION_CONFLICT_DIR/live-session"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics -logFile "$log" \
+    --smoke-test --smoke-output "$smoke_result" \
+    --agent-live-dir "$live_session" --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player_failure "$pid" "Conflicting verification launch"
+  [[ "$(grep -cF 'VERIFICATION_LAUNCH_CONFLICT:multiple_verification_modes:--smoke-test,--agent-live-dir' \
+      "$log" || true)" == "1" ]] || fail "Verification conflict marker was not emitted exactly once"
+  [[ ! -e "$smoke_result" ]] || fail "Conflicting launch created a smoke result"
+  [[ ! -e "$live_session/ready.json" ]] || fail "Conflicting launch created live readiness"
+  [[ ! -e "$live_session/result.json" ]] || fail "Conflicting launch created a live result"
+  ! compgen -G "$live_session/outbox/*.json" >/dev/null \
+    || fail "Conflicting launch created a live response"
+  say "Conflicting smoke and live-agent launch failed closed without artifacts."
 }
 
 graphical_smoke() {
@@ -1029,11 +1073,13 @@ write_summary() {
       movementAgentHeadless: "passed", movementAgentGraphical: "passed",
       combatAgentHeadless: "passed", combatAgentGraphical: "passed",
       economyAgentHeadless: "passed", economyAgentGraphical: "passed",
+      verificationModeConflict: "passed",
       liveAgentHeadless: "passed", liveAgentGraphical: "passed",
       completeMatchRestart: "passed", completeMatchQuitGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
-  jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
+  jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and
+    .developmentBuild == true and .resolution == "1920x1080" and .verificationModeConflict == "passed"' \
     "$EVIDENCE/summary.json" >/dev/null || fail "Verification summary contract failed"
 }
 
@@ -1053,6 +1099,7 @@ verify() {
   scan_log "$EVIDENCE/build.log"
   assert_arm64_development_build
   assert_unused_player_modules
+  verification_conflict_smoke
   smoke
   graphical_smoke
   agent_smoke
@@ -1146,6 +1193,7 @@ case "${1:-}" in
   verify-fast) verify_fast ;;
   verify) verify ;;
   smoke) smoke ;;
+  verification-conflict-smoke) verification_conflict_smoke ;;
   graphical-smoke) graphical_smoke ;;
   agent-smoke) agent_smoke ;;
   agent-graphical-smoke) agent_graphical_smoke ;;
@@ -1170,5 +1218,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|live-agent-smoke|live-agent-graphical-smoke|complete-match-restart-smoke|complete-match-quit-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|verification-conflict-smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|live-agent-smoke|live-agent-graphical-smoke|complete-match-restart-smoke|complete-match-quit-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

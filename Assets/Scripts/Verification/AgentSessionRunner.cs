@@ -16,6 +16,7 @@ namespace AshesOfRum
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void StartWhenRequested()
         {
+            if (!VerificationLaunchModeValidator.AllowsCurrentProcess()) return;
             if (GetArgumentValue("--agent-script") == null && GetArgumentValue("--agent-live-dir") == null) return;
             if (FindAnyObjectByType<AgentSessionRunner>() != null) return;
             var runner = new GameObject("Agent Session Runner");
