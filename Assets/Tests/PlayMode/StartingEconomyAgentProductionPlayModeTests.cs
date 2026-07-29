@@ -17,6 +17,7 @@ namespace AshesOfRum.Tests
             var executor = new AgentCommandExecutor(economy, projector);
             var initial = projector.Project(1);
 
+            Assert.That(projector.IsKnownBuildingObjectDestroyed("building-unknown"), Is.False);
             Assert.That(initial.hisar.id, Is.EqualTo("hisar"));
             Assert.That(initial.hisar.health, Is.EqualTo(economy.FriendlyHisar.Health));
             Assert.That(initial.hisar.maxHealth, Is.EqualTo(economy.FriendlyHisar.MaxHealth));
@@ -234,6 +235,9 @@ namespace AshesOfRum.Tests
                 action = "confirm_demolition", targetId = storehouseId
             }, out rejection), Is.True, rejection);
             yield return WaitUntil(() => economy.Storehouses.Count == 0);
+            Assert.That(projector.IsKnownBuildingObjectDestroyed(storehouseId), Is.False,
+                "Registry removal happens before the delayed rendered object is destroyed.");
+            yield return WaitUntil(() => projector.IsKnownBuildingObjectDestroyed(storehouseId));
             Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeDemolition));
             Assert.That(projector.Project(14).buildings, Is.Empty);
         }
@@ -337,6 +341,8 @@ namespace AshesOfRum.Tests
                 action = "confirm_demolition", targetId = storehouse.id
             }, out rejection), Is.True, rejection);
             yield return WaitUntil(() => economy.Storehouses.Count == 0);
+            Assert.That(projector.IsKnownBuildingObjectDestroyed(storehouse.id), Is.False);
+            yield return WaitUntil(() => projector.IsKnownBuildingObjectDestroyed(storehouse.id));
             Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeRejections));
             Assert.That(economy.Houses, Has.Count.EqualTo(1));
             Assert.That(economy.Houses[0].IsDestroyed, Is.False);

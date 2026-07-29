@@ -38,8 +38,8 @@ rally without using pixels to act.
 - A real built-player scenario gathers and spends real Supplies, cancels and replaces construction,
   completes a Storehouse, sets a visible-cache rally, queues and cancels production, trains a Worker
   that begins gathering at that rally, explicitly selects and demolishes the completed Storehouse
-  with confirmation, and
-  captures paired structured state and a 1920x1080 frame.
+  with confirmation, waits for its delayed rendered object to disappear, and captures paired
+  structured state and a 1920x1080 frame.
 - Existing gameplay and every earlier code-playable scenario remain green.
 
 ## Scope

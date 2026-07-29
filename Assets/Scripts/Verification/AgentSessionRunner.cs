@@ -177,7 +177,7 @@ namespace AshesOfRum
                 case "building_complete":
                     return projector.TryResolveBuilding(step.targetId, out var building) && building.IsComplete;
                 case "building_absent":
-                    return !projector.TryResolveBuilding(step.targetId, out _);
+                    return projector.IsKnownBuildingObjectDestroyed(step.targetId);
                 case "worker_count":
                     return economy.Workers.Count(worker => worker != null && worker.IsAlive) == step.value;
                 case "worker_gathering":

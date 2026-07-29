@@ -390,6 +390,13 @@ namespace AshesOfRum
             return building != null && !building.IsDestroyed && FriendlyBuildings().Contains(building);
         }
 
+        public bool IsKnownBuildingObjectDestroyed(string id)
+        {
+            SynchronizeIds();
+            var known = buildingIds.FirstOrDefault(pair => pair.Value == id);
+            return string.Equals(known.Value, id, StringComparison.Ordinal) && known.Key == null;
+        }
+
         public bool TryResolveFormation(string id, out FormationAgent formation)
         {
             SynchronizeIds();
