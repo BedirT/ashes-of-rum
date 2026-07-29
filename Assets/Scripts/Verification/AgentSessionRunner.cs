@@ -235,6 +235,8 @@ namespace AshesOfRum
                     return economy.Workers.Where(worker => worker != null && worker.IsAlive)
                         .All(worker => worker.CurrentActivity == WorkerAgent.Activity.Idle &&
                                        worker.CarriedSupplies == 0);
+                case "cache_visible":
+                    return projector.TryResolveCache(step.targetId, out _);
                 case "building_complete":
                     return projector.TryResolveBuilding(step.targetId, out var building) && building.IsComplete;
                 case "building_absent":

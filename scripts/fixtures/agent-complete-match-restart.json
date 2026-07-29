@@ -10,7 +10,7 @@
     { "id": "gather-east-safe-cache", "action": "gather", "targetId": "cache-2" },
     { "id": "wait-east-safe-cache", "action": "wait", "condition": "supplies_greater_than", "value": 399, "timeoutSeconds": 90 },
     { "id": "move-to-reveal-west-cache", "action": "move", "x": 0, "z": 3 },
-    { "id": "wait-between-safe-caches", "action": "wait", "condition": "workers_idle", "timeoutSeconds": 30 },
+    { "id": "wait-between-safe-caches", "action": "wait", "condition": "cache_visible", "targetId": "cache-1", "timeoutSeconds": 30 },
     { "id": "gather-west-safe-cache", "action": "gather", "targetId": "cache-1" },
     { "id": "wait-real-formation-economy", "action": "wait", "condition": "supplies_greater_than", "value": 799, "timeoutSeconds": 90 },
     { "id": "select-production-hisar", "action": "select_hisar" },

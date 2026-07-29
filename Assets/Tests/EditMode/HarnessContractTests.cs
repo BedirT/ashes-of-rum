@@ -254,6 +254,10 @@ namespace AshesOfRum.Tests
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == "wait" && step.condition == "outcome_is" && step.targetId == "Victory"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "cache_visible" && step.targetId == "cache-1"));
+            Assert.That(script.steps, Has.None.Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "workers_idle"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == lifecycleAction));
             Assert.That(script.steps, Has.None.Matches<AgentScriptStep>(step => step.action is
                 "credit_supplies" or "spawn" or "damage" or "advance_time" or "reveal" or "suspend_ai"));
