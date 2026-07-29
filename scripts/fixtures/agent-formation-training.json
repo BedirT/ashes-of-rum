@@ -37,6 +37,10 @@
       "timeoutSeconds": 20
     },
     {
+      "id": "select-hisar",
+      "action": "select_hisar"
+    },
+    {
       "id": "train-spearmen",
       "action": "train",
       "formationType": "Spearmen"

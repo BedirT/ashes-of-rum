@@ -102,20 +102,20 @@ namespace AshesOfRum.Tests
             Assert.That(projector.Project(8).hisar.rallyCacheId, Is.Null,
                 "An exhausted rally cache must not remain exposed as a valid cache target.");
 
+            var suppliesBeforeWrongSelection = economy.Supplies;
             Assert.That(executor.Execute(new AgentScriptStep
             {
-                action = "set_rally", x = -2f, z = -1f
+                action = "select", actorIds = new[] { "worker-1" }
             }, out rejection), Is.True, rejection);
-            var terrainRally = projector.Project(9).hisar;
-            Assert.That(terrainRally.rallyCacheId, Is.Null);
-            Assert.That(terrainRally.rallyPosition.x, Is.EqualTo(-2f));
-            Assert.That(terrainRally.rallyPosition.z, Is.EqualTo(-1f));
             Assert.That(executor.Execute(new AgentScriptStep
             {
-                action = "set_rally", x = FogOfWarSystem.MaxX + 1f, z = 0f
+                action = "train", formationType = "Worker"
             }, out rejection), Is.False);
-            Assert.That(rejection, Is.EqualTo("invalid_position"));
-            Assert.That(economy.HisarRallyPoint.Value.x, Is.EqualTo(-2f));
+            Assert.That(rejection, Is.EqualTo("no_selection"));
+            Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeWrongSelection));
+            Assert.That(economy.ProductionQueueCount, Is.Zero);
+            Assert.That(executor.Execute(new AgentScriptStep { action = "select_hisar" }, out rejection), Is.True,
+                rejection);
 
             foreach (var type in new[] { "Worker", "Spearmen", "Archers", "Cavalry" })
             {
@@ -125,12 +125,27 @@ namespace AshesOfRum.Tests
                 {
                     action = "train", formationType = type
                 }, out rejection), Is.True, rejection);
-                var queued = projector.Project(10).production;
+                var queued = projector.Project(9).production;
                 Assert.That(queued.count, Is.EqualTo(1));
                 Assert.That(queued.activeItem, Is.EqualTo(type));
+                if (type == "Worker")
+                {
+                    var suppliesAfterQueue = economy.Supplies;
+                    Assert.That(executor.Execute(new AgentScriptStep
+                    {
+                        action = "select", actorIds = new[] { "worker-1" }
+                    }, out rejection), Is.True, rejection);
+                    Assert.That(executor.Execute(new AgentScriptStep { action = "cancel_production" },
+                        out rejection), Is.False);
+                    Assert.That(rejection, Is.EqualTo("no_selection"));
+                    Assert.That(economy.Supplies, Is.EqualTo(suppliesAfterQueue));
+                    Assert.That(economy.ProductionQueueCount, Is.EqualTo(1));
+                    Assert.That(executor.Execute(new AgentScriptStep { action = "select_hisar" }, out rejection),
+                        Is.True, rejection);
+                }
                 Assert.That(executor.Execute(new AgentScriptStep { action = "cancel_production" }, out rejection),
                     Is.True, rejection);
-                Assert.That(projector.Project(11).production.count, Is.Zero);
+                Assert.That(projector.Project(10).production.count, Is.Zero);
                 Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeTraining));
             }
             Assert.That(executor.Execute(new AgentScriptStep { action = "cancel_production" }, out rejection),
@@ -144,6 +159,24 @@ namespace AshesOfRum.Tests
             Assert.That(rejection, Is.EqualTo("unsupported_production"));
             Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeUnknown));
             Assert.That(economy.ProductionQueueCount, Is.Zero);
+
+            foreach (var worker in economy.Workers.ToArray()) worker.ApplyFixedDamage(worker.MaxHealth);
+            yield return null;
+            Assert.That(economy.Workers, Is.Empty);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "set_rally", x = -2f, z = -1f
+            }, out rejection), Is.True, rejection);
+            var terrainRally = projector.Project(11).hisar;
+            Assert.That(terrainRally.rallyCacheId, Is.Null);
+            Assert.That(terrainRally.rallyPosition.x, Is.EqualTo(-2f));
+            Assert.That(terrainRally.rallyPosition.z, Is.EqualTo(-1f));
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "set_rally", x = FogOfWarSystem.MaxX + 1f, z = 0f
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("invalid_position"));
+            Assert.That(economy.HisarRallyPoint.Value.x, Is.EqualTo(-2f));
 
             Assert.That(executor.Execute(new AgentScriptStep
             {
