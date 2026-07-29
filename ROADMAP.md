@@ -28,8 +28,8 @@ change when playtesting exposes a stronger dependency.
 | Complete | Exceptional refactor 017 - Make economy and production code-playable | Operate every match-relevant building, production, cancellation, demolition, and rally command through structured player-authority actions and inspect the Hisar and queue state. |
 | Complete | Exceptional refactor 018 - Make the complete match lifecycle code-playable | Win a real-economy built match through structured player-authority commands, inspect immutable state/frame checkpoints and telemetry, then exercise result-gated Restart and Quit. |
 | Complete | Exceptional refactor 019 - Make agent play live and adaptive | Keep one Development player alive while an external agent observes fog-safe JSON state, submits one semantic command at a time, corrects rejected actions, and reviews exact state-paired frames. |
-| In Progress | Exceptional refactor 020 - Isolate verification authority | Fail closed before launch when privileged smoke automation is combined with either player-authority agent mode, so test-only mutations can never contaminate agent observations. |
-| In Progress | Exceptional refactor 021 - Stabilize complete-match agent scouting | Wait for the west Supplies cache to become observable before gathering it, rather than requiring every selected worker to settle into an exact movement slot. |
+| Complete | Exceptional refactor 020 - Isolate verification authority | Fail closed before launch when privileged smoke automation is combined with either player-authority agent mode, so test-only mutations can never contaminate agent observations. |
+| Complete | Exceptional refactor 021 - Stabilize complete-match agent scouting | Wait for the west Supplies cache to become observable before gathering it, rather than requiring every selected worker to settle into an exact movement slot. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.

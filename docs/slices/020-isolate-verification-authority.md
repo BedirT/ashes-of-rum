@@ -1,6 +1,6 @@
 # Exceptional Refactor 020 - Isolate Verification Authority
 
-State: In Progress
+State: Complete
 
 ## User-Approved Exception
 
@@ -41,8 +41,20 @@ or action session.
 
 ## Evidence
 
-Record the PR, final reviewed head, verification, review/fixer count, merge, and post-merge proof
-before marking this corrective refactor complete.
+- PR: [#33](https://github.com/BedirT/rts-game/pull/33)
+- Final reviewed head: `5f9c536825196359c074871a32362961a94ecb83`
+- Review: round 1 reported no blocking findings; no fixer run was needed. The reviewer also launched
+  all four invalid built-player mode combinations and confirmed each exited with status 2, emitted
+  exactly one conflict marker, and created no verification outputs.
+- Exact-head verification: 46/46 Edit Mode, 92/92 Play Mode, macOS ARM64 Development build,
+  launch-mode conflict proof, every normal/scripted headless and graphical smoke, both
+  complete-match lifecycle runs, both adaptive live runs, clean logs, static checks, and
+  artifact/hash validation passed.
+- Merge: squash-merged as `9d691889c6fd5ba2739e170941716b5c08a12712`; the branch was deleted.
+- Post-merge: the first merged-main ladder exposed an unrelated complete-match scouting predicate
+  defect, which corrective Slice 021 fixed. `make post-merge` then passed the full ladder on the
+  merged-main descendant `5720b32672e1f97a2c88040f865f957efc03fbbc`, including the launch-mode
+  conflict proof and every isolated verification mode.
 
 ## Implementation
 
