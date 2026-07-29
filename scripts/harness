@@ -417,11 +417,11 @@ validate_training_agent_session() {
   local state="$directory/spearmen-ready-state.json"
   validate_json "$result"
   jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
-    .scenario == "spearmen-training-completion" and .completedSteps == 10 and
+    .scenario == "spearmen-training-completion" and .completedSteps == 11 and
     (.checkpointManifests | length) == 1' "$result" >/dev/null \
     || fail "Training agent session result contract failed: $result"
   [[ -s "$output" ]] || fail "Training agent response trace missing: $output"
-  jq -se --arg sha "$SHA" 'length == 10 and all(.[]; .schemaVersion == 1 and .accepted == true and
+  jq -se --arg sha "$SHA" 'length == 11 and all(.[]; .schemaVersion == 1 and .accepted == true and
     .state.buildSha == $sha and .state.perspective == "player" and
     (.state.workers | length) == 4 and (.state.formations | type) == "array" and
     (.state.production | type) == "object" and (.state.stateHash | length) == 64) and
@@ -430,24 +430,24 @@ validate_training_agent_session() {
     (.[0].state.formations | length) == 0 and
     all(.[1].state.workers[]; .selected == true) and
     all(.[2].state.workers[]; .targetCacheId == "cache-1") and
-    .[3].state.supplies >= 400 and .[5].state.supplies >= 400 and
-    (.[5].state.supplies - .[6].state.supplies) == 400 and
-    .[6].state.populationUsed == 12 and .[6].state.production.count == 1 and
-    .[6].state.production.activeItem == "Spearmen" and .[6].state.production.progress == 0 and
-    (.[6].state.formations | length) == 0 and
-    .[7].state.production.count == 0 and (.[7].state.formations | length) == 1 and
-    .[7].state.formations[0].id == "formation-1" and
-    .[7].state.formations[0].type == "Spearmen" and
-    .[7].state.formations[0].selected == false and
-    .[7].state.formations[0].memberCount == 8 and
-    .[7].state.formations[0].totalHealth == 160 and
-    .[7].state.formations[0].maxHealth == 160 and
-    .[7].state.formations[0].order == "Idle" and
-    .[7].state.formations[0].hasDestination == false and
-    .[7].state.formations[0].position.x == -5 and
-    .[7].state.formations[0].position.y > 0.08 and .[7].state.formations[0].position.y < 0.09 and
-    .[7].state.formations[0].position.z == -1 and
-    .[8].state.production.count == 0 and .[8].state.formations == .[7].state.formations' \
+    .[3].state.supplies >= 400 and .[5].state.supplies >= 400 and .[6].state.hisar.selected == true and
+    (.[6].state.supplies - .[7].state.supplies) == 400 and
+    .[7].state.populationUsed == 12 and .[7].state.production.count == 1 and
+    .[7].state.production.activeItem == "Spearmen" and .[7].state.production.progress == 0 and
+    (.[7].state.formations | length) == 0 and
+    .[8].state.production.count == 0 and (.[8].state.formations | length) == 1 and
+    .[8].state.formations[0].id == "formation-1" and
+    .[8].state.formations[0].type == "Spearmen" and
+    .[8].state.formations[0].selected == false and
+    .[8].state.formations[0].memberCount == 8 and
+    .[8].state.formations[0].totalHealth == 160 and
+    .[8].state.formations[0].maxHealth == 160 and
+    .[8].state.formations[0].order == "Idle" and
+    .[8].state.formations[0].hasDestination == false and
+    .[8].state.formations[0].position.x == -5 and
+    .[8].state.formations[0].position.y > 0.08 and .[8].state.formations[0].position.y < 0.09 and
+    .[8].state.formations[0].position.z == -1 and
+    .[9].state.production.count == 0 and .[9].state.formations == .[8].state.formations' \
     "$output" >/dev/null || fail "Training agent response trace contract failed: $output"
   validate_json "$manifest"
   validate_json "$state"
@@ -467,25 +467,26 @@ validate_movement_agent_session() {
   local state="$directory/spearmen-moved-state.json"
   validate_json "$result"
   jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
-    .scenario == "spearmen-movement-arrival" and .completedSteps == 13 and
+    .scenario == "spearmen-movement-arrival" and .completedSteps == 14 and
     (.checkpointManifests | length) == 1' "$result" >/dev/null \
     || fail "Movement agent session result contract failed: $result"
   [[ -s "$output" ]] || fail "Movement agent response trace missing: $output"
-  jq -se --arg sha "$SHA" 'length == 13 and all(.[]; .schemaVersion == 1 and .accepted == true and
+  jq -se --arg sha "$SHA" 'length == 14 and all(.[]; .schemaVersion == 1 and .accepted == true and
     .state.buildSha == $sha and .state.perspective == "player" and
     (.state.workers | length) == 4 and (.state.formations | type) == "array" and
     (.state.stateHash | length) == 64) and
-    .[3].state.supplies >= 400 and (.[5].state.supplies - .[6].state.supplies) == 400 and
-    .[7].state.formations[0].id == "formation-1" and
-    .[7].state.formations[0].type == "Spearmen" and .[7].state.formations[0].selected == false and
-    .[8].state.formations[0].id == "formation-1" and .[8].state.formations[0].selected == true and
-    .[9].state.formations[0].order == "Move" and .[9].state.formations[0].hasDestination == true and
-    .[9].state.formations[0].destination.x == 4 and .[9].state.formations[0].destination.z == 5 and
-    .[10].state.formations[0].id == "formation-1" and .[10].state.formations[0].selected == true and
-    .[10].state.formations[0].order == "Idle" and .[10].state.formations[0].hasDestination == false and
-    ((.[10].state.formations[0].position.x - 4) | fabs) <= 0.5 and
-    ((.[10].state.formations[0].position.z - 5) | fabs) <= 0.5 and
-    .[11].state.formations == .[10].state.formations' "$output" >/dev/null \
+    .[3].state.supplies >= 400 and .[6].state.hisar.selected == true and
+    (.[6].state.supplies - .[7].state.supplies) == 400 and
+    .[8].state.formations[0].id == "formation-1" and
+    .[8].state.formations[0].type == "Spearmen" and .[8].state.formations[0].selected == false and
+    .[9].state.formations[0].id == "formation-1" and .[9].state.formations[0].selected == true and
+    .[10].state.formations[0].order == "Move" and .[10].state.formations[0].hasDestination == true and
+    .[10].state.formations[0].destination.x == 4 and .[10].state.formations[0].destination.z == 5 and
+    .[11].state.formations[0].id == "formation-1" and .[11].state.formations[0].selected == true and
+    .[11].state.formations[0].order == "Idle" and .[11].state.formations[0].hasDestination == false and
+    ((.[11].state.formations[0].position.x - 4) | fabs) <= 0.5 and
+    ((.[11].state.formations[0].position.z - 5) | fabs) <= 0.5 and
+    .[12].state.formations == .[11].state.formations' "$output" >/dev/null \
     || fail "Movement agent response trace contract failed: $output"
   validate_json "$manifest"
   validate_json "$state"
@@ -505,11 +506,11 @@ validate_combat_agent_session() {
   local state="$directory/spearmen-focus-worker-state.json"
   validate_json "$result"
   jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
-    .scenario == "spearmen-scout-and-focus-combat" and .completedSteps == 20 and
+    .scenario == "spearmen-scout-and-focus-combat" and .completedSteps == 21 and
     (.checkpointManifests | length) == 1' "$result" >/dev/null \
     || fail "Combat agent session result contract failed: $result"
   [[ -s "$output" ]] || fail "Combat agent response trace missing: $output"
-  jq -se --arg sha "$SHA" 'length == 20 and all(.[]; .schemaVersion == 1 and .accepted == true and
+  jq -se --arg sha "$SHA" 'length == 21 and all(.[]; .schemaVersion == 1 and .accepted == true and
     .state.buildSha == $sha and .state.perspective == "player" and
     (.state.visibleHostileFormations | type) == "array" and
     (.state.visibleHostileWorkers | type) == "array" and
@@ -517,23 +518,24 @@ validate_combat_agent_session() {
     (.[0].state.visibleHostileFormations | length) == 0 and
     (.[0].state.visibleHostileWorkers | length) == 0 and
     (.[0].state.visibleHostileStructures | length) == 0 and
-    .[8].state.formations[0].id == "formation-1" and .[8].state.formations[0].selected == true and
-    .[9].state.formations[0].order == "AttackMove" and .[9].state.formations[0].hasDestination == true and
-    .[10].state.formations[0].order == "Idle" and .[10].state.formations[0].hasDestination == false and
-    (.[12].state.visibleHostileWorkers | length) > 0 and
-    .[13].state.formations[0].order == "Idle" and
-    .[14].state.formations[0].order == "Move" and
-    .[15].requestId == "wait-for-worker-in-focus-range" and
-    any(.[15].state.visibleHostileWorkers[]; .id == "hostile-worker-1" and .activity == "Gathering") and
-    .[16].state.formations[0].order == "Focus" and .[16].state.formations[0].targetId == "hostile-worker-1" and
-    any(.[16].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
-    .[17].state.formations[0].selected == true and
-    .[17].state.formations[0].order == "Focus" and
-    .[17].state.formations[0].targetId == "hostile-worker-1" and
+    .[6].state.hisar.selected == true and
+    .[9].state.formations[0].id == "formation-1" and .[9].state.formations[0].selected == true and
+    .[10].state.formations[0].order == "AttackMove" and .[10].state.formations[0].hasDestination == true and
+    .[11].state.formations[0].order == "Idle" and .[11].state.formations[0].hasDestination == false and
+    (.[13].state.visibleHostileWorkers | length) > 0 and
+    .[14].state.formations[0].order == "Idle" and
+    .[15].state.formations[0].order == "Move" and
+    .[16].requestId == "wait-for-worker-in-focus-range" and
+    any(.[16].state.visibleHostileWorkers[]; .id == "hostile-worker-1" and .activity == "Gathering") and
+    .[17].state.formations[0].order == "Focus" and .[17].state.formations[0].targetId == "hostile-worker-1" and
     any(.[17].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
-    .[18].requestId == "wait-for-focus-damage" and
-    .[18].state.formations[0].targetId == "" and
-    all(.[18].state.visibleHostileWorkers[]; .id != "hostile-worker-1")' \
+    .[18].state.formations[0].selected == true and
+    .[18].state.formations[0].order == "Focus" and
+    .[18].state.formations[0].targetId == "hostile-worker-1" and
+    any(.[18].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
+    .[19].requestId == "wait-for-focus-damage" and
+    .[19].state.formations[0].targetId == "" and
+    all(.[19].state.visibleHostileWorkers[]; .id != "hostile-worker-1")' \
     "$output" >/dev/null || fail "Combat agent response trace contract failed: $output"
   validate_json "$manifest"
   validate_json "$state"

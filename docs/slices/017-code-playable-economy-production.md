@@ -31,7 +31,7 @@ rally without using pixels to act.
   rejects unknown types without mutation.
 - `cancel_construction`, `cancel_production`, `request_demolition`, and `confirm_demolition` preserve
   the shipped refund, confirmation, selection, and match-state rules.
-- `set_rally` accepts reachable battlefield terrain or a currently visible non-exhausted cache and
+- `set_rally` accepts battlefield terrain under the shipped Hisar ground-rally rules or a currently visible non-exhausted cache and
   rejects hidden, exhausted, unknown, or invalid targets without changing the prior rally.
 - A real built-player scenario gathers and spends real Supplies, cancels and replaces construction,
   completes a Storehouse, sets a visible-cache rally, queues and cancels production, trains a Worker

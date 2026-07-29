@@ -223,6 +223,8 @@ namespace AshesOfRum
                 return RejectCommand("match_complete", "The match is complete", out rejectionCode);
             if (type is not FormationType.Spearmen and not FormationType.Archers and not FormationType.Cavalry)
                 return RejectCommand("unsupported_formation", "Formation type is unavailable", out rejectionCode);
+            if (!hisarSelected)
+                return RejectCommand("no_selection", "Select the Hisar before training", out rejectionCode);
             if (Supplies < tuning.formationCost)
                 return RejectCommand("insufficient_supplies", $"Need {tuning.formationCost} Supplies",
                     out rejectionCode);
@@ -249,6 +251,8 @@ namespace AshesOfRum
         {
             if (Outcome != MatchOutcome.InProgress)
                 return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (!hisarSelected)
+                return RejectCommand("no_selection", "Select the Hisar before training", out rejectionCode);
             if (Supplies < tuning.workerCost)
                 return RejectCommand("insufficient_supplies", $"Need {tuning.workerCost} Supplies",
                     out rejectionCode);
@@ -264,6 +268,9 @@ namespace AshesOfRum
         {
             if (Outcome != MatchOutcome.InProgress)
                 return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (!hisarSelected)
+                return RejectCommand("no_selection", "Select the Hisar before cancelling training",
+                    out rejectionCode);
             if (productionQueue.Active == null)
                 return RejectCommand("queue_empty", "There is no active training to cancel", out rejectionCode);
             CancelActiveTraining();
@@ -332,8 +339,6 @@ namespace AshesOfRum
                     return RejectCommand("target_not_visible", "Rally cache must be currently visible",
                         out rejectionCode);
             }
-            else if (!workers.Any(worker => worker != null && worker.IsAlive && worker.CanReach(position)))
-                return RejectCommand("unreachable", "Rally terrain must be reachable", out rejectionCode);
             if (!TrySetHisarRally(position, cache))
                 return RejectCommand("rally_rejected", "Rally target is unavailable", out rejectionCode);
             rejectionCode = null;
