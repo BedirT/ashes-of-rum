@@ -67,7 +67,9 @@ namespace AshesOfRum.Tests
 
             Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
             Assert.That(script.scenario, Is.EqualTo("spearmen-training-completion"));
-            Assert.That(script.steps, Has.Length.EqualTo(10));
+            Assert.That(script.steps, Has.Length.EqualTo(11));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select_hisar"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == "train" && step.formationType == "Spearmen"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
@@ -87,7 +89,9 @@ namespace AshesOfRum.Tests
 
             Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
             Assert.That(script.scenario, Is.EqualTo("spearmen-movement-arrival"));
-            Assert.That(script.steps, Has.Length.EqualTo(13));
+            Assert.That(script.steps, Has.Length.EqualTo(14));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select_hisar"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == "select" && step.actorIds.Length == 1 && step.actorIds[0] == "formation-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
@@ -106,7 +110,9 @@ namespace AshesOfRum.Tests
             var script = AgentProtocol.LoadScript(path);
 
             Assert.That(script.scenario, Is.EqualTo("spearmen-scout-and-focus-combat"));
-            Assert.That(script.steps, Has.Length.EqualTo(20));
+            Assert.That(script.steps, Has.Length.EqualTo(21));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select_hisar"));
             Assert.That(script.steps, Has.Exactly(2).Matches<AgentScriptStep>(step =>
                 step.action == "attack_move"));
             Assert.That(script.steps, Has.Exactly(2).Matches<AgentScriptStep>(step => step.action == "stop"));
