@@ -55,6 +55,8 @@ COMPLETE_RESTART_RESULT="$COMPLETE_RESTART_DIR/result.json"
 COMPLETE_QUIT_SCRIPT="$ROOT/scripts/fixtures/agent-complete-match-quit.json"
 COMPLETE_QUIT_DIR="$EVIDENCE/agent-complete-quit-graphical"
 COMPLETE_QUIT_RESULT="$COMPLETE_QUIT_DIR/result.json"
+LIVE_HEADLESS_DIR="$EVIDENCE/agent-live-headless"
+LIVE_GRAPHICAL_DIR="$EVIDENCE/agent-live-graphical"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -961,6 +963,54 @@ economy_agent_graphical_smoke() {
   say "Graphical code-playable economy and production passed."
 }
 
+live_agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$LIVE_HEADLESS_DIR"
+  mkdir -p "$LIVE_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$LIVE_HEADLESS_DIR/player.log" \
+    --agent-live-dir "$LIVE_HEADLESS_DIR/session" --agent-build-sha "$SHA" &
+  local pid=$!
+  if ! "$ROOT/scripts/agent-live-client" "$LIVE_HEADLESS_DIR/session" false \
+    > "$LIVE_HEADLESS_DIR/client.log"; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "Headless adaptive live client failed"
+  fi
+  wait_for_player "$pid" "Headless adaptive live agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  grep -F 'AGENT_LIVE_CLIENT:PASS' "$LIVE_HEADLESS_DIR/client.log" >/dev/null \
+    || fail "Headless adaptive client pass marker missing"
+  grep -F 'AGENT_LIVE:PASS:end_session' "$LIVE_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless live player pass marker missing"
+  scan_log "$LIVE_HEADLESS_DIR/player.log"
+  say "Headless adaptive live agent session passed."
+}
+
+live_agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$LIVE_GRAPHICAL_DIR"
+  mkdir -p "$LIVE_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$LIVE_GRAPHICAL_DIR/player.log" \
+    --agent-live-dir "$LIVE_GRAPHICAL_DIR/session" --agent-build-sha "$SHA" \
+    --agent-screenshot enabled &
+  local pid=$!
+  if ! "$ROOT/scripts/agent-live-client" "$LIVE_GRAPHICAL_DIR/session" true \
+    > "$LIVE_GRAPHICAL_DIR/client.log"; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "Graphical adaptive live client failed"
+  fi
+  wait_for_player "$pid" "Graphical adaptive live agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  grep -F 'AGENT_LIVE_CLIENT:PASS' "$LIVE_GRAPHICAL_DIR/client.log" >/dev/null \
+    || fail "Graphical adaptive client pass marker missing"
+  grep -F 'AGENT_LIVE:PASS:end_session' "$LIVE_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical live player pass marker missing"
+  scan_log "$LIVE_GRAPHICAL_DIR/player.log"
+  say "Graphical adaptive live agent session passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -979,6 +1029,7 @@ write_summary() {
       movementAgentHeadless: "passed", movementAgentGraphical: "passed",
       combatAgentHeadless: "passed", combatAgentGraphical: "passed",
       economyAgentHeadless: "passed", economyAgentGraphical: "passed",
+      liveAgentHeadless: "passed", liveAgentGraphical: "passed",
       completeMatchRestart: "passed", completeMatchQuitGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
@@ -1018,6 +1069,8 @@ verify() {
   economy_agent_graphical_smoke
   complete_match_restart_smoke
   complete_match_quit_graphical_smoke
+  live_agent_smoke
+  live_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -1108,6 +1161,8 @@ case "${1:-}" in
   economy-agent-graphical-smoke) economy_agent_graphical_smoke ;;
   complete-match-restart-smoke) complete_match_restart_smoke ;;
   complete-match-quit-graphical-smoke) complete_match_quit_graphical_smoke ;;
+  live-agent-smoke) live_agent_smoke ;;
+  live-agent-graphical-smoke) live_agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -1115,5 +1170,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|complete-match-restart-smoke|complete-match-quit-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|live-agent-smoke|live-agent-graphical-smoke|complete-match-restart-smoke|complete-match-quit-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

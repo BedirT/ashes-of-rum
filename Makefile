@@ -1,4 +1,4 @@
-.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke agent-smoke agent-graphical-smoke house-agent-smoke house-agent-graphical-smoke training-agent-smoke training-agent-graphical-smoke movement-agent-smoke movement-agent-graphical-smoke combat-agent-smoke combat-agent-graphical-smoke economy-agent-smoke economy-agent-graphical-smoke complete-match-restart-smoke complete-match-quit-graphical-smoke pr-ready post-merge static
+.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke agent-smoke agent-graphical-smoke house-agent-smoke house-agent-graphical-smoke training-agent-smoke training-agent-graphical-smoke movement-agent-smoke movement-agent-graphical-smoke combat-agent-smoke combat-agent-graphical-smoke economy-agent-smoke economy-agent-graphical-smoke live-agent-smoke live-agent-graphical-smoke complete-match-restart-smoke complete-match-quit-graphical-smoke pr-ready post-merge static
 
 doctor:
 	@./scripts/harness doctor
@@ -53,6 +53,12 @@ economy-agent-smoke:
 
 economy-agent-graphical-smoke:
 	@./scripts/harness economy-agent-graphical-smoke
+
+live-agent-smoke:
+	@./scripts/harness live-agent-smoke
+
+live-agent-graphical-smoke:
+	@./scripts/harness live-agent-graphical-smoke
 
 complete-match-restart-smoke:
 	@./scripts/harness complete-match-restart-smoke

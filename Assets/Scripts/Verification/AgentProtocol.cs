@@ -226,6 +226,7 @@ namespace AshesOfRum
         public AgentHostileFormationState[] visibleHostileFormations;
         public AgentHostileWorkerState[] visibleHostileWorkers;
         public AgentHostileStructureState[] visibleHostileStructures;
+        public AgentMapState map;
         public AgentCameraState camera;
         public string stateHash;
     }
@@ -234,6 +235,7 @@ namespace AshesOfRum
     public sealed class AgentProtocolResponse
     {
         public int schemaVersion;
+        public string sessionId;
         public int sequence;
         public string requestId;
         public string action;
@@ -331,6 +333,7 @@ namespace AshesOfRum
                     .OrderBy(worker => hostileWorkerIds[worker], StringComparer.Ordinal)
                     .Select(ProjectHostileWorker).ToArray(),
                 visibleHostileStructures = ProjectKnownHostileStructures(),
+                map = ProjectMap(),
                 camera = ProjectCamera(Camera.main),
                 stateHash = string.Empty
             };

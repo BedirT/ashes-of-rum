@@ -158,6 +158,88 @@ namespace AshesOfRum.Tests
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"), Has.Length.EqualTo(64));
         }
 
+        [Test]
+        public void LiveMailbox_ValidatesIdentityOrderSizeAndImmutableResponses()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "ashes-agent-live-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var mailbox = new AgentLiveMailbox(root, new string('a', 40));
+                Assert.That(File.Exists(Path.Combine(root, "ready.json")), Is.False);
+                mailbox.PublishReady();
+                Assert.That(File.Exists(Path.Combine(root, "ready.json")), Is.True);
+                var ready = JsonUtility.FromJson<AgentLiveReady>(File.ReadAllText(Path.Combine(root, "ready.json")));
+                Assert.That(ready.result, Is.EqualTo(mailbox.ResultPath));
+                Assert.That(ready.artifacts, Is.EqualTo(mailbox.Artifacts));
+                var request = new AgentLiveRequest
+                {
+                    schemaVersion = AgentProtocol.SchemaVersion,
+                    sessionId = mailbox.SessionId,
+                    sequence = 1,
+                    requestId = "observe-1",
+                    command = new AgentScriptStep { action = "observe" }
+                };
+                File.WriteAllText(mailbox.RequestPath(1), JsonUtility.ToJson(request));
+                Assert.That(mailbox.TryRead(1, out var parsed, out var rejection), Is.True);
+                Assert.That(rejection, Is.Null);
+                Assert.That(parsed.command.action, Is.EqualTo("observe"));
+
+                request.sequence = 2;
+                request.command.action = "move";
+                File.WriteAllText(mailbox.RequestPath(2), JsonUtility.ToJson(request));
+                Assert.That(mailbox.TryRead(2, out _, out rejection), Is.True);
+                Assert.That(rejection, Is.EqualTo("request_id_conflict"));
+
+                File.WriteAllBytes(mailbox.RequestPath(3), new byte[AgentLiveMailbox.MaximumRequestBytes + 1]);
+                Assert.That(mailbox.TryRead(3, out _, out rejection), Is.True);
+                Assert.That(rejection, Is.EqualTo("request_too_large"));
+
+                request.sequence = 4;
+                request.requestId = "wrong-session";
+                request.sessionId = "another-session";
+                File.WriteAllText(mailbox.RequestPath(4), JsonUtility.ToJson(request));
+                Assert.That(mailbox.TryRead(4, out _, out rejection), Is.True);
+                Assert.That(rejection, Is.EqualTo("wrong_session"));
+
+                request.sequence = 99;
+                request.requestId = "wrong-sequence";
+                request.sessionId = mailbox.SessionId;
+                File.WriteAllText(mailbox.RequestPath(5), JsonUtility.ToJson(request));
+                Assert.That(mailbox.TryRead(5, out _, out rejection), Is.True);
+                Assert.That(rejection, Is.EqualTo("wrong_sequence"));
+
+                File.WriteAllText(mailbox.RequestPath(6), "{not-json");
+                Assert.That(mailbox.TryRead(6, out _, out rejection), Is.True);
+                Assert.That(rejection, Is.EqualTo("malformed_request"));
+
+                mailbox.Publish(1, new AgentProtocolResponse { schemaVersion = 1, sequence = 1 });
+                Assert.Throws<System.IO.IOException>(() => mailbox.Publish(1,
+                    new AgentProtocolResponse { schemaVersion = 1, sequence = 1 }));
+
+                mailbox.PublishResult(new AgentLiveResult
+                {
+                    schemaVersion = 1,
+                    sessionId = mailbox.SessionId,
+                    buildSha = new string('a', 40),
+                    passed = true,
+                    terminalAction = "end_session",
+                    processedResponses = 1,
+                    outboxPath = mailbox.Outbox,
+                    artifactsPath = mailbox.Artifacts,
+                    checkpointManifests = new[] { "checkpoint.json" }
+                });
+                var result = JsonUtility.FromJson<AgentLiveResult>(File.ReadAllText(mailbox.ResultPath));
+                Assert.That(result.passed, Is.True);
+                Assert.That(result.processedResponses, Is.EqualTo(1));
+                Assert.That(result.checkpointManifests, Is.EqualTo(new[] { "checkpoint.json" }));
+                Assert.Throws<System.IO.IOException>(() => mailbox.PublishResult(result));
+            }
+            finally
+            {
+                if (Directory.Exists(root)) Directory.Delete(root, true);
+            }
+        }
+
         [TestCase("agent-complete-match-restart.json", "complete-match-victory-restart", 28, "restart")]
         [TestCase("agent-complete-match-quit.json", "complete-match-victory-quit", 26, "quit")]
         public void CompleteMatchAgentScripts_UseOnlyRealEconomyAndPlayerCommands(string file, string scenario,

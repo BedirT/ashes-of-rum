@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace AshesOfRum
 {
-    public sealed class AgentSessionRunner : MonoBehaviour
+    public sealed partial class AgentSessionRunner : MonoBehaviour
     {
         private const float StartupTimeoutSeconds = 20f;
         private const float CaptureTimeoutSeconds = 15f;
@@ -15,11 +15,12 @@ namespace AshesOfRum
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void StartWhenRequested()
         {
-            if (GetArgumentValue("--agent-script") == null) return;
+            if (GetArgumentValue("--agent-script") == null && GetArgumentValue("--agent-live-dir") == null) return;
             if (FindAnyObjectByType<AgentSessionRunner>() != null) return;
             var runner = new GameObject("Agent Session Runner");
             DontDestroyOnLoad(runner);
-            runner.AddComponent<AgentSessionRunner>().StartCoroutine(runner.GetComponent<AgentSessionRunner>().Run());
+            var component = runner.AddComponent<AgentSessionRunner>();
+            component.StartCoroutine(GetArgumentValue("--agent-live-dir") != null ? component.RunLive() : component.Run());
         }
 
         private IEnumerator Run()
@@ -43,6 +44,8 @@ namespace AshesOfRum
             try
             {
                 if (!Debug.isDebugBuild) throw new InvalidOperationException("Agent mode requires a Development build.");
+                if (GetArgumentValue("--agent-live-dir") != null)
+                    throw new InvalidOperationException("--agent-script and --agent-live-dir are mutually exclusive.");
                 RequirePath(outputPath, "--agent-output");
                 RequirePath(resultPath, "--agent-result");
                 RequirePath(artifactDirectory, "--agent-artifacts");
