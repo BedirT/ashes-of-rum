@@ -53,6 +53,40 @@ namespace AshesOfRum.Tests
                     action = "build", buildingType = type, x = 8f, z = -1f
                 }, out rejection), Is.True, rejection);
                 var unfinished = projector.Project(3).buildings.Single();
+                var construction = economy.Workers[0].CurrentConstruction;
+                var suppliesAfterBuild = economy.Supplies;
+                Assert.That(executor.Execute(new AgentScriptStep { action = "select_hisar" }, out rejection),
+                    Is.True, rejection);
+                Assert.That(executor.Execute(new AgentScriptStep
+                {
+                    action = "cancel_construction", targetId = unfinished.id
+                }, out rejection), Is.False);
+                Assert.That(rejection, Is.EqualTo("no_selection"));
+                Assert.That(economy.Supplies, Is.EqualTo(suppliesAfterBuild));
+                Assert.That(economy.Workers[0].CurrentConstruction, Is.SameAs(construction));
+                var unchangedAfterNoSelection = projector.Project(4).buildings.Single();
+                Assert.That(unchangedAfterNoSelection.id, Is.EqualTo(unfinished.id));
+                Assert.That(unchangedAfterNoSelection.complete, Is.False);
+
+                Assert.That(executor.Execute(new AgentScriptStep
+                {
+                    action = "select", actorIds = new[] { "worker-2" }
+                }, out rejection), Is.True, rejection);
+                Assert.That(executor.Execute(new AgentScriptStep
+                {
+                    action = "cancel_construction", targetId = unfinished.id
+                }, out rejection), Is.False);
+                Assert.That(rejection, Is.EqualTo("no_selection"));
+                Assert.That(economy.Supplies, Is.EqualTo(suppliesAfterBuild));
+                Assert.That(economy.Workers[0].CurrentConstruction, Is.SameAs(construction));
+                var unchangedAfterWrongSelection = projector.Project(4).buildings.Single();
+                Assert.That(unchangedAfterWrongSelection.id, Is.EqualTo(unfinished.id));
+                Assert.That(unchangedAfterWrongSelection.complete, Is.False);
+
+                Assert.That(executor.Execute(new AgentScriptStep
+                {
+                    action = "select", actorIds = new[] { "worker-1" }
+                }, out rejection), Is.True, rejection);
                 Assert.That(executor.Execute(new AgentScriptStep
                 {
                     action = "cancel_construction", targetId = unfinished.id
