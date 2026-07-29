@@ -120,6 +120,14 @@ namespace AshesOfRum
             GetComponent<WorldHealthBar>()?.SetSelected(selected);
         }
 
+        public bool CanReach(Vector3 targetPosition)
+        {
+            if (navAgent == null || !navAgent.isOnNavMesh) return false;
+            var path = new NavMeshPath();
+            return NavMesh.CalculatePath(transform.position, Grounded(targetPosition), NavMesh.AllAreas, path) &&
+                   path.status == NavMeshPathStatus.PathComplete;
+        }
+
         public bool IssueFocus(FormationAgent hostile)
         {
             if (!IsValidTarget(hostile)) return false;

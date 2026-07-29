@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "scenario": "spearmen-movement-arrival",
+  "steps": [
+    { "id": "observe-initial", "action": "observe" },
+    {
+      "id": "select-gatherers",
+      "action": "select",
+      "actorIds": ["worker-1", "worker-2", "worker-3", "worker-4"]
+    },
+    { "id": "gather-formation-cost", "action": "gather", "targetId": "cache-1" },
+    {
+      "id": "wait-for-formation-cost",
+      "action": "wait",
+      "condition": "supplies_greater_than",
+      "value": 399,
+      "timeoutSeconds": 75
+    },
+    { "id": "stop-gathering", "action": "move", "x": 0.0, "z": -2.0 },
+    {
+      "id": "wait-for-idle-worker",
+      "action": "wait",
+      "condition": "worker_idle",
+      "targetId": "worker-1",
+      "timeoutSeconds": 20
+    },
+    { "id": "train-spearmen", "action": "train", "formationType": "Spearmen" },
+    {
+      "id": "wait-for-spearmen",
+      "action": "wait",
+      "condition": "formation_ready",
+      "formationType": "Spearmen",
+      "timeoutSeconds": 20
+    },
+    { "id": "select-spearmen", "action": "select", "actorIds": ["formation-1"] },
+    { "id": "move-spearmen", "action": "move", "x": 4.0, "z": 5.0 },
+    {
+      "id": "wait-for-spearmen-arrival",
+      "action": "wait",
+      "condition": "formation_arrived",
+      "targetId": "formation-1",
+      "x": 4.0,
+      "z": 5.0,
+      "timeoutSeconds": 30
+    },
+    { "id": "capture-moved-spearmen", "action": "capture", "checkpoint": "spearmen-moved" },
+    { "id": "quit-session", "action": "quit" }
+  ]
+}

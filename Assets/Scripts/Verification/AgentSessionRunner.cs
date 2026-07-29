@@ -177,6 +177,11 @@ namespace AshesOfRum
                                StringComparison.Ordinal) &&
                            economy.FriendlyFormations.Any(formation => formation != null &&
                                formation.MemberCount > 0 && formation.Type == FormationType.Spearmen);
+                case "formation_arrived":
+                    if (!projector.TryResolveFormation(step.targetId, out var arrived)) return false;
+                    var delta = arrived.transform.position - new Vector3(step.x, arrived.transform.position.y, step.z);
+                    return arrived.CurrentOrder == FormationOrder.Idle && !arrived.HasDestination &&
+                           delta.sqrMagnitude <= 0.25f;
                 default:
                     return false;
             }

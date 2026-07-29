@@ -1,4 +1,4 @@
-.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke agent-smoke agent-graphical-smoke house-agent-smoke house-agent-graphical-smoke training-agent-smoke training-agent-graphical-smoke pr-ready post-merge static
+.PHONY: doctor bootstrap verify-fast verify smoke graphical-smoke agent-smoke agent-graphical-smoke house-agent-smoke house-agent-graphical-smoke training-agent-smoke training-agent-graphical-smoke movement-agent-smoke movement-agent-graphical-smoke pr-ready post-merge static
 
 doctor:
 	@./scripts/harness doctor
@@ -35,6 +35,12 @@ training-agent-smoke:
 
 training-agent-graphical-smoke:
 	@./scripts/harness training-agent-graphical-smoke
+
+movement-agent-smoke:
+	@./scripts/harness movement-agent-smoke
+
+movement-agent-graphical-smoke:
+	@./scripts/harness movement-agent-graphical-smoke
 
 pr-ready:
 	@./scripts/harness pr-ready
