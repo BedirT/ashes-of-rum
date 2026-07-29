@@ -25,6 +25,12 @@ HOUSE_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-house-graphical"
 HOUSE_AGENT_HEADLESS_RESULT="$HOUSE_AGENT_HEADLESS_DIR/result.json"
 HOUSE_AGENT_GRAPHICAL_RESULT="$HOUSE_AGENT_GRAPHICAL_DIR/result.json"
 HOUSE_AGENT_GRAPHICAL_SCREENSHOT="$HOUSE_AGENT_GRAPHICAL_DIR/house-complete.png"
+TRAINING_AGENT_SCRIPT="$ROOT/scripts/fixtures/agent-formation-training.json"
+TRAINING_AGENT_HEADLESS_DIR="$EVIDENCE/agent-training-headless"
+TRAINING_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-training-graphical"
+TRAINING_AGENT_HEADLESS_RESULT="$TRAINING_AGENT_HEADLESS_DIR/result.json"
+TRAINING_AGENT_GRAPHICAL_RESULT="$TRAINING_AGENT_GRAPHICAL_DIR/result.json"
+TRAINING_AGENT_GRAPHICAL_SCREENSHOT="$TRAINING_AGENT_GRAPHICAL_DIR/spearmen-ready.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -384,6 +390,56 @@ validate_house_agent_session() {
   validate_agent_screenshot "$manifest" "$HOUSE_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
 }
 
+validate_training_agent_session() {
+  local directory="$1"
+  local result="$2"
+  local graphical="$3"
+  local output="$directory/responses.jsonl"
+  local manifest="$directory/spearmen-ready-frame.json"
+  local state="$directory/spearmen-ready-state.json"
+  validate_json "$result"
+  jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
+    .scenario == "spearmen-training-completion" and .completedSteps == 10 and
+    (.checkpointManifests | length) == 1' "$result" >/dev/null \
+    || fail "Training agent session result contract failed: $result"
+  [[ -s "$output" ]] || fail "Training agent response trace missing: $output"
+  jq -se --arg sha "$SHA" 'length == 10 and all(.[]; .schemaVersion == 1 and .accepted == true and
+    .state.buildSha == $sha and .state.perspective == "player" and
+    (.state.workers | length) == 4 and (.state.formations | type) == "array" and
+    (.state.production | type) == "object" and (.state.stateHash | length) == 64) and
+    .[0].state.supplies == .[0].state.startingSupplies and .[0].state.populationUsed == 4 and
+    .[0].state.populationCapacity == 12 and .[0].state.production.count == 0 and
+    (.[0].state.formations | length) == 0 and
+    all(.[1].state.workers[]; .selected == true) and
+    all(.[2].state.workers[]; .targetCacheId == "cache-1") and
+    .[3].state.supplies >= 400 and .[5].state.supplies >= 400 and
+    (.[5].state.supplies - .[6].state.supplies) == 400 and
+    .[6].state.populationUsed == 12 and .[6].state.production.count == 1 and
+    .[6].state.production.activeItem == "Spearmen" and .[6].state.production.progress == 0 and
+    (.[6].state.formations | length) == 0 and
+    .[7].state.production.count == 0 and (.[7].state.formations | length) == 1 and
+    .[7].state.formations[0].id == "formation-1" and
+    .[7].state.formations[0].type == "Spearmen" and
+    .[7].state.formations[0].selected == false and
+    .[7].state.formations[0].memberCount == 8 and
+    .[7].state.formations[0].totalHealth == 160 and
+    .[7].state.formations[0].maxHealth == 160 and
+    .[7].state.formations[0].order == "Idle" and
+    .[7].state.formations[0].hasDestination == false and
+    .[7].state.formations[0].position.x == -5 and
+    .[7].state.formations[0].position.y > 0.08 and .[7].state.formations[0].position.y < 0.09 and
+    .[7].state.formations[0].position.z == -1 and
+    .[8].state.production.count == 0 and .[8].state.formations == .[7].state.formations' \
+    "$output" >/dev/null || fail "Training agent response trace contract failed: $output"
+  validate_json "$manifest"
+  validate_json "$state"
+  jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
+    .checkpoint == "spearmen-ready" and .statePath == $state and (.stateHash | length) == 64' \
+    "$manifest" >/dev/null || fail "Training agent checkpoint manifest contract failed: $manifest"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
+  validate_agent_screenshot "$manifest" "$TRAINING_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
+}
+
 agent_smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   rm -rf "$AGENT_HEADLESS_DIR"
@@ -468,6 +524,48 @@ house_agent_graphical_smoke() {
   say "Graphical code-playable House construction passed."
 }
 
+training_agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$TRAINING_AGENT_HEADLESS_DIR"
+  mkdir -p "$TRAINING_AGENT_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$TRAINING_AGENT_HEADLESS_DIR/player.log" \
+    --agent-script "$TRAINING_AGENT_SCRIPT" \
+    --agent-output "$TRAINING_AGENT_HEADLESS_DIR/responses.jsonl" \
+    --agent-result "$TRAINING_AGENT_HEADLESS_RESULT" \
+    --agent-artifacts "$TRAINING_AGENT_HEADLESS_DIR" \
+    --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Headless training agent session"
+  validate_training_agent_session "$TRAINING_AGENT_HEADLESS_DIR" "$TRAINING_AGENT_HEADLESS_RESULT" false
+  grep -F 'AGENT_SESSION:PASS' "$TRAINING_AGENT_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless training agent pass marker missing"
+  scan_log "$TRAINING_AGENT_HEADLESS_DIR/player.log"
+  say "Headless code-playable Spearmen training passed."
+}
+
+training_agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$TRAINING_AGENT_GRAPHICAL_DIR"
+  mkdir -p "$TRAINING_AGENT_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$TRAINING_AGENT_GRAPHICAL_DIR/player.log" \
+    --agent-script "$TRAINING_AGENT_SCRIPT" \
+    --agent-output "$TRAINING_AGENT_GRAPHICAL_DIR/responses.jsonl" \
+    --agent-result "$TRAINING_AGENT_GRAPHICAL_RESULT" \
+    --agent-artifacts "$TRAINING_AGENT_GRAPHICAL_DIR" \
+    --agent-build-sha "$SHA" \
+    --agent-screenshot "$TRAINING_AGENT_GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical training agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_training_agent_session "$TRAINING_AGENT_GRAPHICAL_DIR" "$TRAINING_AGENT_GRAPHICAL_RESULT" true
+  grep -F 'AGENT_SESSION:PASS' "$TRAINING_AGENT_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical training agent pass marker missing"
+  scan_log "$TRAINING_AGENT_GRAPHICAL_DIR/player.log"
+  say "Graphical code-playable Spearmen training passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -481,7 +579,8 @@ write_summary() {
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
       headlessSmoke: "passed", graphicalSmoke: "passed",
       agentHeadless: "passed", agentGraphical: "passed",
-      houseAgentHeadless: "passed", houseAgentGraphical: "passed"}' \
+      houseAgentHeadless: "passed", houseAgentGraphical: "passed",
+      trainingAgentHeadless: "passed", trainingAgentGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -510,6 +609,8 @@ verify() {
   agent_graphical_smoke
   house_agent_smoke
   house_agent_graphical_smoke
+  training_agent_smoke
+  training_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -590,6 +691,8 @@ case "${1:-}" in
   agent-graphical-smoke) agent_graphical_smoke ;;
   house-agent-smoke) house_agent_smoke ;;
   house-agent-graphical-smoke) house_agent_graphical_smoke ;;
+  training-agent-smoke) training_agent_smoke ;;
+  training-agent-graphical-smoke) training_agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -597,5 +700,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

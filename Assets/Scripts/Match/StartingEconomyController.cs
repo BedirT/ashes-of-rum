@@ -132,6 +132,8 @@ namespace AshesOfRum
         public IReadOnlyList<FormationAgent> SelectedFormations => selectedFormations;
         public FogOfWarSystem FogOfWar => fogOfWar;
         public int ProductionQueueCount => productionQueue?.Count ?? 0;
+        public ProductionItem? ActiveProductionItem => productionQueue?.Active;
+        public float ProductionQueueProgress => productionQueue?.Progress ?? 0f;
         public MatchOutcome Outcome => matchDirector?.Outcome ?? MatchOutcome.InProgress;
         public float MatchElapsedSeconds => matchDirector?.ElapsedSeconds ?? 0f;
         public AiPhase OpponentPhase => opponent?.Phase ?? AiPhase.Preparing;

@@ -378,6 +378,105 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator AgentTrainCommand_QueuesCompletesAndProjectsFriendlyFormation()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var projector = new AgentStateProjector(economy);
+            var executor = new AgentCommandExecutor(economy, projector);
+            var hostile = economy.DeployEnemyForAutomation(FormationType.Archers, new Vector3(0f, 0f, 2f));
+            economy.FogOfWar.RefreshNow();
+
+            var initial = projector.Project(1);
+            Assert.That(initial.production.count, Is.Zero);
+            Assert.That(initial.production.activeItem, Is.Null.Or.Empty);
+            Assert.That(initial.formations, Is.Empty,
+                "Player state must not expose hostile mobile formations even when they are visible.");
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "train",
+                formationType = "Archers"
+            }, out var rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("unsupported_formation"));
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "train",
+                formationType = "Spearmen"
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("insufficient_supplies"));
+            Assert.That(economy.Supplies, Is.EqualTo(economy.StartingSupplies));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(StartingEconomyController.WorkerCount));
+            Assert.That(economy.ProductionQueueCount, Is.Zero);
+
+            economy.CreditSuppliesForAutomation(300);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "train",
+                formationType = "Spearmen"
+            }, out rejection), Is.True, rejection);
+            var queued = projector.Project(2);
+            Assert.That(queued.supplies, Is.Zero);
+            Assert.That(queued.populationUsed, Is.EqualTo(12));
+            Assert.That(queued.production.count, Is.EqualTo(1));
+            Assert.That(queued.production.activeItem, Is.EqualTo("Spearmen"));
+            Assert.That(queued.production.progress, Is.EqualTo(0f));
+            Assert.That(queued.formations, Is.Empty);
+
+            yield return WaitUntil(() => economy.FriendlyFormations.Count == 1);
+            var ready = projector.Project(3);
+            var repeated = projector.Project(3);
+            Assert.That(ready.production.count, Is.Zero);
+            Assert.That(ready.production.activeItem, Is.Null.Or.Empty);
+            Assert.That(ready.production.progress, Is.Zero);
+            Assert.That(ready.formations, Has.Length.EqualTo(1));
+            Assert.That(ready.formations[0].id, Is.EqualTo("formation-1"));
+            Assert.That(ready.formations[0].type, Is.EqualTo("Spearmen"));
+            Assert.That(ready.formations[0].selected, Is.False);
+            Assert.That(ready.formations[0].memberCount, Is.EqualTo(8));
+            Assert.That(ready.formations[0].totalHealth, Is.EqualTo(ready.formations[0].maxHealth));
+            Assert.That(ready.formations[0].order, Is.EqualTo("Idle"));
+            Assert.That(ready.formations[0].hasDestination, Is.False);
+            Assert.That(repeated.formations[0].id, Is.EqualTo(ready.formations[0].id));
+            Assert.That(repeated.stateHash, Is.EqualTo(ready.stateHash));
+
+            Object.Destroy(hostile.gameObject);
+        }
+
+        [UnityTest]
+        public IEnumerator AgentTrainCommand_ReportsPopulationAndMatchRejectionsWithoutMutation()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            economy.CreditSuppliesForAutomation(400);
+            economy.DeployFriendlyForAutomation(FormationType.Archers, new Vector3(-5f, 0f, -1f));
+            var supplies = economy.Supplies;
+            var population = economy.PopulationUsed;
+
+            Assert.That(economy.TryIssueTrainCommand(FormationType.Spearmen, out var rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("population_blocked"));
+            Assert.That(economy.Supplies, Is.EqualTo(supplies));
+            Assert.That(economy.PopulationUsed, Is.EqualTo(population));
+            Assert.That(economy.ProductionQueueCount, Is.Zero);
+
+            try
+            {
+                economy.EnemyHisar.ApplyStructuralDamage(economy.EnemyHisar.MaxHealth);
+                yield return null;
+                Assert.That(economy.Outcome, Is.EqualTo(MatchOutcome.Victory));
+                Assert.That(economy.TryIssueTrainCommand(FormationType.Spearmen, out rejection), Is.False);
+                Assert.That(rejection, Is.EqualTo("match_complete"));
+                Assert.That(economy.Supplies, Is.EqualTo(supplies));
+                Assert.That(economy.PopulationUsed, Is.EqualTo(population));
+                Assert.That(economy.ProductionQueueCount, Is.Zero);
+            }
+            finally
+            {
+                Time.timeScale = 1f;
+            }
+        }
+
+        [UnityTest]
         public IEnumerator MirroredHisars_UseEqualCacheToDropOffDistances()
         {
             yield return LoadEconomy();
