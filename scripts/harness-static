@@ -14,7 +14,7 @@ validate_csharp_line_count() {
   fi
 }
 
-bash -n scripts/harness scripts/harness-static
+bash -n scripts/harness scripts/harness-static scripts/agent-live-client
 git diff --check
 
 branch="$(git branch --show-current)"

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.AI;
@@ -132,6 +133,18 @@ namespace AshesOfRum.Tests
             Assert.That(initial.visibleCaches.Select(cache => cache.id), Does.Contain("cache-1"));
             Assert.That(initial.visibleCaches.Select(cache => cache.id), Does.Not.Contain("cache-3"));
             Assert.That(repeated.stateHash, Is.EqualTo(initial.stateHash));
+            Assert.That(initial.map.minX, Is.EqualTo(economy.FogOfWar.Map.MinX));
+            Assert.That(initial.map.maxX, Is.EqualTo(economy.FogOfWar.Map.MaxX));
+            Assert.That(initial.map.minZ, Is.EqualTo(economy.FogOfWar.Map.MinZ));
+            Assert.That(initial.map.maxZ, Is.EqualTo(economy.FogOfWar.Map.MaxZ));
+            Assert.That(initial.map.fogEncoding,
+                Is.EqualTo("row-major-count-state-U-unexplored-E-explored-V-visible"));
+            Assert.That(initial.map.fogRle, Does.Match("^([0-9]+[UEV])+$"));
+            var projectedCells = Regex.Matches(initial.map.fogRle, "([0-9]+)([UEV])")
+                .Cast<Match>().Sum(match => int.Parse(match.Groups[1].Value));
+            Assert.That(projectedCells, Is.EqualTo(initial.map.columns * initial.map.rows));
+            Assert.That(initial.map.fogRle, Does.Contain("U"));
+            Assert.That(initial.map.fogRle, Does.Contain("V"));
 
             Assert.That(executor.Execute(new AgentScriptStep
             {

@@ -27,6 +27,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | Exceptional refactor 016 - Make formation combat code-playable | Scout fog-safe hostile actors, issue shared Attack-Move, Stop, and Focus commands, and inspect deterministic combat in paired JSON and rendered evidence. |
 | Complete | Exceptional refactor 017 - Make economy and production code-playable | Operate every match-relevant building, production, cancellation, demolition, and rally command through structured player-authority actions and inspect the Hisar and queue state. |
 | Complete | Exceptional refactor 018 - Make the complete match lifecycle code-playable | Win a real-economy built match through structured player-authority commands, inspect immutable state/frame checkpoints and telemetry, then exercise result-gated Restart and Quit. |
+| Complete | Exceptional refactor 019 - Make agent play live and adaptive | Keep one Development player alive while an external agent observes fog-safe JSON state, submits one semantic command at a time, corrects rejected actions, and reviews exact state-paired frames. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.

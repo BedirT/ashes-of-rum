@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+live_dir="${1:?usage: agent-live-client LIVE_DIR [graphical]}"
+graphical="${2:-false}"
+deadline=$((SECONDS + 30))
+while [[ ! -s "$live_dir/ready.json" && $SECONDS -lt $deadline ]]; do sleep 0.05; done
+[[ -s "$live_dir/ready.json" ]] || { printf 'ready.json timeout\n' >&2; exit 1; }
+session_id="$(jq -er '.sessionId' "$live_dir/ready.json")"
+inbox="$(jq -er '.inbox' "$live_dir/ready.json")"
+outbox="$(jq -er '.outbox' "$live_dir/ready.json")"
+artifacts="$(jq -er '.artifacts' "$live_dir/ready.json")"
+result_path="$(jq -er '.result' "$live_dir/ready.json")"
+sequence=0
+last_response=
+
+send_request() {
+  local request_id="$1" command="$2" temporary response
+  sequence=$((sequence + 1))
+  temporary="$inbox/$(printf '%06d' "$sequence").json.tmp"
+  response="$outbox/$(printf '%06d' "$sequence").json"
+  jq -n --arg session "$session_id" --arg id "$request_id" --argjson sequence "$sequence" \
+    --argjson command "$command" \
+    '{schemaVersion:1,sessionId:$session,sequence:$sequence,requestId:$id,command:$command}' > "$temporary"
+  mv "$temporary" "${temporary%.tmp}"
+  deadline=$((SECONDS + 45))
+  while [[ ! -s "$response" && $SECONDS -lt $deadline ]]; do sleep 0.05; done
+  [[ -s "$response" ]] || { printf 'response %s timeout\n' "$sequence" >&2; exit 1; }
+  jq -e --arg session "$session_id" --argjson sequence "$sequence" \
+    '.schemaVersion == 1 and .sessionId == $session and .sequence == $sequence and
+     (.state.stateHash | test("^[0-9a-f]{64}$")) and .state.sequence == $sequence and
+     .state.map.fogEncoding == "row-major-count-state-U-unexplored-E-explored-V-visible" and
+     (.state.map.fogRle | test("^([0-9]+[UEV])+$"))' "$response" >/dev/null
+  local fog_cells expected_cells
+  fog_cells="$(jq -r '.state.map.fogRle' "$response" | grep -oE '[0-9]+[UEV]' |
+    sed -E 's/[UEV]$//' | awk '{total += $1} END {print total + 0}')"
+  expected_cells="$(jq -r '.state.map.columns * .state.map.rows' "$response")"
+  [[ "$fog_cells" == "$expected_cells" ]]
+  last_response="$response"
+}
+
+send_request observe '{"action":"observe"}'
+jq -e '.accepted and (.state.workers | length) > 0 and (.state.visibleCaches | length) > 0' "$last_response" >/dev/null
+worker_ids="$(jq -c '[.state.workers[] | select(.alive) | .id]' "$last_response")"
+worker_id="$(jq -er '.state.workers[] | select(.alive) | .id' "$last_response" | head -1)"
+cache_id="$(jq -er '.state.visibleCaches[0].id' "$last_response")"
+starting="$(jq -er '.state.startingSupplies' "$last_response")"
+
+send_request deliberate-rejection '{"action":"gather","targetId":"not-a-visible-cache"}'
+jq -e '.accepted == false and .rejectionCode == "unknown_target"' "$last_response" >/dev/null
+send_request deliberate-wait-timeout \
+  '{"action":"wait","condition":"worker_count","value":99,"timeoutSeconds":0.1}'
+jq -e '.accepted == false and .rejectionCode == "condition_timeout"' "$last_response" >/dev/null
+long_checkpoint="$(printf 'a%.0s' {1..300})"
+send_request reject-overlong-checkpoint "$(jq -n --arg checkpoint "$long_checkpoint" \
+  '{action:"capture",checkpoint:$checkpoint}')"
+jq -e '.accepted == false and .rejectionCode == "invalid_checkpoint"' "$last_response" >/dev/null
+send_request observe-after-invalid-checkpoint '{"action":"observe"}'
+jq -e '.accepted' "$last_response" >/dev/null
+send_request reject-unbounded-wait \
+  '{"action":"wait","condition":"worker_count","value":99,"timeoutSeconds":1e30}'
+jq -e '.accepted == false and .rejectionCode == "invalid_timeout"' "$last_response" >/dev/null
+send_request observe-after-invalid-wait '{"action":"observe"}'
+jq -e '.accepted' "$last_response" >/dev/null
+
+send_request select-discovered-workers "$(jq -n --argjson ids "$worker_ids" '{action:"select",actorIds:$ids}')"
+jq -e '.accepted' "$last_response" >/dev/null
+send_request gather-discovered-cache "$(jq -n --arg cache "$cache_id" '{action:"gather",targetId:$cache}')"
+jq -e '.accepted' "$last_response" >/dev/null
+
+supplies="$(jq -er '.state.supplies' "$last_response")"
+if (( supplies <= starting )); then
+  send_request wait-real-deposit "$(jq -n --argjson value "$starting" \
+    '{action:"wait",condition:"supplies_greater_than",value:$value,timeoutSeconds:30}')"
+  jq -e '.accepted and .state.supplies > .state.startingSupplies' "$last_response" >/dev/null
+fi
+
+send_request select-builder "$(jq -n --arg worker "$worker_id" '{action:"select",actorIds:[$worker]}')"
+jq -e '.accepted' "$last_response" >/dev/null
+send_request move-builder-to-site '{"action":"move","x":3,"z":-4}'
+jq -e '.accepted' "$last_response" >/dev/null
+send_request wait-builder-at-site "$(jq -n --arg worker "$worker_id" \
+  '{action:"wait",condition:"worker_idle",targetId:$worker,timeoutSeconds:20}')"
+jq -e '.accepted' "$last_response" >/dev/null
+send_request build-real-house '{"action":"build","buildingType":"House","x":8,"z":-1}'
+jq -e '.accepted' "$last_response" >/dev/null
+building_id="$(jq -er '.state.buildings[] | select(.type == "House") | .id' "$last_response" | tail -1)"
+send_request wait-discovered-house "$(jq -n --arg building "$building_id" \
+  '{action:"wait",condition:"building_complete",targetId:$building,timeoutSeconds:30}')"
+jq -e --arg building "$building_id" '.accepted and any(.state.buildings[]; .id == $building and .complete)' "$last_response" >/dev/null
+send_request center-discovered-house "$(jq -n --arg building "$building_id" '{action:"center_camera",targetId:$building}')"
+jq -e '.accepted' "$last_response" >/dev/null
+send_request capture-adaptive-house '{"action":"capture","checkpoint":"adaptive-house-complete"}'
+jq -e --argjson graphical "$graphical" '.accepted and (.checkpointStatePath | length) > 0 and
+  (.frameManifestPath | length) > 0 and (if $graphical then (.screenshotPath | length) > 0 else .screenshotPath == "" end)' \
+  "$last_response" >/dev/null
+
+manifest="$(jq -er '.frameManifestPath' "$last_response")"
+state="$(jq -er '.checkpointStatePath' "$last_response")"
+[[ "$(shasum -a 256 "$state" | awk '{print $1}')" == "$(jq -er '.stateSha256' "$manifest")" ]]
+jq -e --slurpfile state "$state" '.sequence == $state[0].sequence and .stateHash == $state[0].stateHash' "$manifest" >/dev/null
+if [[ "$graphical" == true ]]; then
+  screenshot="$(jq -er '.screenshotPath' "$last_response")"
+  [[ "$(shasum -a 256 "$screenshot" | awk '{print $1}')" == "$(jq -er '.screenshotSha256' "$manifest")" ]]
+  dimensions="$(sips -g pixelWidth -g pixelHeight "$screenshot" 2>/dev/null)"
+  [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]]
+fi
+
+send_request end-session '{"action":"end_session"}'
+jq -e '.accepted' "$last_response" >/dev/null
+deadline=$((SECONDS + 5))
+while [[ ! -s "$result_path" && $SECONDS -lt $deadline ]]; do sleep 0.05; done
+[[ -s "$result_path" ]]
+jq -e --arg session "$session_id" --arg outbox "$outbox" --arg artifacts "$artifacts" \
+  --arg manifest "$manifest" --argjson responses "$sequence" \
+  '.schemaVersion == 1 and .sessionId == $session and .passed == true and
+   .terminalAction == "end_session" and .processedResponses == $responses and
+   .outboxPath == $outbox and .artifactsPath == $artifacts and
+   .checkpointManifests == [$manifest]' "$result_path" >/dev/null
+printf 'AGENT_LIVE_CLIENT:PASS:%s:%s:%s\n' "$sequence" "$worker_id" "$building_id"
