@@ -67,8 +67,15 @@ frames. Structured state is sufficient to play; pixels remain review evidence on
 
 ## Evidence
 
-Record the PR, exact reviewed HEAD, verification summary, review round, fixer count, merge, and
-post-merge result here before closing the exceptional refactor.
+- PR: [#32](https://github.com/BedirT/rts-game/pull/32)
+- Final reviewed head: `21a911e12e32177a50378ab5c54b292ec7284de0`
+- Review: round 2 reported no blocking findings after one fixer run bounded hostile capture and wait
+  requests; the required footer and fixer evidence are posted on the PR.
+- Exact-head verification: 37/37 Edit Mode, 92/92 Play Mode, macOS ARM64 Development build, every
+  normal/scripted headless and graphical smoke, both complete-match lifecycle runs, both adaptive
+  live runs, clean logs, static checks, and artifact/hash validation passed.
+- Merge: squash-merged as `7cb8accafdb30873368d964fbe09dd1349743a0a`; the branch was deleted.
+- Post-merge: `make post-merge` passed on merged `main` at that exact SHA with the same full ladder.
 
 ## Implementation
 
