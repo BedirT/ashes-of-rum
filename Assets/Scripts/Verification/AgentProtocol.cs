@@ -148,9 +148,44 @@ namespace AshesOfRum
         public int totalHealth;
         public int maxHealth;
         public string order;
+        public string targetId;
         public bool hasDestination;
         public AgentVector3 destination;
         public float facingDegrees;
+        public AgentVector3 position;
+    }
+
+    [Serializable]
+    public sealed class AgentHostileFormationState
+    {
+        public string id;
+        public string type;
+        public int memberCount;
+        public int totalHealth;
+        public int maxHealth;
+        public string order;
+        public AgentVector3 position;
+    }
+
+    [Serializable]
+    public sealed class AgentHostileWorkerState
+    {
+        public string id;
+        public bool alive;
+        public int health;
+        public int maxHealth;
+        public string activity;
+        public AgentVector3 position;
+    }
+
+    [Serializable]
+    public sealed class AgentHostileStructureState
+    {
+        public string id;
+        public string type;
+        public bool complete;
+        public int health;
+        public int maxHealth;
         public AgentVector3 position;
     }
 
@@ -181,6 +216,9 @@ namespace AshesOfRum
         public AgentBuildingState[] buildings;
         public AgentProductionState production;
         public AgentFormationState[] formations;
+        public AgentHostileFormationState[] visibleHostileFormations;
+        public AgentHostileWorkerState[] visibleHostileWorkers;
+        public AgentHostileStructureState[] visibleHostileStructures;
         public AgentCameraState camera;
         public string stateHash;
     }
@@ -238,10 +276,16 @@ namespace AshesOfRum
         private readonly Dictionary<ResourceCache, string> cacheIds = new();
         private readonly Dictionary<ConstructibleBuilding, string> buildingIds = new();
         private readonly Dictionary<FormationAgent, string> formationIds = new();
+        private readonly Dictionary<FormationAgent, string> hostileFormationIds = new();
+        private readonly Dictionary<WorkerAgent, string> hostileWorkerIds = new();
+        private readonly Dictionary<Component, string> hostileStructureIds = new();
         private int nextWorkerId = 1;
         private int nextCacheId = 1;
         private int nextBuildingId = 1;
         private int nextFormationId = 1;
+        private int nextHostileFormationId = 1;
+        private int nextHostileWorkerId = 1;
+        private int nextHostileStructureId = 1;
 
         public AgentStateProjector(StartingEconomyController economyController, string verifiedBuildSha = "test")
         {
@@ -295,6 +339,15 @@ namespace AshesOfRum
                         formation.MemberCount > 0)
                     .OrderBy(formation => formationIds[formation], StringComparer.Ordinal)
                     .Select(ProjectFormation).ToArray(),
+                visibleHostileFormations = economy.EnemyFormations.Where(IsCurrentlyVisible)
+                    .OrderBy(formation => hostileFormationIds[formation], StringComparer.Ordinal)
+                    .Select(ProjectHostileFormation).ToArray(),
+                visibleHostileWorkers = economy.EnemyWorkers.Where(IsCurrentlyVisible)
+                    .OrderBy(worker => hostileWorkerIds[worker], StringComparer.Ordinal)
+                    .Select(ProjectHostileWorker).ToArray(),
+                visibleHostileStructures = HostileStructures().Where(IsCurrentlyVisible)
+                    .OrderBy(structure => hostileStructureIds[structure.TargetComponent], StringComparer.Ordinal)
+                    .Select(ProjectHostileStructure).ToArray(),
                 camera = ProjectCamera(Camera.main),
                 stateHash = string.Empty
             };
@@ -334,6 +387,28 @@ namespace AshesOfRum
             formation = formationIds.FirstOrDefault(pair => pair.Value == id).Key;
             return formation != null && formation.MemberCount > 0 &&
                    economy.FriendlyFormations.Contains(formation);
+        }
+
+        public bool TryResolveVisibleHostileFormation(string id, out FormationAgent formation)
+        {
+            SynchronizeIds();
+            formation = hostileFormationIds.FirstOrDefault(pair => pair.Value == id).Key;
+            return IsCurrentlyVisible(formation);
+        }
+
+        public bool TryResolveVisibleHostileWorker(string id, out WorkerAgent worker)
+        {
+            SynchronizeIds();
+            worker = hostileWorkerIds.FirstOrDefault(pair => pair.Value == id).Key;
+            return IsCurrentlyVisible(worker);
+        }
+
+        public bool TryResolveVisibleHostileStructure(string id, out ICombatStructure structure)
+        {
+            SynchronizeIds();
+            var component = hostileStructureIds.FirstOrDefault(pair => pair.Value == id).Key;
+            structure = component as ICombatStructure;
+            return structure != null && IsCurrentlyVisible(structure);
         }
 
         private AgentWorkerState ProjectWorker(WorkerAgent worker)
@@ -380,11 +455,71 @@ namespace AshesOfRum
             totalHealth = formation.TotalMemberHealth,
             maxHealth = formation.MaximumMemberHealth,
             order = formation.CurrentOrder.ToString(),
+            targetId = ResolveTargetId(formation),
             hasDestination = formation.HasDestination,
             destination = AgentVector3.From(formation.Destination),
             facingDegrees = Mathf.Round(formation.FacingDegrees * 1000f) / 1000f,
             position = AgentVector3.From(formation.transform.position)
         };
+
+        private AgentHostileFormationState ProjectHostileFormation(FormationAgent formation) => new()
+        {
+            id = hostileFormationIds[formation],
+            type = formation.Type.ToString(),
+            memberCount = formation.MemberCount,
+            totalHealth = formation.TotalMemberHealth,
+            maxHealth = formation.MaximumMemberHealth,
+            order = formation.CurrentOrder.ToString(),
+            position = AgentVector3.From(formation.transform.position)
+        };
+
+        private AgentHostileWorkerState ProjectHostileWorker(WorkerAgent worker) => new()
+        {
+            id = hostileWorkerIds[worker],
+            alive = worker.IsAlive,
+            health = worker.Health,
+            maxHealth = worker.MaxHealth,
+            activity = worker.CurrentActivity.ToString(),
+            position = AgentVector3.From(worker.transform.position)
+        };
+
+        private AgentHostileStructureState ProjectHostileStructure(ICombatStructure structure) => new()
+        {
+            id = hostileStructureIds[structure.TargetComponent],
+            type = structure is Hisar ? "Hisar" : ((ConstructibleBuilding)structure).Type.ToString(),
+            complete = structure is Hisar || ((ConstructibleBuilding)structure).IsComplete,
+            health = structure.Health,
+            maxHealth = structure.MaxHealth,
+            position = AgentVector3.From(structure.TargetComponent.transform.position)
+        };
+
+        private string ResolveTargetId(FormationAgent formation)
+        {
+            if (formation.Target != null && hostileFormationIds.TryGetValue(formation.Target, out var formationId) &&
+                IsCurrentlyVisible(formation.Target)) return formationId;
+            if (formation.WorkerTarget != null && hostileWorkerIds.TryGetValue(formation.WorkerTarget, out var workerId) &&
+                IsCurrentlyVisible(formation.WorkerTarget)) return workerId;
+            var component = formation.StructureTarget?.TargetComponent;
+            return component != null && hostileStructureIds.TryGetValue(component, out var structureId) &&
+                   IsCurrentlyVisible(formation.StructureTarget) ? structureId : null;
+        }
+
+        private IEnumerable<ICombatStructure> HostileStructures()
+        {
+            if (economy.EnemyHisar != null && !economy.EnemyHisar.IsDestroyed) yield return economy.EnemyHisar;
+            foreach (var building in economy.EnemyBuildings)
+                if (building != null && !building.IsDestroyed) yield return building;
+        }
+
+        private bool IsCurrentlyVisible(FormationAgent formation) => formation != null &&
+            formation.MemberCount > 0 && economy.EnemyFormations.Contains(formation) &&
+            economy.FogOfWar.IsCurrentlyVisible(formation);
+
+        private bool IsCurrentlyVisible(WorkerAgent worker) => worker != null && worker.IsAlive &&
+            economy.EnemyWorkers.Contains(worker) && economy.FogOfWar.IsCurrentlyVisible(worker);
+
+        private bool IsCurrentlyVisible(ICombatStructure structure) => structure != null && structure.IsAttackable &&
+            structure.TargetComponent != null && economy.FogOfWar.IsCurrentlyVisible(structure.TargetComponent);
 
         private IEnumerable<ConstructibleBuilding> FriendlyBuildings() =>
             economy.Houses.Cast<ConstructibleBuilding>()
@@ -408,6 +543,19 @@ namespace AshesOfRum
                          formation.MemberCount > 0).OrderBy(formation => formation.name, StringComparer.Ordinal))
                 if (!formationIds.ContainsKey(formation)) formationIds.Add(formation,
                     $"formation-{nextFormationId++}");
+            foreach (var formation in economy.EnemyFormations.Where(IsCurrentlyVisible)
+                         .OrderBy(formation => formation.name, StringComparer.Ordinal))
+                if (!hostileFormationIds.ContainsKey(formation)) hostileFormationIds.Add(formation,
+                    $"hostile-formation-{nextHostileFormationId++}");
+            foreach (var worker in economy.EnemyWorkers.Where(IsCurrentlyVisible)
+                         .OrderBy(worker => worker.name, StringComparer.Ordinal))
+                if (!hostileWorkerIds.ContainsKey(worker)) hostileWorkerIds.Add(worker,
+                    $"hostile-worker-{nextHostileWorkerId++}");
+            foreach (var structure in HostileStructures().Where(IsCurrentlyVisible)
+                         .OrderBy(structure => structure.TargetComponent.name, StringComparer.Ordinal))
+                if (!hostileStructureIds.ContainsKey(structure.TargetComponent))
+                    hostileStructureIds.Add(structure.TargetComponent,
+                        structure is Hisar ? "enemy-hisar" : $"hostile-structure-{nextHostileStructureId++}");
         }
 
         private static AgentCameraState ProjectCamera(Camera camera) => camera == null ? null : new AgentCameraState
@@ -443,6 +591,19 @@ namespace AshesOfRum
                     return economy.SelectedFormations.Count > 0
                         ? economy.TryIssueFormationMoveCommand(destination, out rejectionCode)
                         : economy.TryIssueWorkerMoveCommand(destination, out rejectionCode);
+                case "attack_move":
+                    return economy.TryIssueAttackMoveCommand(new Vector3(step.x, 0f, step.z), out rejectionCode);
+                case "stop":
+                    return economy.TryIssueStopCommand(out rejectionCode);
+                case "focus":
+                    if (projector.TryResolveVisibleHostileFormation(step.targetId, out var hostileFormation))
+                        return economy.TryIssueFocusCommand(hostileFormation, out rejectionCode);
+                    if (projector.TryResolveVisibleHostileWorker(step.targetId, out var hostileWorker))
+                        return economy.TryIssueFocusCommand(hostileWorker, out rejectionCode);
+                    if (projector.TryResolveVisibleHostileStructure(step.targetId, out var hostileStructure))
+                        return economy.TryIssueFocusCommand(hostileStructure, out rejectionCode);
+                    rejectionCode = "unknown_target";
+                    return false;
                 case "gather":
                     if (!projector.TryResolveCache(step.targetId, out var cache))
                     {

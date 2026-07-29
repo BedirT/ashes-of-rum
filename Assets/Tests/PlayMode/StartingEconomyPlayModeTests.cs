@@ -471,6 +471,12 @@ namespace AshesOfRum.Tests
                 Assert.That(rejection, Is.EqualTo("match_complete"));
                 Assert.That(economy.TryIssueFormationMoveCommand(Vector3.zero, out rejection), Is.False);
                 Assert.That(rejection, Is.EqualTo("match_complete"));
+                Assert.That(economy.TryIssueAttackMoveCommand(Vector3.zero, out rejection), Is.False);
+                Assert.That(rejection, Is.EqualTo("match_complete"));
+                Assert.That(economy.TryIssueStopCommand(out rejection), Is.False);
+                Assert.That(rejection, Is.EqualTo("match_complete"));
+                Assert.That(economy.TryIssueFocusCommand(economy.FriendlyHisar, out rejection), Is.False);
+                Assert.That(rejection, Is.EqualTo("match_complete"));
                 Assert.That(economy.Supplies, Is.EqualTo(supplies));
                 Assert.That(economy.PopulationUsed, Is.EqualTo(population));
                 Assert.That(economy.ProductionQueueCount, Is.Zero);

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "scenario": "spearmen-scout-and-focus-combat",
+  "steps": [
+    { "id": "observe-initial", "action": "observe" },
+    {
+      "id": "select-gatherers",
+      "action": "select",
+      "actorIds": ["worker-1", "worker-2", "worker-3", "worker-4"]
+    },
+    { "id": "gather-formation-cost", "action": "gather", "targetId": "cache-1" },
+    {
+      "id": "wait-for-formation-cost",
+      "action": "wait",
+      "condition": "supplies_greater_than",
+      "value": 399,
+      "timeoutSeconds": 75
+    },
+    { "id": "stop-gathering", "action": "move", "x": 0.0, "z": -2.0 },
+    {
+      "id": "wait-for-idle-worker",
+      "action": "wait",
+      "condition": "worker_idle",
+      "targetId": "worker-1",
+      "timeoutSeconds": 20
+    },
+    { "id": "train-spearmen", "action": "train", "formationType": "Spearmen" },
+    {
+      "id": "wait-for-spearmen",
+      "action": "wait",
+      "condition": "formation_ready",
+      "formationType": "Spearmen",
+      "timeoutSeconds": 20
+    },
+    { "id": "select-spearmen", "action": "select", "actorIds": ["formation-1"] },
+    { "id": "probe-attack-move", "action": "attack_move", "x": 0.0, "z": 5.0 },
+    { "id": "stop-probe", "action": "stop" },
+    { "id": "scout-enemy-base", "action": "attack_move", "x": 0.0, "z": 20.0 },
+    {
+      "id": "wait-for-enemy-hisar-visibility",
+      "action": "wait",
+      "condition": "hostile_structure_visible",
+      "targetId": "enemy-hisar",
+      "timeoutSeconds": 90
+    },
+    { "id": "stop-before-focus", "action": "stop" },
+    { "id": "focus-enemy-hisar", "action": "focus", "targetId": "enemy-hisar" },
+    {
+      "id": "wait-for-focus-damage",
+      "action": "wait",
+      "condition": "hostile_target_damaged",
+      "targetId": "enemy-hisar",
+      "timeoutSeconds": 45
+    },
+    { "id": "capture-focus-combat", "action": "capture", "checkpoint": "spearmen-focus-combat" },
+    { "id": "quit-session", "action": "quit" }
+  ]
+}
