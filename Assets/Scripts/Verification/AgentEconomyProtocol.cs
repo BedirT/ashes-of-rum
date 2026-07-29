@@ -107,6 +107,16 @@ namespace AshesOfRum
             return economy.TryIssueCancelConstructionCommand(building, out rejectionCode);
         }
 
+        private bool ExecuteSelectBuilding(AgentScriptStep step, out string rejectionCode)
+        {
+            if (!projector.TryResolveBuilding(step.targetId, out var building))
+            {
+                rejectionCode = "unknown_target";
+                return false;
+            }
+            return economy.TrySelectBuildingForCommand(building, out rejectionCode);
+        }
+
         private bool ExecuteDemolition(AgentScriptStep step, bool confirm, out string rejectionCode)
         {
             if (!projector.TryResolveBuilding(step.targetId, out var building))

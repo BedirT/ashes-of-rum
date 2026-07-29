@@ -122,6 +122,7 @@ namespace AshesOfRum
     {
         public string id;
         public string type;
+        public bool selected;
         public bool complete;
         public int health;
         public int maxHealth;
@@ -461,6 +462,7 @@ namespace AshesOfRum
         {
             id = buildingIds[building],
             type = building.Type.ToString(),
+            selected = building.IsSelected,
             complete = building.IsComplete,
             health = building.Health,
             maxHealth = building.MaxHealth,
@@ -689,6 +691,8 @@ namespace AshesOfRum
                     return ExecuteTrain(step, out rejectionCode);
                 case "select_hisar":
                     return economy.TrySelectHisarForCommand(out rejectionCode);
+                case "select_building":
+                    return ExecuteSelectBuilding(step, out rejectionCode);
                 case "cancel_construction":
                     return ExecuteCancelConstruction(step, out rejectionCode);
                 case "cancel_production":
