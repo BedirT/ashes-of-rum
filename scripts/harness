@@ -42,7 +42,7 @@ COMBAT_AGENT_HEADLESS_DIR="$EVIDENCE/agent-combat-headless"
 COMBAT_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-combat-graphical"
 COMBAT_AGENT_HEADLESS_RESULT="$COMBAT_AGENT_HEADLESS_DIR/result.json"
 COMBAT_AGENT_GRAPHICAL_RESULT="$COMBAT_AGENT_GRAPHICAL_DIR/result.json"
-COMBAT_AGENT_GRAPHICAL_SCREENSHOT="$COMBAT_AGENT_GRAPHICAL_DIR/spearmen-focus-combat.png"
+COMBAT_AGENT_GRAPHICAL_SCREENSHOT="$COMBAT_AGENT_GRAPHICAL_DIR/spearmen-focus-worker.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -495,15 +495,15 @@ validate_combat_agent_session() {
   local result="$2"
   local graphical="$3"
   local output="$directory/responses.jsonl"
-  local manifest="$directory/spearmen-focus-combat-frame.json"
-  local state="$directory/spearmen-focus-combat-state.json"
+  local manifest="$directory/spearmen-focus-worker-frame.json"
+  local state="$directory/spearmen-focus-worker-state.json"
   validate_json "$result"
   jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
-    .scenario == "spearmen-scout-and-focus-combat" and .completedSteps == 18 and
+    .scenario == "spearmen-scout-and-focus-combat" and .completedSteps == 20 and
     (.checkpointManifests | length) == 1' "$result" >/dev/null \
     || fail "Combat agent session result contract failed: $result"
   [[ -s "$output" ]] || fail "Combat agent response trace missing: $output"
-  jq -se --arg sha "$SHA" 'length == 18 and all(.[]; .schemaVersion == 1 and .accepted == true and
+  jq -se --arg sha "$SHA" 'length == 20 and all(.[]; .schemaVersion == 1 and .accepted == true and
     .state.buildSha == $sha and .state.perspective == "player" and
     (.state.visibleHostileFormations | type) == "array" and
     (.state.visibleHostileWorkers | type) == "array" and
@@ -514,17 +514,25 @@ validate_combat_agent_session() {
     .[8].state.formations[0].id == "formation-1" and .[8].state.formations[0].selected == true and
     .[9].state.formations[0].order == "AttackMove" and .[9].state.formations[0].hasDestination == true and
     .[10].state.formations[0].order == "Idle" and .[10].state.formations[0].hasDestination == false and
-    any(.[12].state.visibleHostileStructures[]; .id == "enemy-hisar") and
+    (.[12].state.visibleHostileWorkers | length) > 0 and
     .[13].state.formations[0].order == "Idle" and
-    .[14].state.formations[0].order == "Focus" and .[14].state.formations[0].targetId == "enemy-hisar" and
-    any(.[15].state.visibleHostileStructures[]; .id == "enemy-hisar" and .health < .maxHealth) and
-    .[16].state.formations[0].selected == true and
-    any(.[16].state.visibleHostileStructures[]; .id == "enemy-hisar" and .health < .maxHealth)' \
+    .[14].state.formations[0].order == "Move" and
+    .[15].requestId == "wait-for-worker-in-focus-range" and
+    any(.[15].state.visibleHostileWorkers[]; .id == "hostile-worker-1" and .activity == "Gathering") and
+    .[16].state.formations[0].order == "Focus" and .[16].state.formations[0].targetId == "hostile-worker-1" and
+    any(.[16].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
+    .[17].state.formations[0].selected == true and
+    .[17].state.formations[0].order == "Focus" and
+    .[17].state.formations[0].targetId == "hostile-worker-1" and
+    any(.[17].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
+    .[18].requestId == "wait-for-focus-damage" and
+    .[18].state.formations[0].targetId == "" and
+    all(.[18].state.visibleHostileWorkers[]; .id != "hostile-worker-1")' \
     "$output" >/dev/null || fail "Combat agent response trace contract failed: $output"
   validate_json "$manifest"
   validate_json "$state"
   jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
-    .checkpoint == "spearmen-focus-combat" and .statePath == $state and (.stateHash | length) == 64' \
+    .checkpoint == "spearmen-focus-worker" and .statePath == $state and (.stateHash | length) == 64' \
     "$manifest" >/dev/null || fail "Combat agent checkpoint manifest contract failed: $manifest"
   validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
   validate_agent_screenshot "$manifest" "$COMBAT_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"

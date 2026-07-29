@@ -28,8 +28,9 @@ wait for deterministic damage, and emit state-paired combat evidence without usi
   visibility, hostility, and life before sharing the normal formation command paths.
 - Rejected commands do not mutate the selected formations or their current orders.
 - A real built-player scenario gathers Supplies, trains Spearmen, uses Attack-Move to scout the enemy
-  economy, stops, focuses a visible hostile Worker, observes deterministic damage, and captures the
-  selected engaged formation and target in paired JSON and a 1920x1080 frame.
+  economy, stops, focuses a visible hostile Worker, captures the selected engaged formation and target
+  in paired JSON and a 1920x1080 frame, then observes its deterministic defeat through the fog-safe
+  damage wait.
 - Existing gameplay and every earlier code-playable scenario remain green.
 
 ## Non-Goals

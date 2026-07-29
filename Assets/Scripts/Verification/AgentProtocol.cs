@@ -186,6 +186,7 @@ namespace AshesOfRum
         public bool complete;
         public int health;
         public int maxHealth;
+        public string fogState;
         public AgentVector3 position;
     }
 
@@ -279,6 +280,7 @@ namespace AshesOfRum
         private readonly Dictionary<FormationAgent, string> hostileFormationIds = new();
         private readonly Dictionary<WorkerAgent, string> hostileWorkerIds = new();
         private readonly Dictionary<Component, string> hostileStructureIds = new();
+        private readonly Dictionary<Component, AgentHostileStructureState> hostileStructureMemory = new();
         private int nextWorkerId = 1;
         private int nextCacheId = 1;
         private int nextBuildingId = 1;
@@ -345,9 +347,7 @@ namespace AshesOfRum
                 visibleHostileWorkers = economy.EnemyWorkers.Where(IsCurrentlyVisible)
                     .OrderBy(worker => hostileWorkerIds[worker], StringComparer.Ordinal)
                     .Select(ProjectHostileWorker).ToArray(),
-                visibleHostileStructures = HostileStructures().Where(IsCurrentlyVisible)
-                    .OrderBy(structure => hostileStructureIds[structure.TargetComponent], StringComparer.Ordinal)
-                    .Select(ProjectHostileStructure).ToArray(),
+                visibleHostileStructures = ProjectKnownHostileStructures(),
                 camera = ProjectCamera(Camera.main),
                 stateHash = string.Empty
             };
@@ -401,6 +401,24 @@ namespace AshesOfRum
             SynchronizeIds();
             worker = hostileWorkerIds.FirstOrDefault(pair => pair.Value == id).Key;
             return IsCurrentlyVisible(worker);
+        }
+
+        public bool IsHostileWorkerDamagedInCurrentVision(string id)
+        {
+            SynchronizeIds();
+            var worker = hostileWorkerIds.FirstOrDefault(pair => pair.Value == id).Key;
+            return worker != null && worker.Health < worker.MaxHealth &&
+                   economy.FogOfWar.StateAt(worker.transform.position) == FogState.Visible;
+        }
+
+        public bool IsVisibleHostileWorkerInFocusRange(string id)
+        {
+            SynchronizeIds();
+            var worker = hostileWorkerIds.FirstOrDefault(pair => pair.Value == id).Key;
+            if (!IsCurrentlyVisible(worker) || worker.CurrentActivity != WorkerAgent.Activity.Gathering)
+                return false;
+            return economy.SelectedFormations.Any(formation => formation != null && formation.MemberCount > 0 &&
+                (formation.transform.position - worker.transform.position).sqrMagnitude <= 16f);
         }
 
         public bool TryResolveVisibleHostileStructure(string id, out ICombatStructure structure)
@@ -483,14 +501,56 @@ namespace AshesOfRum
             position = AgentVector3.From(worker.transform.position)
         };
 
-        private AgentHostileStructureState ProjectHostileStructure(ICombatStructure structure) => new()
+        private AgentHostileStructureState ProjectHostileStructure(ICombatStructure structure, FogState fogState) => new()
         {
             id = hostileStructureIds[structure.TargetComponent],
             type = structure is Hisar ? "Hisar" : ((ConstructibleBuilding)structure).Type.ToString(),
             complete = structure is Hisar || ((ConstructibleBuilding)structure).IsComplete,
             health = structure.Health,
             maxHealth = structure.MaxHealth,
+            fogState = fogState.ToString(),
             position = AgentVector3.From(structure.TargetComponent.transform.position)
+        };
+
+        private AgentHostileStructureState[] ProjectKnownHostileStructures()
+        {
+            foreach (var structure in HostileStructures().Where(IsCurrentlyVisible))
+            {
+                var component = structure.TargetComponent;
+                hostileStructureMemory[component] = ProjectHostileStructure(structure, FogState.Visible);
+            }
+
+            foreach (var component in hostileStructureMemory.Keys.ToArray())
+            {
+                if (component == null)
+                {
+                    hostileStructureMemory.Remove(component);
+                    continue;
+                }
+                if (economy.FogOfWar.StateAt(component.transform.position) != FogState.Visible) continue;
+                if (component is ICombatStructure structure && structure.IsAttackable) continue;
+                hostileStructureMemory.Remove(component);
+            }
+
+            return hostileStructureMemory
+                .OrderBy(pair => pair.Value.id, StringComparer.Ordinal)
+                .Select(pair => CopyHostileStructure(pair.Value,
+                    economy.FogOfWar.StateAt(pair.Key.transform.position) == FogState.Visible
+                        ? FogState.Visible
+                        : FogState.Explored))
+                .ToArray();
+        }
+
+        private static AgentHostileStructureState CopyHostileStructure(AgentHostileStructureState source,
+            FogState fogState) => new()
+        {
+            id = source.id,
+            type = source.type,
+            complete = source.complete,
+            health = source.health,
+            maxHealth = source.maxHealth,
+            fogState = fogState.ToString(),
+            position = new AgentVector3 { x = source.position.x, y = source.position.y, z = source.position.z }
         };
 
         private string ResolveTargetId(FormationAgent formation)

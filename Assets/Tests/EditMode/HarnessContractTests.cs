@@ -106,14 +106,18 @@ namespace AshesOfRum.Tests
             var script = AgentProtocol.LoadScript(path);
 
             Assert.That(script.scenario, Is.EqualTo("spearmen-scout-and-focus-combat"));
-            Assert.That(script.steps, Has.Length.EqualTo(18));
+            Assert.That(script.steps, Has.Length.EqualTo(20));
             Assert.That(script.steps, Has.Exactly(2).Matches<AgentScriptStep>(step =>
                 step.action == "attack_move"));
             Assert.That(script.steps, Has.Exactly(2).Matches<AgentScriptStep>(step => step.action == "stop"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
-                step.action == "focus" && step.targetId == "enemy-hisar"));
+                step.action == "focus" && step.targetId == "hostile-worker-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
-                step.action == "wait" && step.condition == "hostile_target_damaged"));
+                step.action == "wait" && step.condition == "hostile_target_damaged" &&
+                step.targetId == "hostile-worker-1"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "hostile_worker_in_focus_range" &&
+                step.targetId == "hostile-worker-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
         }

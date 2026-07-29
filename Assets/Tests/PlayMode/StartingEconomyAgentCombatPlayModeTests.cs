@@ -84,6 +84,8 @@ namespace AshesOfRum.Tests
             economy.FogOfWar.RefreshNow();
             var structures = projector.Project(4);
             Assert.That(structures.visibleHostileStructures.Any(item => item.id == "enemy-hisar"), Is.True);
+            var visibleHisar = structures.visibleHostileStructures.Single(item => item.id == "enemy-hisar");
+            Assert.That(visibleHisar.fogState, Is.EqualTo(FogState.Visible.ToString()));
             Assert.That(structures.visibleHostileWorkers, Is.Not.Empty);
             Assert.That(structures.visibleHostileWorkers[0].id, Is.EqualTo("hostile-worker-1"));
             Assert.That(projector.TryResolveVisibleHostileStructure("enemy-hisar", out var enemyHisar), Is.True);
@@ -93,9 +95,38 @@ namespace AshesOfRum.Tests
             hostile.transform.position = new Vector3(0f, 0f, 20f);
             scout.transform.position = economy.FriendlyHisar.transform.position;
             economy.FogOfWar.RefreshNow();
-            Assert.That(projector.Project(5).visibleHostileFormations, Is.Empty,
+            economy.EnemyHisar.ApplyStructuralDamage(2);
+            var hiddenAgain = projector.Project(5);
+            Assert.That(hiddenAgain.visibleHostileFormations, Is.Empty,
                 "A hostile mobile formation must disappear immediately outside current vision.");
             Assert.That(projector.TryResolveVisibleHostileFormation("hostile-formation-1", out _), Is.False);
+            Assert.That(hiddenAgain.visibleHostileWorkers, Is.Empty,
+                "A hostile Worker must disappear immediately outside current vision.");
+            var staleHisar = hiddenAgain.visibleHostileStructures.Single(item => item.id == "enemy-hisar");
+            Assert.That(staleHisar.fogState, Is.EqualTo(FogState.Explored.ToString()));
+            Assert.That(staleHisar.health, Is.EqualTo(visibleHisar.health),
+                "Hidden structure health must remain at its last visible value.");
+            Assert.That(staleHisar.position.x, Is.EqualTo(visibleHisar.position.x));
+            Assert.That(staleHisar.position.z, Is.EqualTo(visibleHisar.position.z));
+            Assert.That(projector.TryResolveVisibleHostileStructure("enemy-hisar", out _), Is.False,
+                "Stale structure memory must not grant focus authority.");
+
+            scout.transform.position = economy.EnemyHisar.transform.position;
+            economy.FogOfWar.RefreshNow();
+            var revealedAgain = projector.Project(6);
+            Assert.That(revealedAgain.visibleHostileStructures.Single(item => item.id == "enemy-hisar").health,
+                Is.EqualTo(economy.EnemyHisar.Health));
+            Assert.That(projector.TryResolveVisibleHostileWorker("hostile-worker-1", out var worker), Is.True);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "focus",
+                targetId = "hostile-worker-1"
+            }, out rejection), Is.True, rejection);
+            Assert.That(friendly.WorkerTarget, Is.SameAs(worker));
+            var workerFocused = projector.Project(7);
+            Assert.That(workerFocused.formations.Single().targetId, Is.EqualTo("hostile-worker-1"));
+            yield return WaitUntil(() => !worker.IsAlive);
+            Assert.That(worker.Health, Is.LessThan(worker.MaxHealth));
 
             Object.Destroy(scout);
             Object.Destroy(hostile.gameObject);
