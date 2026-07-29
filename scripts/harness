@@ -43,6 +43,12 @@ COMBAT_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-combat-graphical"
 COMBAT_AGENT_HEADLESS_RESULT="$COMBAT_AGENT_HEADLESS_DIR/result.json"
 COMBAT_AGENT_GRAPHICAL_RESULT="$COMBAT_AGENT_GRAPHICAL_DIR/result.json"
 COMBAT_AGENT_GRAPHICAL_SCREENSHOT="$COMBAT_AGENT_GRAPHICAL_DIR/spearmen-focus-worker.png"
+ECONOMY_AGENT_SCRIPT="$ROOT/scripts/fixtures/agent-economy-production.json"
+ECONOMY_AGENT_HEADLESS_DIR="$EVIDENCE/agent-economy-headless"
+ECONOMY_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-economy-graphical"
+ECONOMY_AGENT_HEADLESS_RESULT="$ECONOMY_AGENT_HEADLESS_DIR/result.json"
+ECONOMY_AGENT_GRAPHICAL_RESULT="$ECONOMY_AGENT_GRAPHICAL_DIR/result.json"
+ECONOMY_AGENT_GRAPHICAL_SCREENSHOT="$ECONOMY_AGENT_GRAPHICAL_DIR/economy-production-complete.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -538,6 +544,59 @@ validate_combat_agent_session() {
   validate_agent_screenshot "$manifest" "$COMBAT_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
 }
 
+validate_economy_agent_session() {
+  local directory="$1"
+  local result="$2"
+  local graphical="$3"
+  local output="$directory/responses.jsonl"
+  local manifest="$directory/economy-production-complete-frame.json"
+  local state="$directory/economy-production-complete-state.json"
+  validate_json "$result"
+  jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
+    .scenario == "economy-production-cancellation-rally-demolition" and .completedSteps == 29 and
+    (.checkpointManifests | length) == 1' "$result" >/dev/null \
+    || fail "Economy agent session result contract failed: $result"
+  [[ -s "$output" ]] || fail "Economy agent response trace missing: $output"
+  jq -se --arg sha "$SHA" 'length == 29 and all(.[]; .schemaVersion == 1 and .accepted == true and
+    .state.buildSha == $sha and .state.perspective == "player" and
+    .state.hisar.id == "hisar" and .state.hisar.health == .state.hisar.maxHealth and
+    (.state.production.count | type) == "number" and (.state.production.progress | type) == "number" and
+    (.state.stateHash | length) == 64) and
+    .[0].state.hisar.selected == false and .[0].state.hisar.hasRally == false and
+    .[7].state.supplies == 0 and .[7].state.buildings[0].id == "building-1" and
+    .[7].state.buildings[0].type == "Storehouse" and .[7].state.buildings[0].complete == false and
+    .[8].state.supplies == 200 and .[8].state.buildings == [] and
+    .[10].state.supplies == 0 and .[10].state.buildings[0].id == "building-2" and
+    .[11].state.buildings[0].complete == true and .[11].state.buildings[0].progress == 1 and
+    all(.[16].state.workers[]; .activity == "Idle" and .carriedSupplies == 0) and
+    .[17].state.hisar.selected == true and
+    .[18].state.hisar.hasRally == true and .[18].state.hisar.rallyCacheId == "cache-2" and
+    .[19].state.production.count == 1 and .[19].state.production.activeItem == "Worker" and
+    .[19].state.supplies == (.[18].state.supplies - 100) and
+    .[20].state.production.count == 0 and .[20].state.supplies == .[18].state.supplies and
+    .[21].state.production.count == 1 and .[21].state.production.activeItem == "Worker" and
+    .[21].state.supplies == (.[20].state.supplies - 100) and
+    .[22].state.production.count == 0 and (.[22].state.workers | length) == 5 and
+    .[23].state.workers[4].id == "worker-5" and .[23].state.workers[4].targetCacheId == "cache-2" and
+    (.[23].state.workers[4].activity == "GoingToCache" or
+     .[23].state.workers[4].activity == "Gathering" or .[23].state.workers[4].activity == "Returning") and
+    .[24].state.buildings[0].id == "building-2" and
+    .[25].state.buildings == [] and .[25].state.supplies == .[24].state.supplies and
+    .[27].state.buildings == [] and (.[27].state.workers | length) == 5 and
+    .[27].state.hisar.hasRally == true and .[27].state.hisar.rallyCacheId == "" and
+    .[27].state.hisar.rallyPosition.x == 8 and .[27].state.hisar.rallyPosition.z == 6 and
+    .[27].state.production.count == 0' "$output" >/dev/null \
+    || fail "Economy agent response trace contract failed: $output"
+  validate_json "$manifest"
+  validate_json "$state"
+  jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
+    .checkpoint == "economy-production-complete" and .statePath == $state and
+    (.stateHash | length) == 64' "$manifest" >/dev/null \
+    || fail "Economy agent checkpoint manifest contract failed: $manifest"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
+  validate_agent_screenshot "$manifest" "$ECONOMY_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
+}
+
 agent_smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   rm -rf "$AGENT_HEADLESS_DIR"
@@ -748,6 +807,48 @@ combat_agent_graphical_smoke() {
   say "Graphical code-playable formation combat passed."
 }
 
+economy_agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$ECONOMY_AGENT_HEADLESS_DIR"
+  mkdir -p "$ECONOMY_AGENT_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$ECONOMY_AGENT_HEADLESS_DIR/player.log" \
+    --agent-script "$ECONOMY_AGENT_SCRIPT" \
+    --agent-output "$ECONOMY_AGENT_HEADLESS_DIR/responses.jsonl" \
+    --agent-result "$ECONOMY_AGENT_HEADLESS_RESULT" \
+    --agent-artifacts "$ECONOMY_AGENT_HEADLESS_DIR" \
+    --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Headless economy agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_economy_agent_session "$ECONOMY_AGENT_HEADLESS_DIR" "$ECONOMY_AGENT_HEADLESS_RESULT" false
+  grep -F 'AGENT_SESSION:PASS' "$ECONOMY_AGENT_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless economy agent pass marker missing"
+  scan_log "$ECONOMY_AGENT_HEADLESS_DIR/player.log"
+  say "Headless code-playable economy and production passed."
+}
+
+economy_agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$ECONOMY_AGENT_GRAPHICAL_DIR"
+  mkdir -p "$ECONOMY_AGENT_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$ECONOMY_AGENT_GRAPHICAL_DIR/player.log" \
+    --agent-script "$ECONOMY_AGENT_SCRIPT" \
+    --agent-output "$ECONOMY_AGENT_GRAPHICAL_DIR/responses.jsonl" \
+    --agent-result "$ECONOMY_AGENT_GRAPHICAL_RESULT" \
+    --agent-artifacts "$ECONOMY_AGENT_GRAPHICAL_DIR" \
+    --agent-build-sha "$SHA" \
+    --agent-screenshot "$ECONOMY_AGENT_GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical economy agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_economy_agent_session "$ECONOMY_AGENT_GRAPHICAL_DIR" "$ECONOMY_AGENT_GRAPHICAL_RESULT" true
+  grep -F 'AGENT_SESSION:PASS' "$ECONOMY_AGENT_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical economy agent pass marker missing"
+  scan_log "$ECONOMY_AGENT_GRAPHICAL_DIR/player.log"
+  say "Graphical code-playable economy and production passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -764,7 +865,8 @@ write_summary() {
       houseAgentHeadless: "passed", houseAgentGraphical: "passed",
       trainingAgentHeadless: "passed", trainingAgentGraphical: "passed",
       movementAgentHeadless: "passed", movementAgentGraphical: "passed",
-      combatAgentHeadless: "passed", combatAgentGraphical: "passed"}' \
+      combatAgentHeadless: "passed", combatAgentGraphical: "passed",
+      economyAgentHeadless: "passed", economyAgentGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -799,6 +901,8 @@ verify() {
   movement_agent_graphical_smoke
   combat_agent_smoke
   combat_agent_graphical_smoke
+  economy_agent_smoke
+  economy_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -885,6 +989,8 @@ case "${1:-}" in
   movement-agent-graphical-smoke) movement_agent_graphical_smoke ;;
   combat-agent-smoke) combat_agent_smoke ;;
   combat-agent-graphical-smoke) combat_agent_graphical_smoke ;;
+  economy-agent-smoke) economy_agent_smoke ;;
+  economy-agent-graphical-smoke) economy_agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -892,5 +998,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

@@ -279,7 +279,7 @@ namespace AshesOfRum.Tests
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "build",
-                buildingType = "Storehouse",
+                buildingType = "Barracks",
                 x = VisibleHouseSite.x,
                 z = VisibleHouseSite.z
             }, out rejection), Is.False);
@@ -396,9 +396,9 @@ namespace AshesOfRum.Tests
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "train",
-                formationType = "Archers"
+                formationType = "Swordsmen"
             }, out var rejection), Is.False);
-            Assert.That(rejection, Is.EqualTo("unsupported_formation"));
+            Assert.That(rejection, Is.EqualTo("unsupported_production"));
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "train",

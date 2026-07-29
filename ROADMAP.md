@@ -25,6 +25,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | Exceptional refactor 014 - Make formation training code-playable | Gather the real formation cost, train Spearmen through the shared Hisar queue, inspect production and friendly formation JSON state, and review the paired rendered checkpoint. |
 | Complete | Exceptional refactor 015 - Make formation movement code-playable | Select trained Spearmen by stable ID, issue the shared formation move order, wait for arrival, and inspect the moved formation in paired JSON and rendered evidence. |
 | Complete | Exceptional refactor 016 - Make formation combat code-playable | Scout fog-safe hostile actors, issue shared Attack-Move, Stop, and Focus commands, and inspect deterministic combat in paired JSON and rendered evidence. |
+| Complete | Exceptional refactor 017 - Make economy and production code-playable | Operate every match-relevant building, production, cancellation, demolition, and rally command through structured player-authority actions and inspect the Hisar and queue state. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
