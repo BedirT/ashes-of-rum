@@ -221,16 +221,125 @@ namespace AshesOfRum.Tests
             var suppliesBeforeDemolition = economy.Supplies;
             Assert.That(executor.Execute(new AgentScriptStep
             {
+                action = "select_building", targetId = storehouseId
+            }, out rejection), Is.True, rejection);
+            Assert.That(projector.Project(12).buildings.Single().selected, Is.True);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
                 action = "request_demolition", targetId = storehouseId
             }, out rejection), Is.True, rejection);
-            Assert.That(projector.Project(12).buildings.Single().id, Is.EqualTo(storehouseId));
+            Assert.That(projector.Project(13).buildings.Single().id, Is.EqualTo(storehouseId));
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "confirm_demolition", targetId = storehouseId
             }, out rejection), Is.True, rejection);
             yield return WaitUntil(() => economy.Storehouses.Count == 0);
             Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeDemolition));
-            Assert.That(projector.Project(13).buildings, Is.Empty);
+            Assert.That(projector.Project(14).buildings, Is.Empty);
+        }
+
+        [UnityTest]
+        public IEnumerator AgentDemolition_RequiresTheExactCompletedBuildingSelectionWithoutRejectedMutation()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var projector = new AgentStateProjector(economy);
+            var executor = new AgentCommandExecutor(economy, projector);
+
+            economy.CreditSuppliesForAutomation(300);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select", actorIds = new[] { "worker-1" }
+            }, out var rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "build", buildingType = "Storehouse", x = 8f, z = -1f
+            }, out rejection), Is.True, rejection);
+            yield return WaitUntil(() => economy.Storehouses.Count == 1 && economy.Storehouses[0].IsComplete);
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select", actorIds = new[] { "worker-1" }
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "build", buildingType = "House", x = -8f, z = -1f
+            }, out rejection), Is.True, rejection);
+            yield return WaitUntil(() => economy.Storehouses.Count == 1 && economy.Storehouses[0].IsComplete &&
+                economy.Houses.Count == 1 && economy.Houses[0].IsComplete);
+
+            var buildings = projector.Project(1).buildings;
+            var storehouse = buildings.Single(building => building.type == "Storehouse");
+            var house = buildings.Single(building => building.type == "House");
+            var suppliesBeforeRejections = economy.Supplies;
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select", actorIds = new[] { "worker-2" }
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "request_demolition", targetId = storehouse.id
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("no_selection"));
+            Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeRejections));
+            Assert.That(economy.Storehouses, Has.Count.EqualTo(1));
+            Assert.That(economy.Houses, Has.Count.EqualTo(1));
+            Assert.That(economy.Storehouses[0].IsDestroyed, Is.False);
+            Assert.That(economy.Houses[0].IsDestroyed, Is.False);
+            Assert.That(economy.Workers[1].IsSelected, Is.True);
+            Assert.That(projector.Project(2).buildings.All(building => !building.selected), Is.True);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "confirm_demolition", targetId = storehouse.id
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("confirmation_required"),
+                "A rejected unselected request must not arm demolition.");
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select_building", targetId = house.id
+            }, out rejection), Is.True, rejection);
+            var wrongSelection = projector.Project(3).buildings;
+            Assert.That(wrongSelection.Single(building => building.id == house.id).selected, Is.True);
+            Assert.That(wrongSelection.Single(building => building.id == storehouse.id).selected, Is.False);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "request_demolition", targetId = storehouse.id
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("no_selection"));
+            Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeRejections));
+            Assert.That(economy.Storehouses, Has.Count.EqualTo(1));
+            Assert.That(economy.Houses, Has.Count.EqualTo(1));
+            Assert.That(economy.Storehouses[0].IsDestroyed, Is.False);
+            Assert.That(economy.Houses[0].IsDestroyed, Is.False);
+            Assert.That(economy.Houses[0].IsSelected, Is.True,
+                "The wrong selected building must remain selected.");
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "confirm_demolition", targetId = storehouse.id
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("confirmation_required"),
+                "A rejected wrong-target request must not arm demolition.");
+
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select_building", targetId = storehouse.id
+            }, out rejection), Is.True, rejection);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "request_demolition", targetId = storehouse.id
+            }, out rejection), Is.True, rejection);
+            Assert.That(projector.Project(4).buildings.Single(building => building.id == storehouse.id).selected,
+                Is.True);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "confirm_demolition", targetId = storehouse.id
+            }, out rejection), Is.True, rejection);
+            yield return WaitUntil(() => economy.Storehouses.Count == 0);
+            Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeRejections));
+            Assert.That(economy.Houses, Has.Count.EqualTo(1));
+            Assert.That(economy.Houses[0].IsDestroyed, Is.False);
         }
     }
 }

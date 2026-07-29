@@ -391,7 +391,7 @@ validate_house_agent_session() {
     .[0].state.supplies == .[0].state.startingSupplies and .[0].state.populationCapacity == 12 and
     (.[0].state.buildings | length) == 0 and .[1].state.workers[0].selected == true and
     .[2].state.supplies == 0 and .[2].state.populationCapacity == 12 and
-    .[2].state.buildings == [{id:"building-1", type:"House", complete:false, health:100,
+    .[2].state.buildings == [{id:"building-1", type:"House", selected:false, complete:false, health:100,
       maxHealth:100, progress:0, assignedBuilderIds:["worker-1"], position:{x:8,y:0,z:-1}}] and
     .[3].state.populationCapacity == 20 and .[3].state.buildings[0].complete == true and
     .[3].state.buildings[0].progress == 1 and .[4].state.supplies == 0 and
@@ -555,11 +555,11 @@ validate_economy_agent_session() {
   local state="$directory/economy-production-complete-state.json"
   validate_json "$result"
   jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
-    .scenario == "economy-production-cancellation-rally-demolition" and .completedSteps == 29 and
+    .scenario == "economy-production-cancellation-rally-demolition" and .completedSteps == 30 and
     (.checkpointManifests | length) == 1' "$result" >/dev/null \
     || fail "Economy agent session result contract failed: $result"
   [[ -s "$output" ]] || fail "Economy agent response trace missing: $output"
-  jq -se --arg sha "$SHA" 'length == 29 and all(.[]; .schemaVersion == 1 and .accepted == true and
+  jq -se --arg sha "$SHA" 'length == 30 and all(.[]; .schemaVersion == 1 and .accepted == true and
     .state.buildSha == $sha and .state.perspective == "player" and
     .state.hisar.id == "hisar" and .state.hisar.health == .state.hisar.maxHealth and
     (.state.production.count | type) == "number" and (.state.production.progress | type) == "number" and
@@ -582,12 +582,14 @@ validate_economy_agent_session() {
     .[23].state.workers[4].id == "worker-5" and .[23].state.workers[4].targetCacheId == "cache-2" and
     (.[23].state.workers[4].activity == "GoingToCache" or
      .[23].state.workers[4].activity == "Gathering" or .[23].state.workers[4].activity == "Returning") and
-    .[24].state.buildings[0].id == "building-2" and
-    .[25].state.buildings == [] and .[25].state.supplies == .[24].state.supplies and
-    .[27].state.buildings == [] and (.[27].state.workers | length) == 5 and
-    .[27].state.hisar.hasRally == true and .[27].state.hisar.rallyCacheId == "" and
-    .[27].state.hisar.rallyPosition.x == 8 and .[27].state.hisar.rallyPosition.z == 6 and
-    .[27].state.production.count == 0' "$output" >/dev/null \
+    .[24].requestId == "select-storehouse-for-demolition" and
+    .[24].state.buildings[0].id == "building-2" and .[24].state.buildings[0].selected == true and
+    .[25].state.buildings[0].id == "building-2" and .[25].state.buildings[0].selected == true and
+    .[26].state.buildings == [] and .[26].state.supplies == .[25].state.supplies and
+    .[28].state.buildings == [] and (.[28].state.workers | length) == 5 and
+    .[28].state.hisar.hasRally == true and .[28].state.hisar.rallyCacheId == "" and
+    .[28].state.hisar.rallyPosition.x == 8 and .[28].state.hisar.rallyPosition.z == 6 and
+    .[28].state.production.count == 0' "$output" >/dev/null \
     || fail "Economy agent response trace contract failed: $output"
   validate_json "$manifest"
   validate_json "$state"

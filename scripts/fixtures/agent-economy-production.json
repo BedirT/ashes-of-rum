@@ -141,6 +141,11 @@
       "timeoutSeconds": 15
     },
     {
+      "id": "select-storehouse-for-demolition",
+      "action": "select_building",
+      "targetId": "building-2"
+    },
+    {
       "id": "request-storehouse-demolition",
       "action": "request_demolition",
       "targetId": "building-2"

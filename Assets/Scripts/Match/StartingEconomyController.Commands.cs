@@ -247,6 +247,20 @@ namespace AshesOfRum
             return true;
         }
 
+        public bool TrySelectBuildingForCommand(ConstructibleBuilding building, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (building == null || building.IsDestroyed || !buildings.Contains(building))
+                return RejectCommand("unknown_target", "Building is unavailable", out rejectionCode);
+            if (!building.IsComplete)
+                return RejectCommand("building_incomplete", "Only completed buildings can be selected",
+                    out rejectionCode);
+            SelectOnly(building);
+            rejectionCode = null;
+            return true;
+        }
+
         public bool TryIssueTrainWorkerCommand(out string rejectionCode)
         {
             if (Outcome != MatchOutcome.InProgress)
@@ -303,7 +317,14 @@ namespace AshesOfRum
         public bool TryIssueRequestDemolitionCommand(ConstructibleBuilding building, out string rejectionCode)
         {
             if (!TryValidateDemolitionTarget(building, out rejectionCode)) return false;
-            SelectOnly(building);
+            if (selectedBuilding != building)
+                return RejectCommand("no_selection", "Select this building before requesting demolition",
+                    out rejectionCode);
+            if (demolitionCandidate == building)
+            {
+                rejectionCode = null;
+                return true;
+            }
             RequestDemolition();
             rejectionCode = null;
             return true;

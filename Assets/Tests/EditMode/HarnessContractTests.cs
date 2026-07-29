@@ -129,6 +129,27 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void EconomyProductionAgentScript_SelectsBeforeConfirmedDemolition()
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "scripts", "fixtures",
+                "agent-economy-production.json"));
+
+            var script = AgentProtocol.LoadScript(path);
+
+            Assert.That(script.scenario, Is.EqualTo("economy-production-cancellation-rally-demolition"));
+            Assert.That(script.steps, Has.Length.EqualTo(30));
+            var selectIndex = System.Array.FindIndex(script.steps, step => step.action == "select_building" &&
+                step.targetId == "building-2");
+            var requestIndex = System.Array.FindIndex(script.steps, step => step.action == "request_demolition" &&
+                step.targetId == "building-2");
+            var confirmIndex = System.Array.FindIndex(script.steps, step => step.action == "confirm_demolition" &&
+                step.targetId == "building-2");
+            Assert.That(selectIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(requestIndex, Is.EqualTo(selectIndex + 1));
+            Assert.That(confirmIndex, Is.EqualTo(requestIndex + 1));
+        }
+
+        [Test]
         public void AgentHash_IsStableAndUsesSha256()
         {
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"),
