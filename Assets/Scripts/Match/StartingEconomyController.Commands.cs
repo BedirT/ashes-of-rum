@@ -75,6 +75,64 @@ namespace AshesOfRum
 
         public bool TryIssueFormationMoveCommand(Vector3 destination, out string rejectionCode)
         {
+            if (!TryValidateFormationOrder(destination, out rejectionCode)) return false;
+            IssueMoveForSelected(destination);
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueAttackMoveCommand(Vector3 destination, out string rejectionCode)
+        {
+            if (!TryValidateFormationOrder(destination, out rejectionCode)) return false;
+            IssueAttackMoveForSelected(destination);
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueStopCommand(out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (selectedFormations.All(formation => formation == null || formation.MemberCount == 0))
+                return RejectCommand("no_selection", "Select a formation first", out rejectionCode);
+            StopSelectedFormations();
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueFocusCommand(FormationAgent target, out string rejectionCode)
+        {
+            if (!TryValidateFocusTarget(target, target != null && target.MemberCount > 0 && !target.IsFriendly,
+                    out rejectionCode)) return false;
+            foreach (var formation in selectedFormations) formation.IssueFocus(target);
+            SetOrderFeedback($"Focus {target.Type} - {selectedFormations.Count} formation(s)");
+            CompleteFocusCommand(target.transform.position, out rejectionCode);
+            return true;
+        }
+
+        public bool TryIssueFocusCommand(WorkerAgent target, out string rejectionCode)
+        {
+            if (!TryValidateFocusTarget(target, target != null && target.IsAlive && !target.IsFriendly,
+                    out rejectionCode)) return false;
+            foreach (var formation in selectedFormations) formation.IssueFocus(target);
+            SetOrderFeedback($"Focus worker - {selectedFormations.Count} formation(s)");
+            CompleteFocusCommand(target.transform.position, out rejectionCode);
+            return true;
+        }
+
+        public bool TryIssueFocusCommand(ICombatStructure target, out string rejectionCode)
+        {
+            var component = target?.TargetComponent;
+            if (!TryValidateFocusTarget(component, target != null && target.IsAttackable && !target.IsFriendly,
+                    out rejectionCode)) return false;
+            foreach (var formation in selectedFormations) formation.IssueFocus(target);
+            SetOrderFeedback($"Focus structure - {selectedFormations.Count} formation(s)");
+            CompleteFocusCommand(component.transform.position, out rejectionCode);
+            return true;
+        }
+
+        private bool TryValidateFormationOrder(Vector3 destination, out string rejectionCode)
+        {
             if (Outcome != MatchOutcome.InProgress)
                 return RejectCommand("match_complete", "The match is complete", out rejectionCode);
             var live = selectedFormations.Where(formation => formation != null && formation.MemberCount > 0)
@@ -84,23 +142,41 @@ namespace AshesOfRum
             if (!IsFinite(destination) || destination.x < FogOfWarSystem.MinX ||
                 destination.x > FogOfWarSystem.MaxX || destination.z < FogOfWarSystem.MinZ ||
                 destination.z > FogOfWarSystem.MaxZ)
-                return RejectCommand("invalid_position", "Move target is outside the battlefield", out rejectionCode);
-
+                return RejectCommand("invalid_position", "Order target is outside the battlefield", out rejectionCode);
             var center = Vector3.zero;
             foreach (var formation in live) center += formation.transform.position;
             center /= live.Count;
             foreach (var formation in live)
             {
                 var offset = formation.transform.position - center;
-                var formationDestination = destination + new Vector3(offset.x, 0f, offset.z);
-                if (!formation.CanReach(formationDestination))
+                if (!formation.CanReach(destination + new Vector3(offset.x, 0f, offset.z)))
                     return RejectCommand("unreachable", "Every selected formation must reach its position",
                         out rejectionCode);
             }
-
-            IssueMoveForSelected(destination);
             rejectionCode = null;
             return true;
+        }
+
+        private bool TryValidateFocusTarget(Component target, bool validHostile, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (selectedFormations.All(formation => formation == null || formation.MemberCount == 0))
+                return RejectCommand("no_selection", "Select a formation first", out rejectionCode);
+            if (target == null || !validHostile)
+                return RejectCommand("unknown_target", "Combat target is unavailable", out rejectionCode);
+            if (!IsCurrentlyVisible(target.transform.position))
+                return RejectCommand("target_not_visible", "Combat target must be currently visible",
+                    out rejectionCode);
+            rejectionCode = null;
+            return true;
+        }
+
+        private void CompleteFocusCommand(Vector3 position, out string rejectionCode)
+        {
+            PlayCue(GameplayCue.Order);
+            CreateOrderMarker(position, new Color(1f, 0.22f, 0.1f));
+            rejectionCode = null;
         }
 
         public bool TryIssueGatherCommand(ResourceCache cache, out string rejectionCode)

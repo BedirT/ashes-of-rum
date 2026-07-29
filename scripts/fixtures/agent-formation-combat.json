@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "scenario": "spearmen-scout-and-focus-combat",
+  "steps": [
+    { "id": "observe-initial", "action": "observe" },
+    {
+      "id": "select-gatherers",
+      "action": "select",
+      "actorIds": ["worker-1", "worker-2", "worker-3", "worker-4"]
+    },
+    { "id": "gather-formation-cost", "action": "gather", "targetId": "cache-1" },
+    {
+      "id": "wait-for-formation-cost",
+      "action": "wait",
+      "condition": "supplies_greater_than",
+      "value": 399,
+      "timeoutSeconds": 75
+    },
+    { "id": "stop-gathering", "action": "move", "x": 0.0, "z": -2.0 },
+    {
+      "id": "wait-for-idle-worker",
+      "action": "wait",
+      "condition": "worker_idle",
+      "targetId": "worker-1",
+      "timeoutSeconds": 20
+    },
+    { "id": "train-spearmen", "action": "train", "formationType": "Spearmen" },
+    {
+      "id": "wait-for-spearmen",
+      "action": "wait",
+      "condition": "formation_ready",
+      "formationType": "Spearmen",
+      "timeoutSeconds": 20
+    },
+    { "id": "select-spearmen", "action": "select", "actorIds": ["formation-1"] },
+    { "id": "probe-attack-move", "action": "attack_move", "x": 0.0, "z": 5.0 },
+    { "id": "stop-probe", "action": "stop" },
+    { "id": "scout-enemy-base", "action": "attack_move", "x": 0.0, "z": 20.0 },
+    {
+      "id": "wait-for-hostile-worker-visibility",
+      "action": "wait",
+      "condition": "hostile_worker_visible",
+      "timeoutSeconds": 90
+    },
+    { "id": "stop-before-focus", "action": "stop" },
+    { "id": "close-on-worker-gather-point", "action": "move", "x": -8.0, "z": 10.55 },
+    {
+      "id": "wait-for-worker-in-focus-range",
+      "action": "wait",
+      "condition": "hostile_worker_in_focus_range",
+      "targetId": "hostile-worker-1",
+      "timeoutSeconds": 90
+    },
+    { "id": "focus-hostile-worker", "action": "focus", "targetId": "hostile-worker-1" },
+    { "id": "capture-worker-focus", "action": "capture", "checkpoint": "spearmen-focus-worker" },
+    {
+      "id": "wait-for-focus-damage",
+      "action": "wait",
+      "condition": "hostile_target_damaged",
+      "targetId": "hostile-worker-1",
+      "timeoutSeconds": 45
+    },
+    { "id": "quit-session", "action": "quit" }
+  ]
+}

@@ -182,6 +182,22 @@ namespace AshesOfRum
                     var delta = arrived.transform.position - new Vector3(step.x, arrived.transform.position.y, step.z);
                     return arrived.CurrentOrder == FormationOrder.Idle && !arrived.HasDestination &&
                            delta.sqrMagnitude <= 0.25f;
+                case "hostile_worker_visible":
+                    return economy.EnemyWorkers.Any(worker => worker != null && worker.IsAlive &&
+                        economy.FogOfWar.IsCurrentlyVisible(worker));
+                case "hostile_worker_in_focus_range":
+                    return projector.IsVisibleHostileWorkerInFocusRange(step.targetId);
+                case "hostile_structure_visible":
+                    return projector.TryResolveVisibleHostileStructure(step.targetId, out _);
+                case "hostile_target_damaged":
+                    if (projector.TryResolveVisibleHostileFormation(step.targetId, out var hostileFormation))
+                        return hostileFormation.TotalMemberHealth < hostileFormation.MaximumMemberHealth;
+                    if (projector.IsHostileWorkerDamagedInCurrentVision(step.targetId)) return true;
+                    if (projector.TryResolveVisibleHostileWorker(step.targetId, out var hostileWorker))
+                        return hostileWorker.Health < hostileWorker.MaxHealth;
+                    if (projector.TryResolveVisibleHostileStructure(step.targetId, out var hostileStructure))
+                        return hostileStructure.Health < hostileStructure.MaxHealth;
+                    return false;
                 default:
                     return false;
             }

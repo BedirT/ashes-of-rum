@@ -37,6 +37,12 @@ MOVEMENT_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-movement-graphical"
 MOVEMENT_AGENT_HEADLESS_RESULT="$MOVEMENT_AGENT_HEADLESS_DIR/result.json"
 MOVEMENT_AGENT_GRAPHICAL_RESULT="$MOVEMENT_AGENT_GRAPHICAL_DIR/result.json"
 MOVEMENT_AGENT_GRAPHICAL_SCREENSHOT="$MOVEMENT_AGENT_GRAPHICAL_DIR/spearmen-moved.png"
+COMBAT_AGENT_SCRIPT="$ROOT/scripts/fixtures/agent-formation-combat.json"
+COMBAT_AGENT_HEADLESS_DIR="$EVIDENCE/agent-combat-headless"
+COMBAT_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-combat-graphical"
+COMBAT_AGENT_HEADLESS_RESULT="$COMBAT_AGENT_HEADLESS_DIR/result.json"
+COMBAT_AGENT_GRAPHICAL_RESULT="$COMBAT_AGENT_GRAPHICAL_DIR/result.json"
+COMBAT_AGENT_GRAPHICAL_SCREENSHOT="$COMBAT_AGENT_GRAPHICAL_DIR/spearmen-focus-worker.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -484,6 +490,54 @@ validate_movement_agent_session() {
   validate_agent_screenshot "$manifest" "$MOVEMENT_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
 }
 
+validate_combat_agent_session() {
+  local directory="$1"
+  local result="$2"
+  local graphical="$3"
+  local output="$directory/responses.jsonl"
+  local manifest="$directory/spearmen-focus-worker-frame.json"
+  local state="$directory/spearmen-focus-worker-state.json"
+  validate_json "$result"
+  jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
+    .scenario == "spearmen-scout-and-focus-combat" and .completedSteps == 20 and
+    (.checkpointManifests | length) == 1' "$result" >/dev/null \
+    || fail "Combat agent session result contract failed: $result"
+  [[ -s "$output" ]] || fail "Combat agent response trace missing: $output"
+  jq -se --arg sha "$SHA" 'length == 20 and all(.[]; .schemaVersion == 1 and .accepted == true and
+    .state.buildSha == $sha and .state.perspective == "player" and
+    (.state.visibleHostileFormations | type) == "array" and
+    (.state.visibleHostileWorkers | type) == "array" and
+    (.state.visibleHostileStructures | type) == "array" and (.state.stateHash | length) == 64) and
+    (.[0].state.visibleHostileFormations | length) == 0 and
+    (.[0].state.visibleHostileWorkers | length) == 0 and
+    (.[0].state.visibleHostileStructures | length) == 0 and
+    .[8].state.formations[0].id == "formation-1" and .[8].state.formations[0].selected == true and
+    .[9].state.formations[0].order == "AttackMove" and .[9].state.formations[0].hasDestination == true and
+    .[10].state.formations[0].order == "Idle" and .[10].state.formations[0].hasDestination == false and
+    (.[12].state.visibleHostileWorkers | length) > 0 and
+    .[13].state.formations[0].order == "Idle" and
+    .[14].state.formations[0].order == "Move" and
+    .[15].requestId == "wait-for-worker-in-focus-range" and
+    any(.[15].state.visibleHostileWorkers[]; .id == "hostile-worker-1" and .activity == "Gathering") and
+    .[16].state.formations[0].order == "Focus" and .[16].state.formations[0].targetId == "hostile-worker-1" and
+    any(.[16].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
+    .[17].state.formations[0].selected == true and
+    .[17].state.formations[0].order == "Focus" and
+    .[17].state.formations[0].targetId == "hostile-worker-1" and
+    any(.[17].state.visibleHostileWorkers[]; .id == "hostile-worker-1") and
+    .[18].requestId == "wait-for-focus-damage" and
+    .[18].state.formations[0].targetId == "" and
+    all(.[18].state.visibleHostileWorkers[]; .id != "hostile-worker-1")' \
+    "$output" >/dev/null || fail "Combat agent response trace contract failed: $output"
+  validate_json "$manifest"
+  validate_json "$state"
+  jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
+    .checkpoint == "spearmen-focus-worker" and .statePath == $state and (.stateHash | length) == 64' \
+    "$manifest" >/dev/null || fail "Combat agent checkpoint manifest contract failed: $manifest"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
+  validate_agent_screenshot "$manifest" "$COMBAT_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
+}
+
 agent_smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   rm -rf "$AGENT_HEADLESS_DIR"
@@ -652,6 +706,48 @@ movement_agent_graphical_smoke() {
   say "Graphical code-playable Spearmen movement passed."
 }
 
+combat_agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$COMBAT_AGENT_HEADLESS_DIR"
+  mkdir -p "$COMBAT_AGENT_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$COMBAT_AGENT_HEADLESS_DIR/player.log" \
+    --agent-script "$COMBAT_AGENT_SCRIPT" \
+    --agent-output "$COMBAT_AGENT_HEADLESS_DIR/responses.jsonl" \
+    --agent-result "$COMBAT_AGENT_HEADLESS_RESULT" \
+    --agent-artifacts "$COMBAT_AGENT_HEADLESS_DIR" \
+    --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Headless combat agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_combat_agent_session "$COMBAT_AGENT_HEADLESS_DIR" "$COMBAT_AGENT_HEADLESS_RESULT" false
+  grep -F 'AGENT_SESSION:PASS' "$COMBAT_AGENT_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless combat agent pass marker missing"
+  scan_log "$COMBAT_AGENT_HEADLESS_DIR/player.log"
+  say "Headless code-playable formation combat passed."
+}
+
+combat_agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$COMBAT_AGENT_GRAPHICAL_DIR"
+  mkdir -p "$COMBAT_AGENT_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$COMBAT_AGENT_GRAPHICAL_DIR/player.log" \
+    --agent-script "$COMBAT_AGENT_SCRIPT" \
+    --agent-output "$COMBAT_AGENT_GRAPHICAL_DIR/responses.jsonl" \
+    --agent-result "$COMBAT_AGENT_GRAPHICAL_RESULT" \
+    --agent-artifacts "$COMBAT_AGENT_GRAPHICAL_DIR" \
+    --agent-build-sha "$SHA" \
+    --agent-screenshot "$COMBAT_AGENT_GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical combat agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_combat_agent_session "$COMBAT_AGENT_GRAPHICAL_DIR" "$COMBAT_AGENT_GRAPHICAL_RESULT" true
+  grep -F 'AGENT_SESSION:PASS' "$COMBAT_AGENT_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical combat agent pass marker missing"
+  scan_log "$COMBAT_AGENT_GRAPHICAL_DIR/player.log"
+  say "Graphical code-playable formation combat passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -667,7 +763,8 @@ write_summary() {
       agentHeadless: "passed", agentGraphical: "passed",
       houseAgentHeadless: "passed", houseAgentGraphical: "passed",
       trainingAgentHeadless: "passed", trainingAgentGraphical: "passed",
-      movementAgentHeadless: "passed", movementAgentGraphical: "passed"}' \
+      movementAgentHeadless: "passed", movementAgentGraphical: "passed",
+      combatAgentHeadless: "passed", combatAgentGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -700,6 +797,8 @@ verify() {
   training_agent_graphical_smoke
   movement_agent_smoke
   movement_agent_graphical_smoke
+  combat_agent_smoke
+  combat_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -784,6 +883,8 @@ case "${1:-}" in
   training-agent-graphical-smoke) training_agent_graphical_smoke ;;
   movement-agent-smoke) movement_agent_smoke ;;
   movement-agent-graphical-smoke) movement_agent_graphical_smoke ;;
+  combat-agent-smoke) combat_agent_smoke ;;
+  combat-agent-graphical-smoke) combat_agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -791,5 +892,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac
