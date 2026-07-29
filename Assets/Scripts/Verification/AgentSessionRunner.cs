@@ -172,6 +172,11 @@ namespace AshesOfRum
                            worker.CurrentActivity == WorkerAgent.Activity.Idle;
                 case "building_complete":
                     return projector.TryResolveBuilding(step.targetId, out var building) && building.IsComplete;
+                case "formation_ready":
+                    return string.Equals(step.formationType, FormationType.Spearmen.ToString(),
+                               StringComparison.Ordinal) &&
+                           economy.FriendlyFormations.Any(formation => formation != null &&
+                               formation.MemberCount > 0 && formation.Type == FormationType.Spearmen);
                 default:
                     return false;
             }

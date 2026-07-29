@@ -58,6 +58,26 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void TrainingAgentScript_UsesRealGatherQueueAndCompletionSteps()
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "scripts", "fixtures",
+                "agent-formation-training.json"));
+
+            var script = AgentProtocol.LoadScript(path);
+
+            Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
+            Assert.That(script.scenario, Is.EqualTo("spearmen-training-completion"));
+            Assert.That(script.steps, Has.Length.EqualTo(10));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "train" && step.formationType == "Spearmen"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "formation_ready" &&
+                step.formationType == "Spearmen"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+        }
+
+        [Test]
         public void AgentHash_IsStableAndUsesSha256()
         {
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"),

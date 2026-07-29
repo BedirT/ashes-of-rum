@@ -91,6 +91,25 @@ namespace AshesOfRum
             return TryPlaceBuilding(worker, type, position, out rejectionCode);
         }
 
+        public bool TryIssueTrainCommand(FormationType type, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (type is not FormationType.Spearmen and not FormationType.Archers and not FormationType.Cavalry)
+                return RejectCommand("unsupported_formation", "Formation type is unavailable", out rejectionCode);
+            if (Supplies < tuning.formationCost)
+                return RejectCommand("insufficient_supplies", $"Need {tuning.formationCost} Supplies",
+                    out rejectionCode);
+            if (PopulationCapacity - PopulationUsed < tuning.formationPopulation)
+                return RejectCommand("population_blocked",
+                    $"Population blocked - need {tuning.formationPopulation} free", out rejectionCode);
+            if (!TryQueueFormation(type))
+                return RejectCommand("training_rejected", "Formation could not be queued", out rejectionCode);
+
+            rejectionCode = null;
+            return true;
+        }
+
         private void IssueGatherForSelected(ResourceCache cache, IEnumerable<WorkerAgent> availableWorkers)
         {
             foreach (var worker in availableWorkers) worker.IssueGather(cache);
