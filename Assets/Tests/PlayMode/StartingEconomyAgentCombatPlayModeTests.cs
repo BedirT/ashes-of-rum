@@ -130,5 +130,52 @@ namespace AshesOfRum.Tests
             Object.Destroy(scout);
             Object.Destroy(hostile.gameObject);
         }
+
+        [UnityTest]
+        public IEnumerator AgentHostileStructureMemory_SurvivesHiddenObjectDestructionUntilRevealed()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            Assert.That(economy.EnemyBuildings, Is.Not.Empty);
+            var building = economy.EnemyBuildings[0];
+            var rememberedPosition = building.transform.position;
+            var scout = new GameObject("Agent static-memory scout");
+            scout.transform.position = rememberedPosition;
+            economy.FogOfWar.RegisterFriendly(scout.transform);
+            var projector = new AgentStateProjector(economy);
+
+            var revealed = projector.Project(1);
+            var visibleBuilding = revealed.visibleHostileStructures.Single(item =>
+                item.id.StartsWith("hostile-structure-"));
+            Assert.That(visibleBuilding.fogState, Is.EqualTo(FogState.Visible.ToString()));
+
+            scout.transform.position = economy.FriendlyHisar.transform.position;
+            economy.FogOfWar.RefreshNow();
+            Assert.That(economy.FogOfWar.StateAt(rememberedPosition), Is.EqualTo(FogState.Explored));
+            building.ApplyStructuralDamage(building.Health);
+
+            var destroyedWhileHidden = projector.Project(2).visibleHostileStructures
+                .Single(item => item.id == visibleBuilding.id);
+            Assert.That(destroyedWhileHidden.fogState, Is.EqualTo(FogState.Explored.ToString()));
+            Assert.That(destroyedWhileHidden.health, Is.EqualTo(visibleBuilding.health));
+            Assert.That(destroyedWhileHidden.position.x, Is.EqualTo(visibleBuilding.position.x));
+            Assert.That(destroyedWhileHidden.position.z, Is.EqualTo(visibleBuilding.position.z));
+
+            yield return new WaitForSeconds(0.35f);
+            Assert.That(building == null, Is.True, "The delayed Unity object destruction must have completed.");
+            var afterObjectDestruction = projector.Project(3).visibleHostileStructures
+                .Single(item => item.id == visibleBuilding.id);
+            Assert.That(afterObjectDestruction.fogState, Is.EqualTo(FogState.Explored.ToString()));
+            Assert.That(afterObjectDestruction.health, Is.EqualTo(visibleBuilding.health),
+                "Out-of-vision destruction must not update the last-known snapshot.");
+
+            scout.transform.position = rememberedPosition;
+            economy.FogOfWar.RefreshNow();
+            var absenceRevealed = projector.Project(4);
+            Assert.That(absenceRevealed.visibleHostileStructures.Any(item => item.id == visibleBuilding.id),
+                Is.False, "Visible absence must legitimately clear the stale structure memory.");
+
+            Object.Destroy(scout);
+        }
     }
 }

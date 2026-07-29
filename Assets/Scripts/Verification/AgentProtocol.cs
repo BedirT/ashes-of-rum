@@ -271,6 +271,12 @@ namespace AshesOfRum
 
     public sealed class AgentStateProjector
     {
+        private sealed class HostileStructureMemory
+        {
+            public Component component;
+            public AgentHostileStructureState state;
+        }
+
         private readonly StartingEconomyController economy;
         private readonly string buildSha;
         private readonly Dictionary<WorkerAgent, string> workerIds = new();
@@ -280,7 +286,7 @@ namespace AshesOfRum
         private readonly Dictionary<FormationAgent, string> hostileFormationIds = new();
         private readonly Dictionary<WorkerAgent, string> hostileWorkerIds = new();
         private readonly Dictionary<Component, string> hostileStructureIds = new();
-        private readonly Dictionary<Component, AgentHostileStructureState> hostileStructureMemory = new();
+        private readonly Dictionary<string, HostileStructureMemory> hostileStructureMemory = new();
         private int nextWorkerId = 1;
         private int nextCacheId = 1;
         private int nextBuildingId = 1;
@@ -517,25 +523,29 @@ namespace AshesOfRum
             foreach (var structure in HostileStructures().Where(IsCurrentlyVisible))
             {
                 var component = structure.TargetComponent;
-                hostileStructureMemory[component] = ProjectHostileStructure(structure, FogState.Visible);
+                var id = hostileStructureIds[component];
+                hostileStructureMemory[id] = new HostileStructureMemory
+                {
+                    component = component,
+                    state = ProjectHostileStructure(structure, FogState.Visible)
+                };
             }
 
-            foreach (var component in hostileStructureMemory.Keys.ToArray())
+            foreach (var id in hostileStructureMemory.Keys.ToArray())
             {
-                if (component == null)
-                {
-                    hostileStructureMemory.Remove(component);
-                    continue;
-                }
-                if (economy.FogOfWar.StateAt(component.transform.position) != FogState.Visible) continue;
-                if (component is ICombatStructure structure && structure.IsAttackable) continue;
-                hostileStructureMemory.Remove(component);
+                var memory = hostileStructureMemory[id];
+                var position = new Vector3(memory.state.position.x, memory.state.position.y, memory.state.position.z);
+                if (economy.FogOfWar.StateAt(position) != FogState.Visible) continue;
+                if (memory.component != null && memory.component is ICombatStructure structure &&
+                    structure.IsAttackable) continue;
+                hostileStructureMemory.Remove(id);
             }
 
             return hostileStructureMemory
-                .OrderBy(pair => pair.Value.id, StringComparer.Ordinal)
-                .Select(pair => CopyHostileStructure(pair.Value,
-                    economy.FogOfWar.StateAt(pair.Key.transform.position) == FogState.Visible
+                .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => CopyHostileStructure(pair.Value.state,
+                    economy.FogOfWar.StateAt(new Vector3(pair.Value.state.position.x,
+                        pair.Value.state.position.y, pair.Value.state.position.z)) == FogState.Visible
                         ? FogState.Visible
                         : FogState.Explored))
                 .ToArray();
