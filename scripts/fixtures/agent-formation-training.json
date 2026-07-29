@@ -58,8 +58,8 @@
       "checkpoint": "spearmen-ready"
     },
     {
-      "id": "quit-session",
-      "action": "quit"
+      "id": "end-session",
+      "action": "end_session"
     }
   ]
 }

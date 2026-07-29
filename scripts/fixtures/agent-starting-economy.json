@@ -42,8 +42,8 @@
       "checkpoint": "gather-deposit"
     },
     {
-      "id": "quit-session",
-      "action": "quit"
+      "id": "end-session",
+      "action": "end_session"
     }
   ]
 }

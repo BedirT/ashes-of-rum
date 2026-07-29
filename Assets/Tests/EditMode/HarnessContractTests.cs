@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -35,7 +36,7 @@ namespace AshesOfRum.Tests
             Assert.That(script.scenario, Is.EqualTo("starting-economy-gather-deposit"));
             Assert.That(script.steps, Has.Length.EqualTo(8));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
-            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "end_session"));
         }
 
         [Test]
@@ -54,7 +55,7 @@ namespace AshesOfRum.Tests
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == "wait" && step.condition == "building_complete"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
-            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "end_session"));
         }
 
         [Test]
@@ -76,7 +77,7 @@ namespace AshesOfRum.Tests
                 step.action == "wait" && step.condition == "formation_ready" &&
                 step.formationType == "Spearmen"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
-            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "end_session"));
         }
 
         [Test]
@@ -98,7 +99,7 @@ namespace AshesOfRum.Tests
                 step.action == "wait" && step.condition == "formation_arrived" &&
                 step.targetId == "formation-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
-            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "end_session"));
         }
 
         [Test]
@@ -125,7 +126,7 @@ namespace AshesOfRum.Tests
                 step.action == "wait" && step.condition == "hostile_worker_in_focus_range" &&
                 step.targetId == "hostile-worker-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
-            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "end_session"));
         }
 
         [Test]
@@ -155,6 +156,25 @@ namespace AshesOfRum.Tests
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"),
                 Is.EqualTo("eb09395648365bc034d4726eb70302fe9305ce70fc83c0c73a16496706d7c544"));
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"), Has.Length.EqualTo(64));
+        }
+
+        [TestCase("agent-complete-match-restart.json", "complete-match-victory-restart", 28, "restart")]
+        [TestCase("agent-complete-match-quit.json", "complete-match-victory-quit", 26, "quit")]
+        public void CompleteMatchAgentScripts_UseOnlyRealEconomyAndPlayerCommands(string file, string scenario,
+            int steps, string lifecycleAction)
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "scripts", "fixtures", file));
+            var script = AgentProtocol.LoadScript(path);
+
+            Assert.That(script.scenario, Is.EqualTo(scenario));
+            Assert.That(script.steps, Has.Length.EqualTo(steps));
+            Assert.That(script.steps.Count(step => step.action == "capture"), Is.GreaterThanOrEqualTo(2));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "outcome_is" && step.targetId == "Victory"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == lifecycleAction));
+            Assert.That(script.steps, Has.None.Matches<AgentScriptStep>(step => step.action is
+                "credit_supplies" or "spawn" or "damage" or "advance_time" or "reveal" or "suspend_ai"));
         }
     }
 }

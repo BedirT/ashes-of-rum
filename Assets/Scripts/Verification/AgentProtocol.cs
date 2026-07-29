@@ -32,8 +32,12 @@ namespace AshesOfRum
                     throw new InvalidOperationException("Every agent step needs an id and action.");
                 if (!ids.Add(step.id)) throw new InvalidOperationException($"Duplicate agent step id: {step.id}.");
             }
-            if (script.steps[^1].action != "quit")
-                throw new InvalidOperationException("Agent script must end with a quit step.");
+            if (script.steps[^1].action is not ("end_session" or "quit"))
+                throw new InvalidOperationException("Agent script must end with an end_session or result-gated quit step.");
+            var checkpoints = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var step in script.steps.Where(item => item.action == "capture"))
+                if (string.IsNullOrWhiteSpace(step.checkpoint) || !checkpoints.Add(step.checkpoint))
+                    throw new InvalidOperationException("Every capture needs a unique checkpoint name.");
             return script;
         }
 
@@ -239,36 +243,6 @@ namespace AshesOfRum
         public string frameManifestPath;
         public string screenshotPath;
         public AgentMatchState state;
-    }
-
-    [Serializable]
-    public sealed class AgentFrameManifest
-    {
-        public int schemaVersion;
-        public string buildSha;
-        public string checkpoint;
-        public int sequence;
-        public int elapsedMilliseconds;
-        public int width;
-        public int height;
-        public string statePath;
-        public string stateHash;
-        public string screenshotPath;
-        public string screenshotSha256;
-        public AgentCameraState camera;
-    }
-
-    [Serializable]
-    public sealed class AgentSessionResult
-    {
-        public int schemaVersion;
-        public string buildSha;
-        public bool passed;
-        public string scenario;
-        public int completedSteps;
-        public string outputPath;
-        public string[] checkpointManifests;
-        public string error;
     }
 
     public sealed partial class AgentStateProjector
@@ -710,6 +684,8 @@ namespace AshesOfRum
                     return ExecuteDemolition(step, true, out rejectionCode);
                 case "set_rally":
                     return ExecuteSetRally(step, out rejectionCode);
+                case "center_camera":
+                    return ExecuteCenterCamera(step, out rejectionCode);
                 default:
                     rejectionCode = "unsupported_action";
                     return false;

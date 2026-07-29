@@ -49,6 +49,12 @@ ECONOMY_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-economy-graphical"
 ECONOMY_AGENT_HEADLESS_RESULT="$ECONOMY_AGENT_HEADLESS_DIR/result.json"
 ECONOMY_AGENT_GRAPHICAL_RESULT="$ECONOMY_AGENT_GRAPHICAL_DIR/result.json"
 ECONOMY_AGENT_GRAPHICAL_SCREENSHOT="$ECONOMY_AGENT_GRAPHICAL_DIR/economy-production-complete.png"
+COMPLETE_RESTART_SCRIPT="$ROOT/scripts/fixtures/agent-complete-match-restart.json"
+COMPLETE_RESTART_DIR="$EVIDENCE/agent-complete-restart-headless"
+COMPLETE_RESTART_RESULT="$COMPLETE_RESTART_DIR/result.json"
+COMPLETE_QUIT_SCRIPT="$ROOT/scripts/fixtures/agent-complete-match-quit.json"
+COMPLETE_QUIT_DIR="$EVIDENCE/agent-complete-quit-graphical"
+COMPLETE_QUIT_RESULT="$COMPLETE_QUIT_DIR/result.json"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -601,6 +607,108 @@ validate_economy_agent_session() {
   validate_agent_screenshot "$manifest" "$ECONOMY_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
 }
 
+validate_complete_match_telemetry() {
+  local result="$1"
+  local summary events summary_hash events_hash
+  summary="$(jq -er '.matchSummaryPath' "$result")"
+  events="$(jq -er '.matchEventLogPath' "$result")"
+  [[ -s "$summary" && -s "$events" ]] || fail "Complete-match telemetry files are missing"
+  summary_hash="$(shasum -a 256 "$summary" | awk '{print $1}')"
+  events_hash="$(shasum -a 256 "$events" | awk '{print $1}')"
+  jq -e --arg summary "$summary" --arg summary_hash "$summary_hash" --arg events "$events" \
+    --arg events_hash "$events_hash" \
+    '.matchSummaryPath == $summary and .matchSummarySha256 == $summary_hash and
+     .matchEventLogPath == $events and .matchEventLogSha256 == $events_hash' "$result" >/dev/null \
+    || fail "Complete-match telemetry references or hashes do not match"
+  jq -e '.outcome == "Victory" and .elapsedSeconds > 0 and .friendlySuppliesGathered >= 800 and
+    .friendlyEntitiesProduced >= 2 and .friendlyBuildingsConstructed >= 1 and
+    (has("friendlyEntitiesLost") and has("hostileEntitiesLost") and has("friendlyBuildingsDestroyed") and
+     has("hostileBuildingsDestroyed") and has("firstContactSeconds") and has("probeAttackSeconds") and
+     has("pressureAttackSeconds") and has("finalAssaultSeconds")) and
+    .destroyedHisar == "Alazhan Hisar"' "$summary" >/dev/null \
+    || fail "Complete-match summary is missing required real lifecycle telemetry"
+  jq -e '.events | any(.type == "match_started") and any(.type == "supplies_deposited") and
+    any(.type == "entity_produced") and any(.type == "building_constructed") and
+    any(.type == "first_contact") and any(.type == "hisar_destroyed") and
+    any(.type == "match_completed" and .detail == "Victory")' "$events" >/dev/null \
+    || fail "Complete-match event log is missing required events"
+}
+
+validate_complete_match_manifests() {
+  local directory="$1"
+  local graphical="$2"
+  shift 2
+  local checkpoint manifest state expected_state_hash expected_png_hash
+  for checkpoint in "$@"; do
+    manifest="$directory/$checkpoint-frame.json"
+    state="$directory/$checkpoint-state.json"
+    validate_json "$manifest"
+    validate_json "$state"
+    expected_state_hash="$(shasum -a 256 "$state" | awk '{print $1}')"
+    jq -e --arg state "$state" --arg hash "$expected_state_hash" \
+      '.statePath == $state and .stateSha256 == $hash and .stateHash == input.stateHash' \
+      "$manifest" "$state" >/dev/null || fail "Immutable state manifest mismatch: $manifest"
+    if [[ "$graphical" == "true" ]]; then
+      local dimensions
+      dimensions="$(sips -g pixelWidth -g pixelHeight "$directory/$checkpoint.png" 2>/dev/null)"
+      [[ "$dimensions" == *"pixelWidth: 1920"* && "$dimensions" == *"pixelHeight: 1080"* ]] \
+        || fail "Complete-match checkpoint is not 1920x1080: $directory/$checkpoint.png"
+      expected_png_hash="$(shasum -a 256 "$directory/$checkpoint.png" | awk '{print $1}')"
+      jq -e --arg path "$directory/$checkpoint.png" --arg hash "$expected_png_hash" \
+        '.width == 1920 and .height == 1080 and .screenshotPath == $path and .screenshotSha256 == $hash' \
+        "$manifest" >/dev/null || fail "Immutable frame manifest mismatch: $manifest"
+    fi
+  done
+}
+
+complete_match_restart_smoke() {
+  rm -rf "$COMPLETE_RESTART_DIR"
+  mkdir -p "$COMPLETE_RESTART_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$COMPLETE_RESTART_DIR/player.log" --agent-script "$COMPLETE_RESTART_SCRIPT" \
+    --agent-output "$COMPLETE_RESTART_DIR/responses.jsonl" --agent-result "$COMPLETE_RESTART_RESULT" \
+    --agent-artifacts "$COMPLETE_RESTART_DIR" --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Complete-match restart agent session" 360
+  jq -e --arg sha "$SHA" '.passed == true and .buildSha == $sha and
+    .scenario == "complete-match-victory-restart" and .completedSteps == 28 and
+    (.checkpointManifests | length) == 3' "$COMPLETE_RESTART_RESULT" >/dev/null \
+    || fail "Complete-match Restart result contract failed"
+  jq -se '.[23].state.outcome == "Victory" and .[24].state.hisar.resultActionsAvailable == true and
+    .[25].action == "restart" and .[25].state.outcome == "InProgress" and
+    .[25].state.supplies == .[25].state.startingSupplies and .[25].state.formations == [] and
+    .[25].state.hisar.resultActionsAvailable == false' "$COMPLETE_RESTART_DIR/responses.jsonl" >/dev/null \
+    || fail "Complete-match Restart did not rebind to a fresh in-progress match"
+  validate_complete_match_telemetry "$COMPLETE_RESTART_RESULT"
+  validate_complete_match_manifests "$COMPLETE_RESTART_DIR" false \
+    complete-match-assault complete-match-victory complete-match-restarted
+  scan_log "$COMPLETE_RESTART_DIR/player.log"
+  say "Code-playable real-economy victory and shipped Restart passed."
+}
+
+complete_match_quit_graphical_smoke() {
+  rm -rf "$COMPLETE_QUIT_DIR"
+  mkdir -p "$COMPLETE_QUIT_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$COMPLETE_QUIT_DIR/player.log" --agent-script "$COMPLETE_QUIT_SCRIPT" \
+    --agent-output "$COMPLETE_QUIT_DIR/responses.jsonl" --agent-result "$COMPLETE_QUIT_RESULT" \
+    --agent-artifacts "$COMPLETE_QUIT_DIR" --agent-build-sha "$SHA" \
+    --agent-screenshot "$COMPLETE_QUIT_DIR/frames-enabled.png" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical complete-match Quit agent session" 360
+  jq -e --arg sha "$SHA" '.passed == true and .buildSha == $sha and
+    .scenario == "complete-match-victory-quit" and .completedSteps == 26 and
+    (.checkpointManifests | length) == 2' "$COMPLETE_QUIT_RESULT" >/dev/null \
+    || fail "Complete-match Quit result contract failed"
+  grep -F 'MATCH_QUIT:REQUESTED' "$COMPLETE_QUIT_DIR/player.log" >/dev/null \
+    || fail "Complete-match agent did not invoke the shipped Quit listener"
+  validate_complete_match_telemetry "$COMPLETE_QUIT_RESULT"
+  validate_complete_match_manifests "$COMPLETE_QUIT_DIR" true \
+    complete-match-assault complete-match-victory
+  scan_log "$COMPLETE_QUIT_DIR/player.log"
+  say "Graphical code-playable real-economy victory and shipped Quit passed."
+}
+
 agent_smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   rm -rf "$AGENT_HEADLESS_DIR"
@@ -870,7 +978,8 @@ write_summary() {
       trainingAgentHeadless: "passed", trainingAgentGraphical: "passed",
       movementAgentHeadless: "passed", movementAgentGraphical: "passed",
       combatAgentHeadless: "passed", combatAgentGraphical: "passed",
-      economyAgentHeadless: "passed", economyAgentGraphical: "passed"}' \
+      economyAgentHeadless: "passed", economyAgentGraphical: "passed",
+      completeMatchRestart: "passed", completeMatchQuitGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -907,6 +1016,8 @@ verify() {
   combat_agent_graphical_smoke
   economy_agent_smoke
   economy_agent_graphical_smoke
+  complete_match_restart_smoke
+  complete_match_quit_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -995,6 +1106,8 @@ case "${1:-}" in
   combat-agent-graphical-smoke) combat_agent_graphical_smoke ;;
   economy-agent-smoke) economy_agent_smoke ;;
   economy-agent-graphical-smoke) economy_agent_graphical_smoke ;;
+  complete-match-restart-smoke) complete_match_restart_smoke ;;
+  complete-match-quit-graphical-smoke) complete_match_quit_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -1002,5 +1115,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|combat-agent-smoke|combat-agent-graphical-smoke|economy-agent-smoke|economy-agent-graphical-smoke|complete-match-restart-smoke|complete-match-quit-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

@@ -31,8 +31,8 @@
       "checkpoint": "house-complete"
     },
     {
-      "id": "quit-session",
-      "action": "quit"
+      "id": "end-session",
+      "action": "end_session"
     }
   ]
 }

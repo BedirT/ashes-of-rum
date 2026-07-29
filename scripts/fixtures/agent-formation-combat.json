@@ -61,6 +61,6 @@
       "targetId": "hostile-worker-1",
       "timeoutSeconds": 45
     },
-    { "id": "quit-session", "action": "quit" }
+    { "id": "end-session", "action": "end_session" }
   ]
 }
