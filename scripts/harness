@@ -31,6 +31,12 @@ TRAINING_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-training-graphical"
 TRAINING_AGENT_HEADLESS_RESULT="$TRAINING_AGENT_HEADLESS_DIR/result.json"
 TRAINING_AGENT_GRAPHICAL_RESULT="$TRAINING_AGENT_GRAPHICAL_DIR/result.json"
 TRAINING_AGENT_GRAPHICAL_SCREENSHOT="$TRAINING_AGENT_GRAPHICAL_DIR/spearmen-ready.png"
+MOVEMENT_AGENT_SCRIPT="$ROOT/scripts/fixtures/agent-formation-movement.json"
+MOVEMENT_AGENT_HEADLESS_DIR="$EVIDENCE/agent-movement-headless"
+MOVEMENT_AGENT_GRAPHICAL_DIR="$EVIDENCE/agent-movement-graphical"
+MOVEMENT_AGENT_HEADLESS_RESULT="$MOVEMENT_AGENT_HEADLESS_DIR/result.json"
+MOVEMENT_AGENT_GRAPHICAL_RESULT="$MOVEMENT_AGENT_GRAPHICAL_DIR/result.json"
+MOVEMENT_AGENT_GRAPHICAL_SCREENSHOT="$MOVEMENT_AGENT_GRAPHICAL_DIR/spearmen-moved.png"
 PLAYER_TIMEOUT_SECONDS="${PLAYER_TIMEOUT_SECONDS:-90}"
 GRAPHICAL_PLAYER_TIMEOUT_SECONDS="${GRAPHICAL_PLAYER_TIMEOUT_SECONDS:-120}"
 
@@ -440,6 +446,44 @@ validate_training_agent_session() {
   validate_agent_screenshot "$manifest" "$TRAINING_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
 }
 
+validate_movement_agent_session() {
+  local directory="$1"
+  local result="$2"
+  local graphical="$3"
+  local output="$directory/responses.jsonl"
+  local manifest="$directory/spearmen-moved-frame.json"
+  local state="$directory/spearmen-moved-state.json"
+  validate_json "$result"
+  jq -e --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and .passed == true and
+    .scenario == "spearmen-movement-arrival" and .completedSteps == 13 and
+    (.checkpointManifests | length) == 1' "$result" >/dev/null \
+    || fail "Movement agent session result contract failed: $result"
+  [[ -s "$output" ]] || fail "Movement agent response trace missing: $output"
+  jq -se --arg sha "$SHA" 'length == 13 and all(.[]; .schemaVersion == 1 and .accepted == true and
+    .state.buildSha == $sha and .state.perspective == "player" and
+    (.state.workers | length) == 4 and (.state.formations | type) == "array" and
+    (.state.stateHash | length) == 64) and
+    .[3].state.supplies >= 400 and (.[5].state.supplies - .[6].state.supplies) == 400 and
+    .[7].state.formations[0].id == "formation-1" and
+    .[7].state.formations[0].type == "Spearmen" and .[7].state.formations[0].selected == false and
+    .[8].state.formations[0].id == "formation-1" and .[8].state.formations[0].selected == true and
+    .[9].state.formations[0].order == "Move" and .[9].state.formations[0].hasDestination == true and
+    .[9].state.formations[0].destination.x == 4 and .[9].state.formations[0].destination.z == 5 and
+    .[10].state.formations[0].id == "formation-1" and .[10].state.formations[0].selected == true and
+    .[10].state.formations[0].order == "Idle" and .[10].state.formations[0].hasDestination == false and
+    ((.[10].state.formations[0].position.x - 4) | fabs) <= 0.5 and
+    ((.[10].state.formations[0].position.z - 5) | fabs) <= 0.5 and
+    .[11].state.formations == .[10].state.formations' "$output" >/dev/null \
+    || fail "Movement agent response trace contract failed: $output"
+  validate_json "$manifest"
+  validate_json "$state"
+  jq -e --arg state "$state" --arg sha "$SHA" '.schemaVersion == 1 and .buildSha == $sha and
+    .checkpoint == "spearmen-moved" and .statePath == $state and (.stateHash | length) == 64' \
+    "$manifest" >/dev/null || fail "Movement agent checkpoint manifest contract failed: $manifest"
+  validate_agent_checkpoint_contract "$result" "$output" "$manifest" "$state"
+  validate_agent_screenshot "$manifest" "$MOVEMENT_AGENT_GRAPHICAL_SCREENSHOT" "$graphical"
+}
+
 agent_smoke() {
   [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
   rm -rf "$AGENT_HEADLESS_DIR"
@@ -566,6 +610,48 @@ training_agent_graphical_smoke() {
   say "Graphical code-playable Spearmen training passed."
 }
 
+movement_agent_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$MOVEMENT_AGENT_HEADLESS_DIR"
+  mkdir -p "$MOVEMENT_AGENT_HEADLESS_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
+    -logFile "$MOVEMENT_AGENT_HEADLESS_DIR/player.log" \
+    --agent-script "$MOVEMENT_AGENT_SCRIPT" \
+    --agent-output "$MOVEMENT_AGENT_HEADLESS_DIR/responses.jsonl" \
+    --agent-result "$MOVEMENT_AGENT_HEADLESS_RESULT" \
+    --agent-artifacts "$MOVEMENT_AGENT_HEADLESS_DIR" \
+    --agent-build-sha "$SHA" &
+  local pid=$!
+  wait_for_player "$pid" "Headless movement agent session"
+  validate_movement_agent_session "$MOVEMENT_AGENT_HEADLESS_DIR" "$MOVEMENT_AGENT_HEADLESS_RESULT" false
+  grep -F 'AGENT_SESSION:PASS' "$MOVEMENT_AGENT_HEADLESS_DIR/player.log" >/dev/null \
+    || fail "Headless movement agent pass marker missing"
+  scan_log "$MOVEMENT_AGENT_HEADLESS_DIR/player.log"
+  say "Headless code-playable Spearmen movement passed."
+}
+
+movement_agent_graphical_smoke() {
+  [[ -x "$BUILD_APP/Contents/MacOS/Ashes of Rum" ]] || fail "Built player missing at $BUILD_APP"
+  rm -rf "$MOVEMENT_AGENT_GRAPHICAL_DIR"
+  mkdir -p "$MOVEMENT_AGENT_GRAPHICAL_DIR"
+  "$BUILD_APP/Contents/MacOS/Ashes of Rum" \
+    -screen-width 1920 -screen-height 1080 -screen-fullscreen 0 \
+    -logFile "$MOVEMENT_AGENT_GRAPHICAL_DIR/player.log" \
+    --agent-script "$MOVEMENT_AGENT_SCRIPT" \
+    --agent-output "$MOVEMENT_AGENT_GRAPHICAL_DIR/responses.jsonl" \
+    --agent-result "$MOVEMENT_AGENT_GRAPHICAL_RESULT" \
+    --agent-artifacts "$MOVEMENT_AGENT_GRAPHICAL_DIR" \
+    --agent-build-sha "$SHA" \
+    --agent-screenshot "$MOVEMENT_AGENT_GRAPHICAL_SCREENSHOT" &
+  local pid=$!
+  wait_for_player "$pid" "Graphical movement agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
+  validate_movement_agent_session "$MOVEMENT_AGENT_GRAPHICAL_DIR" "$MOVEMENT_AGENT_GRAPHICAL_RESULT" true
+  grep -F 'AGENT_SESSION:PASS' "$MOVEMENT_AGENT_GRAPHICAL_DIR/player.log" >/dev/null \
+    || fail "Graphical movement agent pass marker missing"
+  scan_log "$MOVEMENT_AGENT_GRAPHICAL_DIR/player.log"
+  say "Graphical code-playable Spearmen movement passed."
+}
+
 write_summary() {
   local cli_version
   cli_version="$(unity_cli --version | tail -1)"
@@ -580,7 +666,8 @@ write_summary() {
       headlessSmoke: "passed", graphicalSmoke: "passed",
       agentHeadless: "passed", agentGraphical: "passed",
       houseAgentHeadless: "passed", houseAgentGraphical: "passed",
-      trainingAgentHeadless: "passed", trainingAgentGraphical: "passed"}' \
+      trainingAgentHeadless: "passed", trainingAgentGraphical: "passed",
+      movementAgentHeadless: "passed", movementAgentGraphical: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and .developmentBuild == true and .resolution == "1920x1080"' \
@@ -611,6 +698,8 @@ verify() {
   house_agent_graphical_smoke
   training_agent_smoke
   training_agent_graphical_smoke
+  movement_agent_smoke
+  movement_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
@@ -693,6 +782,8 @@ case "${1:-}" in
   house-agent-graphical-smoke) house_agent_graphical_smoke ;;
   training-agent-smoke) training_agent_smoke ;;
   training-agent-graphical-smoke) training_agent_graphical_smoke ;;
+  movement-agent-smoke) movement_agent_smoke ;;
+  movement-agent-graphical-smoke) movement_agent_graphical_smoke ;;
   pr-ready) pr_ready ;;
   post-merge) post_merge ;;
   watchdog-self-test) watchdog_self_test ;;
@@ -700,5 +791,5 @@ case "${1:-}" in
   scan-log-self-test) scan_log_self_test ;;
   agent-checkpoint-self-test) agent_checkpoint_self_test ;;
   static) "$ROOT/scripts/harness-static" ;;
-  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
+  *) fail "Usage: $0 {doctor|bootstrap|verify-fast|verify|smoke|graphical-smoke|agent-smoke|agent-graphical-smoke|house-agent-smoke|house-agent-graphical-smoke|training-agent-smoke|training-agent-graphical-smoke|movement-agent-smoke|movement-agent-graphical-smoke|pr-ready|post-merge|static}" ;;
 esac

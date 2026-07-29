@@ -53,6 +53,56 @@ namespace AshesOfRum
             return true;
         }
 
+        public bool TrySelectFormationsForCommand(IEnumerable<FormationAgent> requestedFormations,
+            out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            var requested = requestedFormations?.Distinct().ToList();
+            if (requested == null || requested.Count == 0)
+                return RejectCommand("no_actors", "Select at least one formation", out rejectionCode);
+            if (requested.Any(formation => formation == null || !formation.IsFriendly ||
+                                           formation.MemberCount == 0 || !friendlyFormations.Contains(formation)))
+                return RejectCommand("invalid_actor", "A selected formation is unavailable", out rejectionCode);
+
+            ClearSelection();
+            foreach (var formation in requested) AddSelectedFormation(formation);
+            SetOrderFeedback($"Selected {requested.Count} formation(s)");
+            UpdateHud();
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueFormationMoveCommand(Vector3 destination, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            var live = selectedFormations.Where(formation => formation != null && formation.MemberCount > 0)
+                .ToList();
+            if (live.Count == 0)
+                return RejectCommand("no_selection", "Select a formation first", out rejectionCode);
+            if (!IsFinite(destination) || destination.x < FogOfWarSystem.MinX ||
+                destination.x > FogOfWarSystem.MaxX || destination.z < FogOfWarSystem.MinZ ||
+                destination.z > FogOfWarSystem.MaxZ)
+                return RejectCommand("invalid_position", "Move target is outside the battlefield", out rejectionCode);
+
+            var center = Vector3.zero;
+            foreach (var formation in live) center += formation.transform.position;
+            center /= live.Count;
+            foreach (var formation in live)
+            {
+                var offset = formation.transform.position - center;
+                var formationDestination = destination + new Vector3(offset.x, 0f, offset.z);
+                if (!formation.CanReach(formationDestination))
+                    return RejectCommand("unreachable", "Every selected formation must reach its position",
+                        out rejectionCode);
+            }
+
+            IssueMoveForSelected(destination);
+            rejectionCode = null;
+            return true;
+        }
+
         public bool TryIssueGatherCommand(ResourceCache cache, out string rejectionCode)
         {
             if (Outcome != MatchOutcome.InProgress)

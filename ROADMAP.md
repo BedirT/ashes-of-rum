@@ -23,6 +23,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | Exceptional refactor 012 - Make the starting economy code-playable | Run a development player from versioned Worker move/gather commands, inspect fog-safe JSON state, and review a state-paired rendered checkpoint. |
 | Complete | Exceptional refactor 013 - Make House construction code-playable | Place and complete a House through a versioned Worker command, observe population capacity rise in fog-safe JSON state, and review the paired rendered checkpoint. |
 | Complete | Exceptional refactor 014 - Make formation training code-playable | Gather the real formation cost, train Spearmen through the shared Hisar queue, inspect production and friendly formation JSON state, and review the paired rendered checkpoint. |
+| Complete | Exceptional refactor 015 - Make formation movement code-playable | Select trained Spearmen by stable ID, issue the shared formation move order, wait for arrival, and inspect the moved formation in paired JSON and rendered evidence. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.

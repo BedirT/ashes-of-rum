@@ -78,6 +78,26 @@ namespace AshesOfRum.Tests
         }
 
         [Test]
+        public void FormationMovementAgentScript_UsesStableSelectionMoveAndArrivalSteps()
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "scripts", "fixtures",
+                "agent-formation-movement.json"));
+
+            var script = AgentProtocol.LoadScript(path);
+
+            Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
+            Assert.That(script.scenario, Is.EqualTo("spearmen-movement-arrival"));
+            Assert.That(script.steps, Has.Length.EqualTo(13));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select" && step.actorIds.Length == 1 && step.actorIds[0] == "formation-1"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "wait" && step.condition == "formation_arrived" &&
+                step.targetId == "formation-1"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+        }
+
+        [Test]
         public void AgentHash_IsStableAndUsesSha256()
         {
             Assert.That(AgentProtocol.Sha256("Ashes of Rum"),

@@ -328,6 +328,14 @@ namespace AshesOfRum
             return building != null && !building.IsDestroyed && FriendlyBuildings().Contains(building);
         }
 
+        public bool TryResolveFormation(string id, out FormationAgent formation)
+        {
+            SynchronizeIds();
+            formation = formationIds.FirstOrDefault(pair => pair.Value == id).Key;
+            return formation != null && formation.MemberCount > 0 &&
+                   economy.FriendlyFormations.Contains(formation);
+        }
+
         private AgentWorkerState ProjectWorker(WorkerAgent worker)
         {
             var targetId = worker.TargetCache != null && cacheIds.TryGetValue(worker.TargetCache, out var id) &&
@@ -429,9 +437,12 @@ namespace AshesOfRum
                     rejectionCode = null;
                     return true;
                 case "select":
-                    return SelectWorkers(step.actorIds, out rejectionCode);
+                    return SelectActors(step.actorIds, out rejectionCode);
                 case "move":
-                    return economy.TryIssueWorkerMoveCommand(new Vector3(step.x, 0f, step.z), out rejectionCode);
+                    var destination = new Vector3(step.x, 0f, step.z);
+                    return economy.SelectedFormations.Count > 0
+                        ? economy.TryIssueFormationMoveCommand(destination, out rejectionCode)
+                        : economy.TryIssueWorkerMoveCommand(destination, out rejectionCode);
                 case "gather":
                     if (!projector.TryResolveCache(step.targetId, out var cache))
                     {
@@ -461,7 +472,7 @@ namespace AshesOfRum
             }
         }
 
-        private bool SelectWorkers(IEnumerable<string> actorIds, out string rejectionCode)
+        private bool SelectActors(IEnumerable<string> actorIds, out string rejectionCode)
         {
             if (actorIds == null)
             {
@@ -469,16 +480,30 @@ namespace AshesOfRum
                 return false;
             }
             var workers = new List<WorkerAgent>();
+            var formations = new List<FormationAgent>();
             foreach (var id in actorIds.Distinct(StringComparer.Ordinal))
             {
-                if (!projector.TryResolveWorker(id, out var worker))
+                if (projector.TryResolveWorker(id, out var worker))
                 {
-                    rejectionCode = "unknown_actor";
-                    return false;
+                    workers.Add(worker);
+                    continue;
                 }
-                workers.Add(worker);
+                if (projector.TryResolveFormation(id, out var formation))
+                {
+                    formations.Add(formation);
+                    continue;
+                }
+                rejectionCode = "unknown_actor";
+                return false;
             }
-            return economy.TrySelectWorkersForCommand(workers, out rejectionCode);
+            if (workers.Count > 0 && formations.Count > 0)
+            {
+                rejectionCode = "mixed_actor_types";
+                return false;
+            }
+            return formations.Count > 0
+                ? economy.TrySelectFormationsForCommand(formations, out rejectionCode)
+                : economy.TrySelectWorkersForCommand(workers, out rejectionCode);
         }
     }
 }
