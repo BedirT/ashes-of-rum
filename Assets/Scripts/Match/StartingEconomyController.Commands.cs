@@ -290,6 +290,9 @@ namespace AshesOfRum
             var builder = workers.FirstOrDefault(worker => ReferenceEquals(worker.CurrentConstruction, building));
             if (builder == null)
                 return RejectCommand("no_builder", "Construction has no assigned Worker", out rejectionCode);
+            if (!selectedWorkers.Contains(builder))
+                return RejectCommand("no_selection", "Select the assigned Worker before cancelling construction",
+                    out rejectionCode);
             if (!CancelConstruction(builder))
                 return RejectCommand("cancellation_rejected", "Construction could not be cancelled",
                     out rejectionCode);
