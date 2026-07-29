@@ -51,6 +51,17 @@ jq -e '.accepted == false and .rejectionCode == "unknown_target"' "$last_respons
 send_request deliberate-wait-timeout \
   '{"action":"wait","condition":"worker_count","value":99,"timeoutSeconds":0.1}'
 jq -e '.accepted == false and .rejectionCode == "condition_timeout"' "$last_response" >/dev/null
+long_checkpoint="$(printf 'a%.0s' {1..300})"
+send_request reject-overlong-checkpoint "$(jq -n --arg checkpoint "$long_checkpoint" \
+  '{action:"capture",checkpoint:$checkpoint}')"
+jq -e '.accepted == false and .rejectionCode == "invalid_checkpoint"' "$last_response" >/dev/null
+send_request observe-after-invalid-checkpoint '{"action":"observe"}'
+jq -e '.accepted' "$last_response" >/dev/null
+send_request reject-unbounded-wait \
+  '{"action":"wait","condition":"worker_count","value":99,"timeoutSeconds":1e30}'
+jq -e '.accepted == false and .rejectionCode == "invalid_timeout"' "$last_response" >/dev/null
+send_request observe-after-invalid-wait '{"action":"observe"}'
+jq -e '.accepted' "$last_response" >/dev/null
 
 send_request select-discovered-workers "$(jq -n --argjson ids "$worker_ids" '{action:"select",actorIds:$ids}')"
 jq -e '.accepted' "$last_response" >/dev/null

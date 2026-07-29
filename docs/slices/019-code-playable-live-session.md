@@ -79,6 +79,9 @@ post-merge result here before closing the exceptional refactor.
   response count, checkpoint manifests, termination, and completed-match telemetry hashes.
 - Live commands deserialize to the existing semantic step contract and reuse its executor,
   fog-safe projector, waits, captures, lifecycle gates, Restart rebind, and shipped Quit path.
+  Live waits are capped at 120 seconds, and capture checkpoints are limited to 128 safe filename
+  characters with bounded full paths before simulation is paused. Capture failures always restore
+  the prior time scale and return a structured rejection so the next request can recover.
 - Player state now includes static map bounds and deterministic row-major `U`/`E`/`V` fog RLE
   projected directly from `FogOfWar.Map`; the projection participates in `stateHash`.
 - `scripts/agent-live-client` adaptively discovers IDs, recovers from a deliberate rejection,

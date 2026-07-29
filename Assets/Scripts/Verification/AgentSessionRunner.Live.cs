@@ -11,6 +11,8 @@ namespace AshesOfRum
     {
         private const float DefaultLiveIdleTimeoutSeconds = 120f;
         private const float MaximumLiveIdleTimeoutSeconds = 600f;
+        private const float MaximumLiveWaitTimeoutSeconds = 120f;
+        private const int MaximumCapturePathCharacters = 900;
 
         private IEnumerator RunLive()
         {
@@ -97,7 +99,12 @@ namespace AshesOfRum
                 var shippedQuit = false;
                 if (validationRejection == null)
                 {
-                    if (step.action == "wait")
+                    var commandRejection = ValidateLiveCommand(step, mailbox.Artifacts, screenshotsEnabled);
+                    if (commandRejection != null)
+                    {
+                        response.rejectionCode = commandRejection;
+                    }
+                    else if (step.action == "wait")
                     {
                         var passed = false;
                         yield return WaitForCondition(step, economy, projector, value => passed = value);
@@ -207,6 +214,33 @@ namespace AshesOfRum
             if (!float.TryParse(value, out var parsed) || !float.IsFinite(parsed) || parsed <= 0f)
                 throw new InvalidOperationException("--agent-live-idle-timeout must be positive.");
             return Mathf.Min(parsed, MaximumLiveIdleTimeoutSeconds);
+        }
+
+        private static string ValidateLiveCommand(AgentScriptStep step, string artifactDirectory,
+            bool screenshotsEnabled)
+        {
+            if (step.action == "wait" && (!float.IsFinite(step.timeoutSeconds) || step.timeoutSeconds < 0f ||
+                                           step.timeoutSeconds > MaximumLiveWaitTimeoutSeconds))
+                return "invalid_timeout";
+            if (step.action != "capture") return null;
+            if (!IsSafeCheckpoint(step.checkpoint)) return "invalid_checkpoint";
+            try
+            {
+                var paths = new[]
+                {
+                    Path.Combine(artifactDirectory, $"{step.checkpoint}-state.json"),
+                    Path.Combine(artifactDirectory, $"{step.checkpoint}-frame.json"),
+                    screenshotsEnabled ? Path.Combine(artifactDirectory, $"{step.checkpoint}.png") : string.Empty
+                };
+                return paths.Where(path => !string.IsNullOrEmpty(path))
+                    .Any(path => Path.GetFullPath(path).Length > MaximumCapturePathCharacters)
+                    ? "invalid_checkpoint"
+                    : null;
+            }
+            catch (Exception)
+            {
+                return "invalid_checkpoint";
+            }
         }
     }
 }

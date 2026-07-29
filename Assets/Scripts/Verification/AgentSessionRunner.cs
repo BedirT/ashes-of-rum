@@ -11,6 +11,7 @@ namespace AshesOfRum
     {
         private const float StartupTimeoutSeconds = 20f;
         private const float CaptureTimeoutSeconds = 15f;
+        private const int MaximumCheckpointCharacters = 128;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void StartWhenRequested()
@@ -287,66 +288,127 @@ namespace AshesOfRum
             }
             var previousTimeScale = Time.timeScale;
             Time.timeScale = 0f;
-            yield return new WaitForEndOfFrame();
-            var state = projector.Project(sequence);
-            var statePath = Path.Combine(artifactDirectory, $"{step.checkpoint}-state.json");
-            var manifestPath = Path.Combine(artifactDirectory, $"{step.checkpoint}-frame.json");
-            var checkpointScreenshotPath = string.IsNullOrWhiteSpace(screenshotPath)
-                ? string.Empty
-                : Path.Combine(artifactDirectory, $"{step.checkpoint}.png");
-            if (File.Exists(statePath) || File.Exists(manifestPath) ||
-                (!string.IsNullOrWhiteSpace(checkpointScreenshotPath) && File.Exists(checkpointScreenshotPath)))
+            try
             {
-                Time.timeScale = previousTimeScale;
-                completed(false);
-                yield break;
-            }
-            File.WriteAllText(statePath, JsonUtility.ToJson(state, true));
-
-            var screenshotSha = string.Empty;
-            if (!string.IsNullOrWhiteSpace(checkpointScreenshotPath))
-            {
-                ScreenCapture.CaptureScreenshot(checkpointScreenshotPath);
-                var deadline = Time.realtimeSinceStartup + CaptureTimeoutSeconds;
-                while ((!File.Exists(checkpointScreenshotPath) || new FileInfo(checkpointScreenshotPath).Length == 0) &&
-                       Time.realtimeSinceStartup < deadline)
-                    yield return null;
-                if (!File.Exists(checkpointScreenshotPath) || new FileInfo(checkpointScreenshotPath).Length == 0)
+                yield return new WaitForEndOfFrame();
+                AgentMatchState state = null;
+                string statePath = null;
+                string manifestPath = null;
+                string checkpointScreenshotPath = null;
+                var setupSucceeded = false;
+                try
                 {
-                    Time.timeScale = previousTimeScale;
+                    state = projector.Project(sequence);
+                    statePath = Path.Combine(artifactDirectory, $"{step.checkpoint}-state.json");
+                    manifestPath = Path.Combine(artifactDirectory, $"{step.checkpoint}-frame.json");
+                    checkpointScreenshotPath = string.IsNullOrWhiteSpace(screenshotPath)
+                        ? string.Empty
+                        : Path.Combine(artifactDirectory, $"{step.checkpoint}.png");
+                    if (!File.Exists(statePath) && !File.Exists(manifestPath) &&
+                        (string.IsNullOrWhiteSpace(checkpointScreenshotPath) || !File.Exists(checkpointScreenshotPath)))
+                    {
+                        File.WriteAllText(statePath, JsonUtility.ToJson(state, true));
+                        setupSucceeded = true;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"AGENT_CAPTURE:REJECTED:{exception.GetType().Name}:{exception.Message}");
+                }
+                if (!setupSucceeded)
+                {
                     completed(false);
                     yield break;
                 }
-                screenshotSha = AgentProtocol.Sha256File(checkpointScreenshotPath);
-            }
 
-            var manifest = new AgentFrameManifest
+                var screenshotSha = string.Empty;
+                if (!string.IsNullOrWhiteSpace(checkpointScreenshotPath))
+                {
+                    try
+                    {
+                        ScreenCapture.CaptureScreenshot(checkpointScreenshotPath);
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning($"AGENT_CAPTURE:REJECTED:{exception.GetType().Name}:{exception.Message}");
+                        completed(false);
+                        yield break;
+                    }
+                    var deadline = Time.realtimeSinceStartup + CaptureTimeoutSeconds;
+                    var screenshotReady = false;
+                    while (Time.realtimeSinceStartup < deadline)
+                    {
+                        try
+                        {
+                            screenshotReady = File.Exists(checkpointScreenshotPath) &&
+                                              new FileInfo(checkpointScreenshotPath).Length > 0;
+                        }
+                        catch (Exception exception)
+                        {
+                            Debug.LogWarning($"AGENT_CAPTURE:REJECTED:{exception.GetType().Name}:{exception.Message}");
+                            completed(false);
+                            yield break;
+                        }
+                        if (screenshotReady) break;
+                        yield return null;
+                    }
+                    if (!screenshotReady)
+                    {
+                        completed(false);
+                        yield break;
+                    }
+                    try
+                    {
+                        screenshotSha = AgentProtocol.Sha256File(checkpointScreenshotPath);
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning($"AGENT_CAPTURE:REJECTED:{exception.GetType().Name}:{exception.Message}");
+                        completed(false);
+                        yield break;
+                    }
+                }
+
+                try
+                {
+                    var manifest = new AgentFrameManifest
+                    {
+                        schemaVersion = AgentProtocol.SchemaVersion,
+                        buildSha = state.buildSha,
+                        checkpoint = step.checkpoint,
+                        sequence = sequence,
+                        elapsedMilliseconds = state.elapsedMilliseconds,
+                        width = string.IsNullOrWhiteSpace(checkpointScreenshotPath) ? 0 : Screen.width,
+                        height = string.IsNullOrWhiteSpace(checkpointScreenshotPath) ? 0 : Screen.height,
+                        statePath = statePath,
+                        stateHash = state.stateHash,
+                        stateSha256 = AgentProtocol.Sha256File(statePath),
+                        screenshotPath = checkpointScreenshotPath,
+                        screenshotSha256 = screenshotSha,
+                        camera = state.camera
+                    };
+                    File.WriteAllText(manifestPath, JsonUtility.ToJson(manifest, true));
+                    response.state = state;
+                    response.checkpointStatePath = statePath;
+                    response.frameManifestPath = manifestPath;
+                    response.screenshotPath = checkpointScreenshotPath;
+                    manifests.Add(manifestPath);
+                    completed(true);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning($"AGENT_CAPTURE:REJECTED:{exception.GetType().Name}:{exception.Message}");
+                    completed(false);
+                }
+            }
+            finally
             {
-                schemaVersion = AgentProtocol.SchemaVersion,
-                buildSha = state.buildSha,
-                checkpoint = step.checkpoint,
-                sequence = sequence,
-                elapsedMilliseconds = state.elapsedMilliseconds,
-                width = string.IsNullOrWhiteSpace(checkpointScreenshotPath) ? 0 : Screen.width,
-                height = string.IsNullOrWhiteSpace(checkpointScreenshotPath) ? 0 : Screen.height,
-                statePath = statePath,
-                stateHash = state.stateHash,
-                stateSha256 = AgentProtocol.Sha256File(statePath),
-                screenshotPath = checkpointScreenshotPath,
-                screenshotSha256 = screenshotSha,
-                camera = state.camera
-            };
-            File.WriteAllText(manifestPath, JsonUtility.ToJson(manifest, true));
-            response.state = state;
-            response.checkpointStatePath = statePath;
-            response.frameManifestPath = manifestPath;
-            response.screenshotPath = checkpointScreenshotPath;
-            manifests.Add(manifestPath);
-            Time.timeScale = previousTimeScale;
-            completed(true);
+                Time.timeScale = previousTimeScale;
+            }
         }
 
         private static bool IsSafeCheckpoint(string value) => !string.IsNullOrWhiteSpace(value) &&
+            value.Length <= MaximumCheckpointCharacters &&
             value.All(character => char.IsLetterOrDigit(character) || character is '-' or '_');
 
         private static IEnumerator RebindAfterRestart(StartingEconomyController previous,
