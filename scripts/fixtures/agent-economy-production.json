@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "scenario": "economy-production-cancellation-rally-demolition",
+  "steps": [
+    {
+      "id": "observe-initial",
+      "action": "observe"
+    },
+    {
+      "id": "select-initial-gatherers",
+      "action": "select",
+      "actorIds": ["worker-1", "worker-2", "worker-3", "worker-4"]
+    },
+    {
+      "id": "gather-storehouse-cost",
+      "action": "gather",
+      "targetId": "cache-1"
+    },
+    {
+      "id": "wait-for-storehouse-cost",
+      "action": "wait",
+      "condition": "supplies_greater_than",
+      "value": 199,
+      "timeoutSeconds": 45
+    },
+    {
+      "id": "stop-first-gathering",
+      "action": "move",
+      "x": 0.0,
+      "z": -2.0
+    },
+    {
+      "id": "wait-for-builder-idle",
+      "action": "wait",
+      "condition": "worker_idle",
+      "targetId": "worker-1",
+      "timeoutSeconds": 20
+    },
+    {
+      "id": "select-builder",
+      "action": "select",
+      "actorIds": ["worker-1"]
+    },
+    {
+      "id": "place-storehouse-to-cancel",
+      "action": "build",
+      "buildingType": "Storehouse",
+      "x": 8.0,
+      "z": -1.0
+    },
+    {
+      "id": "cancel-storehouse",
+      "action": "cancel_construction",
+      "targetId": "building-1"
+    },
+    {
+      "id": "wait-for-cancelled-storehouse",
+      "action": "wait",
+      "condition": "building_absent",
+      "targetId": "building-1",
+      "timeoutSeconds": 5
+    },
+    {
+      "id": "replace-storehouse",
+      "action": "build",
+      "buildingType": "Storehouse",
+      "x": 8.0,
+      "z": -1.0
+    },
+    {
+      "id": "wait-for-storehouse",
+      "action": "wait",
+      "condition": "building_complete",
+      "targetId": "building-2",
+      "timeoutSeconds": 20
+    },
+    {
+      "id": "select-second-gatherers",
+      "action": "select",
+      "actorIds": ["worker-1", "worker-2", "worker-3", "worker-4"]
+    },
+    {
+      "id": "gather-worker-cost",
+      "action": "gather",
+      "targetId": "cache-2"
+    },
+    {
+      "id": "wait-for-worker-cost",
+      "action": "wait",
+      "condition": "supplies_greater_than",
+      "value": 99,
+      "timeoutSeconds": 45
+    },
+    {
+      "id": "stop-second-gathering",
+      "action": "move",
+      "x": 0.0,
+      "z": -2.0
+    },
+    {
+      "id": "wait-for-gatherers-idle",
+      "action": "wait",
+      "condition": "workers_idle",
+      "timeoutSeconds": 20
+    },
+    {
+      "id": "select-hisar",
+      "action": "select_hisar"
+    },
+    {
+      "id": "set-cache-rally",
+      "action": "set_rally",
+      "targetId": "cache-2"
+    },
+    {
+      "id": "queue-worker-to-cancel",
+      "action": "train",
+      "formationType": "Worker"
+    },
+    {
+      "id": "cancel-worker-production",
+      "action": "cancel_production"
+    },
+    {
+      "id": "queue-rallied-worker",
+      "action": "train",
+      "formationType": "Worker"
+    },
+    {
+      "id": "wait-for-fifth-worker",
+      "action": "wait",
+      "condition": "worker_count",
+      "value": 5,
+      "timeoutSeconds": 15
+    },
+    {
+      "id": "wait-for-rallied-gathering",
+      "action": "wait",
+      "condition": "worker_gathering",
+      "targetId": "worker-5",
+      "timeoutSeconds": 15
+    },
+    {
+      "id": "select-storehouse-for-demolition",
+      "action": "select_building",
+      "targetId": "building-2"
+    },
+    {
+      "id": "request-storehouse-demolition",
+      "action": "request_demolition",
+      "targetId": "building-2"
+    },
+    {
+      "id": "confirm-storehouse-demolition",
+      "action": "confirm_demolition",
+      "targetId": "building-2"
+    },
+    {
+      "id": "wait-for-demolished-storehouse",
+      "action": "wait",
+      "condition": "building_absent",
+      "targetId": "building-2",
+      "timeoutSeconds": 5
+    },
+    {
+      "id": "capture-economy-production",
+      "action": "capture",
+      "checkpoint": "economy-production-complete"
+    },
+    {
+      "id": "quit-session",
+      "action": "quit"
+    }
+  ]
+}

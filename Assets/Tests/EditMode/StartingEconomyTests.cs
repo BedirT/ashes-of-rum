@@ -389,5 +389,42 @@ namespace AshesOfRum.Tests
                 Object.DestroyImmediate(cacheObject);
             }
         }
+
+        [Test]
+        public void AgentEconomyTypes_ParseOnlyShippedExactNames()
+        {
+            Assert.That(AgentCommandExecutor.TryParseBuildingType("House", out var house), Is.True);
+            Assert.That(house, Is.EqualTo(BuildingType.House));
+            Assert.That(AgentCommandExecutor.TryParseBuildingType("Storehouse", out var storehouse), Is.True);
+            Assert.That(storehouse, Is.EqualTo(BuildingType.Storehouse));
+            Assert.That(AgentCommandExecutor.TryParseBuildingType("Watchtower", out var watchtower), Is.True);
+            Assert.That(watchtower, Is.EqualTo(BuildingType.Watchtower));
+            Assert.That(AgentCommandExecutor.TryParseBuildingType("house", out _), Is.False);
+            Assert.That(AgentCommandExecutor.TryParseBuildingType("2", out _), Is.False);
+            Assert.That(AgentCommandExecutor.TryParseBuildingType("Barracks", out _), Is.False);
+
+            foreach (var expected in new[]
+                     {
+                         ProductionItem.Worker, ProductionItem.Spearmen, ProductionItem.Archers,
+                         ProductionItem.Cavalry
+                     })
+            {
+                Assert.That(AgentCommandExecutor.TryParseProductionItem(expected.ToString(), out var actual),
+                    Is.True);
+                Assert.That(actual, Is.EqualTo(expected));
+            }
+            Assert.That(AgentCommandExecutor.TryParseProductionItem("worker", out _), Is.False);
+            Assert.That(AgentCommandExecutor.TryParseProductionItem("1", out _), Is.False);
+            Assert.That(AgentCommandExecutor.TryParseProductionItem("Swordsmen", out _), Is.False);
+
+            Assert.That(AgentCommandExecutor.TryParseFormationType("Spearmen", out var spearmen), Is.True);
+            Assert.That(spearmen, Is.EqualTo(FormationType.Spearmen));
+            Assert.That(AgentCommandExecutor.TryParseFormationType("Archers", out var archers), Is.True);
+            Assert.That(archers, Is.EqualTo(FormationType.Archers));
+            Assert.That(AgentCommandExecutor.TryParseFormationType("Cavalry", out var cavalry), Is.True);
+            Assert.That(cavalry, Is.EqualTo(FormationType.Cavalry));
+            Assert.That(AgentCommandExecutor.TryParseFormationType("Worker", out _), Is.False);
+            Assert.That(AgentCommandExecutor.TryParseFormationType("Swordsmen", out _), Is.False);
+        }
     }
 }

@@ -24,6 +24,7 @@
       "targetId": "worker-1",
       "timeoutSeconds": 20
     },
+    { "id": "select-hisar", "action": "select_hisar" },
     { "id": "train-spearmen", "action": "train", "formationType": "Spearmen" },
     {
       "id": "wait-for-spearmen",

@@ -279,7 +279,7 @@ namespace AshesOfRum.Tests
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "build",
-                buildingType = "Storehouse",
+                buildingType = "Barracks",
                 x = VisibleHouseSite.x,
                 z = VisibleHouseSite.z
             }, out rejection), Is.False);
@@ -396,9 +396,17 @@ namespace AshesOfRum.Tests
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "train",
-                formationType = "Archers"
+                formationType = "Swordsmen"
             }, out var rejection), Is.False);
-            Assert.That(rejection, Is.EqualTo("unsupported_formation"));
+            Assert.That(rejection, Is.EqualTo("unsupported_production"));
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "train",
+                formationType = "Spearmen"
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("no_selection"));
+            Assert.That(executor.Execute(new AgentScriptStep { action = "select_hisar" }, out rejection), Is.True,
+                rejection);
             Assert.That(executor.Execute(new AgentScriptStep
             {
                 action = "train",
@@ -440,6 +448,20 @@ namespace AshesOfRum.Tests
             Assert.That(repeated.formations[0].id, Is.EqualTo(ready.formations[0].id));
             Assert.That(repeated.stateHash, Is.EqualTo(ready.stateHash));
 
+            economy.CreditSuppliesForAutomation(400);
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "select", actorIds = new[] { "formation-1" }
+            }, out rejection), Is.True, rejection);
+            var suppliesBeforeWrongSelection = economy.Supplies;
+            Assert.That(executor.Execute(new AgentScriptStep
+            {
+                action = "train", formationType = "Worker"
+            }, out rejection), Is.False);
+            Assert.That(rejection, Is.EqualTo("no_selection"));
+            Assert.That(economy.Supplies, Is.EqualTo(suppliesBeforeWrongSelection));
+            Assert.That(economy.ProductionQueueCount, Is.Zero);
+
             Object.Destroy(hostile.gameObject);
         }
 
@@ -453,6 +475,7 @@ namespace AshesOfRum.Tests
             var supplies = economy.Supplies;
             var population = economy.PopulationUsed;
 
+            economy.SelectHisar();
             Assert.That(economy.TryIssueTrainCommand(FormationType.Spearmen, out var rejection), Is.False);
             Assert.That(rejection, Is.EqualTo("population_blocked"));
             Assert.That(economy.Supplies, Is.EqualTo(supplies));

@@ -67,7 +67,9 @@ namespace AshesOfRum.Tests
 
             Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
             Assert.That(script.scenario, Is.EqualTo("spearmen-training-completion"));
-            Assert.That(script.steps, Has.Length.EqualTo(10));
+            Assert.That(script.steps, Has.Length.EqualTo(11));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select_hisar"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == "train" && step.formationType == "Spearmen"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
@@ -87,7 +89,9 @@ namespace AshesOfRum.Tests
 
             Assert.That(script.schemaVersion, Is.EqualTo(AgentProtocol.SchemaVersion));
             Assert.That(script.scenario, Is.EqualTo("spearmen-movement-arrival"));
-            Assert.That(script.steps, Has.Length.EqualTo(13));
+            Assert.That(script.steps, Has.Length.EqualTo(14));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select_hisar"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
                 step.action == "select" && step.actorIds.Length == 1 && step.actorIds[0] == "formation-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
@@ -106,7 +110,9 @@ namespace AshesOfRum.Tests
             var script = AgentProtocol.LoadScript(path);
 
             Assert.That(script.scenario, Is.EqualTo("spearmen-scout-and-focus-combat"));
-            Assert.That(script.steps, Has.Length.EqualTo(20));
+            Assert.That(script.steps, Has.Length.EqualTo(21));
+            Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step =>
+                step.action == "select_hisar"));
             Assert.That(script.steps, Has.Exactly(2).Matches<AgentScriptStep>(step =>
                 step.action == "attack_move"));
             Assert.That(script.steps, Has.Exactly(2).Matches<AgentScriptStep>(step => step.action == "stop"));
@@ -120,6 +126,27 @@ namespace AshesOfRum.Tests
                 step.targetId == "hostile-worker-1"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "capture"));
             Assert.That(script.steps, Has.Exactly(1).Matches<AgentScriptStep>(step => step.action == "quit"));
+        }
+
+        [Test]
+        public void EconomyProductionAgentScript_SelectsBeforeConfirmedDemolition()
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "scripts", "fixtures",
+                "agent-economy-production.json"));
+
+            var script = AgentProtocol.LoadScript(path);
+
+            Assert.That(script.scenario, Is.EqualTo("economy-production-cancellation-rally-demolition"));
+            Assert.That(script.steps, Has.Length.EqualTo(30));
+            var selectIndex = System.Array.FindIndex(script.steps, step => step.action == "select_building" &&
+                step.targetId == "building-2");
+            var requestIndex = System.Array.FindIndex(script.steps, step => step.action == "request_demolition" &&
+                step.targetId == "building-2");
+            var confirmIndex = System.Array.FindIndex(script.steps, step => step.action == "confirm_demolition" &&
+                step.targetId == "building-2");
+            Assert.That(selectIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(requestIndex, Is.EqualTo(selectIndex + 1));
+            Assert.That(confirmIndex, Is.EqualTo(requestIndex + 1));
         }
 
         [Test]

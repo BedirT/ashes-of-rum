@@ -170,13 +170,24 @@ namespace AshesOfRum
                 case "worker_idle":
                     return projector.TryResolveWorker(step.targetId, out var worker) &&
                            worker.CurrentActivity == WorkerAgent.Activity.Idle;
+                case "workers_idle":
+                    return economy.Workers.Where(worker => worker != null && worker.IsAlive)
+                        .All(worker => worker.CurrentActivity == WorkerAgent.Activity.Idle &&
+                                       worker.CarriedSupplies == 0);
                 case "building_complete":
                     return projector.TryResolveBuilding(step.targetId, out var building) && building.IsComplete;
+                case "building_absent":
+                    return projector.IsKnownBuildingObjectDestroyed(step.targetId);
+                case "worker_count":
+                    return economy.Workers.Count(worker => worker != null && worker.IsAlive) == step.value;
+                case "worker_gathering":
+                    return projector.TryResolveWorker(step.targetId, out var gatheringWorker) &&
+                           gatheringWorker.CurrentActivity is WorkerAgent.Activity.GoingToCache or
+                               WorkerAgent.Activity.Gathering or WorkerAgent.Activity.Returning;
                 case "formation_ready":
-                    return string.Equals(step.formationType, FormationType.Spearmen.ToString(),
-                               StringComparison.Ordinal) &&
+                    return AgentCommandExecutor.TryParseFormationType(step.formationType, out var formationType) &&
                            economy.FriendlyFormations.Any(formation => formation != null &&
-                               formation.MemberCount > 0 && formation.Type == FormationType.Spearmen);
+                               formation.MemberCount > 0 && formation.Type == formationType);
                 case "formation_arrived":
                     if (!projector.TryResolveFormation(step.targetId, out var arrived)) return false;
                     var delta = arrived.transform.position - new Vector3(step.x, arrived.transform.position.y, step.z);

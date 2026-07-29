@@ -122,6 +122,7 @@ namespace AshesOfRum
     {
         public string id;
         public string type;
+        public bool selected;
         public bool complete;
         public int health;
         public int maxHealth;
@@ -215,6 +216,7 @@ namespace AshesOfRum
         public AgentWorkerState[] workers;
         public AgentCacheState[] visibleCaches;
         public AgentBuildingState[] buildings;
+        public AgentHisarState hisar;
         public AgentProductionState production;
         public AgentFormationState[] formations;
         public AgentHostileFormationState[] visibleHostileFormations;
@@ -269,7 +271,7 @@ namespace AshesOfRum
         public string error;
     }
 
-    public sealed class AgentStateProjector
+    public sealed partial class AgentStateProjector
     {
         private sealed class HostileStructureMemory
         {
@@ -337,6 +339,7 @@ namespace AshesOfRum
                 buildings = FriendlyBuildings()
                     .OrderBy(building => buildingIds[building], StringComparer.Ordinal)
                     .Select(ProjectBuilding).ToArray(),
+                hisar = ProjectHisar(),
                 production = new AgentProductionState
                 {
                     count = economy.ProductionQueueCount,
@@ -385,6 +388,13 @@ namespace AshesOfRum
             SynchronizeIds();
             building = buildingIds.FirstOrDefault(pair => pair.Value == id).Key;
             return building != null && !building.IsDestroyed && FriendlyBuildings().Contains(building);
+        }
+
+        public bool IsKnownBuildingObjectDestroyed(string id)
+        {
+            SynchronizeIds();
+            var known = buildingIds.FirstOrDefault(pair => pair.Value == id);
+            return string.Equals(known.Value, id, StringComparison.Ordinal) && known.Key == null;
         }
 
         public bool TryResolveFormation(string id, out FormationAgent formation)
@@ -459,6 +469,7 @@ namespace AshesOfRum
         {
             id = buildingIds[building],
             type = building.Type.ToString(),
+            selected = building.IsSelected,
             complete = building.IsComplete,
             health = building.Health,
             maxHealth = building.MaxHealth,
@@ -636,7 +647,7 @@ namespace AshesOfRum
         };
     }
 
-    public sealed class AgentCommandExecutor
+    public sealed partial class AgentCommandExecutor
     {
         private readonly StartingEconomyController economy;
         private readonly AgentStateProjector projector;
@@ -682,21 +693,23 @@ namespace AshesOfRum
                     }
                     return economy.TryIssueGatherCommand(cache, out rejectionCode);
                 case "build":
-                    if (!string.Equals(step.buildingType, BuildingType.House.ToString(), StringComparison.Ordinal))
-                    {
-                        rejectionCode = "unsupported_building";
-                        return false;
-                    }
-                    return economy.TryIssueBuildCommand(BuildingType.House,
-                        new Vector3(step.x, 0f, step.z), out rejectionCode);
+                    return ExecuteBuild(step, out rejectionCode);
                 case "train":
-                    if (!string.Equals(step.formationType, FormationType.Spearmen.ToString(),
-                            StringComparison.Ordinal))
-                    {
-                        rejectionCode = "unsupported_formation";
-                        return false;
-                    }
-                    return economy.TryIssueTrainCommand(FormationType.Spearmen, out rejectionCode);
+                    return ExecuteTrain(step, out rejectionCode);
+                case "select_hisar":
+                    return economy.TrySelectHisarForCommand(out rejectionCode);
+                case "select_building":
+                    return ExecuteSelectBuilding(step, out rejectionCode);
+                case "cancel_construction":
+                    return ExecuteCancelConstruction(step, out rejectionCode);
+                case "cancel_production":
+                    return economy.TryIssueCancelProductionCommand(out rejectionCode);
+                case "request_demolition":
+                    return ExecuteDemolition(step, false, out rejectionCode);
+                case "confirm_demolition":
+                    return ExecuteDemolition(step, true, out rejectionCode);
+                case "set_rally":
+                    return ExecuteSetRally(step, out rejectionCode);
                 default:
                     rejectionCode = "unsupported_action";
                     return false;
