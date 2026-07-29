@@ -215,6 +215,7 @@ namespace AshesOfRum
         public AgentWorkerState[] workers;
         public AgentCacheState[] visibleCaches;
         public AgentBuildingState[] buildings;
+        public AgentHisarState hisar;
         public AgentProductionState production;
         public AgentFormationState[] formations;
         public AgentHostileFormationState[] visibleHostileFormations;
@@ -269,7 +270,7 @@ namespace AshesOfRum
         public string error;
     }
 
-    public sealed class AgentStateProjector
+    public sealed partial class AgentStateProjector
     {
         private sealed class HostileStructureMemory
         {
@@ -337,6 +338,7 @@ namespace AshesOfRum
                 buildings = FriendlyBuildings()
                     .OrderBy(building => buildingIds[building], StringComparer.Ordinal)
                     .Select(ProjectBuilding).ToArray(),
+                hisar = ProjectHisar(),
                 production = new AgentProductionState
                 {
                     count = economy.ProductionQueueCount,
@@ -636,7 +638,7 @@ namespace AshesOfRum
         };
     }
 
-    public sealed class AgentCommandExecutor
+    public sealed partial class AgentCommandExecutor
     {
         private readonly StartingEconomyController economy;
         private readonly AgentStateProjector projector;
@@ -682,21 +684,21 @@ namespace AshesOfRum
                     }
                     return economy.TryIssueGatherCommand(cache, out rejectionCode);
                 case "build":
-                    if (!string.Equals(step.buildingType, BuildingType.House.ToString(), StringComparison.Ordinal))
-                    {
-                        rejectionCode = "unsupported_building";
-                        return false;
-                    }
-                    return economy.TryIssueBuildCommand(BuildingType.House,
-                        new Vector3(step.x, 0f, step.z), out rejectionCode);
+                    return ExecuteBuild(step, out rejectionCode);
                 case "train":
-                    if (!string.Equals(step.formationType, FormationType.Spearmen.ToString(),
-                            StringComparison.Ordinal))
-                    {
-                        rejectionCode = "unsupported_formation";
-                        return false;
-                    }
-                    return economy.TryIssueTrainCommand(FormationType.Spearmen, out rejectionCode);
+                    return ExecuteTrain(step, out rejectionCode);
+                case "select_hisar":
+                    return economy.TrySelectHisarForCommand(out rejectionCode);
+                case "cancel_construction":
+                    return ExecuteCancelConstruction(step, out rejectionCode);
+                case "cancel_production":
+                    return economy.TryIssueCancelProductionCommand(out rejectionCode);
+                case "request_demolition":
+                    return ExecuteDemolition(step, false, out rejectionCode);
+                case "confirm_demolition":
+                    return ExecuteDemolition(step, true, out rejectionCode);
+                case "set_rally":
+                    return ExecuteSetRally(step, out rejectionCode);
                 default:
                     rejectionCode = "unsupported_action";
                     return false;

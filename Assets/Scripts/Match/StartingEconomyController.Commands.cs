@@ -236,6 +236,123 @@ namespace AshesOfRum
             return true;
         }
 
+        public bool TrySelectHisarForCommand(out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            SelectHisar();
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueTrainWorkerCommand(out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (Supplies < tuning.workerCost)
+                return RejectCommand("insufficient_supplies", $"Need {tuning.workerCost} Supplies",
+                    out rejectionCode);
+            if (PopulationCapacity - PopulationUsed < 1)
+                return RejectCommand("population_blocked", "Population blocked - need 1 free", out rejectionCode);
+            if (!TryQueueWorker())
+                return RejectCommand("training_rejected", "Worker could not be queued", out rejectionCode);
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueCancelProductionCommand(out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (productionQueue.Active == null)
+                return RejectCommand("queue_empty", "There is no active training to cancel", out rejectionCode);
+            CancelActiveTraining();
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueCancelConstructionCommand(ConstructibleBuilding building, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (building == null || building.IsDestroyed || !buildings.Contains(building))
+                return RejectCommand("unknown_target", "Construction is unavailable", out rejectionCode);
+            if (building.IsComplete)
+                return RejectCommand("building_complete", "Completed buildings cannot be cancelled",
+                    out rejectionCode);
+            var builder = workers.FirstOrDefault(worker => ReferenceEquals(worker.CurrentConstruction, building));
+            if (builder == null)
+                return RejectCommand("no_builder", "Construction has no assigned Worker", out rejectionCode);
+            if (!CancelConstruction(builder))
+                return RejectCommand("cancellation_rejected", "Construction could not be cancelled",
+                    out rejectionCode);
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueRequestDemolitionCommand(ConstructibleBuilding building, out string rejectionCode)
+        {
+            if (!TryValidateDemolitionTarget(building, out rejectionCode)) return false;
+            SelectOnly(building);
+            RequestDemolition();
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueConfirmDemolitionCommand(ConstructibleBuilding building, out string rejectionCode)
+        {
+            if (!TryValidateDemolitionTarget(building, out rejectionCode)) return false;
+            if (selectedBuilding != building || demolitionCandidate != building)
+                return RejectCommand("confirmation_required", "Request demolition before confirming",
+                    out rejectionCode);
+            if (!RequestDemolition())
+                return RejectCommand("demolition_rejected", "Building could not be demolished", out rejectionCode);
+            rejectionCode = null;
+            return true;
+        }
+
+        public bool TryIssueSetRallyCommand(Vector3 position, ResourceCache cache, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (!hisarSelected)
+                return RejectCommand("no_selection", "Select the Hisar before setting its rally",
+                    out rejectionCode);
+            if (!IsFinite(position) || position.x < FogOfWarSystem.MinX || position.x > FogOfWarSystem.MaxX ||
+                position.z < FogOfWarSystem.MinZ || position.z > FogOfWarSystem.MaxZ)
+                return RejectCommand("invalid_position", "Rally target is outside the battlefield",
+                    out rejectionCode);
+            if (cache != null)
+            {
+                if (!allCaches.Contains(cache))
+                    return RejectCommand("unknown_target", "Supply cache is unavailable", out rejectionCode);
+                if (cache.Remaining <= 0)
+                    return RejectCommand("cache_exhausted", "Supply cache is exhausted", out rejectionCode);
+                if (!IsCurrentlyVisible(cache.transform.position))
+                    return RejectCommand("target_not_visible", "Rally cache must be currently visible",
+                        out rejectionCode);
+            }
+            else if (!workers.Any(worker => worker != null && worker.IsAlive && worker.CanReach(position)))
+                return RejectCommand("unreachable", "Rally terrain must be reachable", out rejectionCode);
+            if (!TrySetHisarRally(position, cache))
+                return RejectCommand("rally_rejected", "Rally target is unavailable", out rejectionCode);
+            rejectionCode = null;
+            return true;
+        }
+
+        private bool TryValidateDemolitionTarget(ConstructibleBuilding building, out string rejectionCode)
+        {
+            if (Outcome != MatchOutcome.InProgress)
+                return RejectCommand("match_complete", "The match is complete", out rejectionCode);
+            if (building == null || building.IsDestroyed || !buildings.Contains(building))
+                return RejectCommand("unknown_target", "Building is unavailable", out rejectionCode);
+            if (!building.IsComplete)
+                return RejectCommand("building_incomplete", "Only completed buildings can be demolished",
+                    out rejectionCode);
+            rejectionCode = null;
+            return true;
+        }
+
         private void IssueGatherForSelected(ResourceCache cache, IEnumerable<WorkerAgent> availableWorkers)
         {
             foreach (var worker in availableWorkers) worker.IssueGather(cache);
