@@ -1,6 +1,6 @@
 # Documentation And Asset Workflow 022 - Establish The Authored Archer Pipeline
 
-State: In Progress
+State: Complete
 
 ## User-Approved Product Change
 
@@ -71,5 +71,21 @@ entered the shipped runtime.
 
 ## Evidence
 
-Record the PR, exact reviewed HEAD, validation and Unity import summaries, review round, fixer count,
-merge result, and post-merge proof here before closing this workflow change.
+- PR: [#36](https://github.com/BedirT/rts-game/pull/36)
+- Final reviewed head: `906143eeb3c73335d31c3d7849dc446b00b13a5d`.
+- Review: round 1 found incorrect PBR data-texture semantics; fixer run 1 made normal maps
+  `NormalMap`/linear, made metallic and roughness maps linear, and added regression coverage. Round 2
+  found that the example importer command could clear 14 valid loop flags; fixer run 2 introduced the
+  role-generic `ANIMATION_IMPORT.json` contract and a real 39-clip rerun test. Fresh round 3 reported
+  no blocking findings. Two fixer runs were used.
+- Asset validation: the skill validator and context-light forward test passed; Blender 5.2 confirmed
+  one 4,262-vertex/7,952-polygon skinned model and 39 meshless motion FBXs sharing one 49-bone
+  fingerprint; Unity confirmed one valid Humanoid Avatar, 39 copied-Avatar motion importers, all 17
+  declared loop mappings, and correct PBR data-texture semantics.
+- Exact-head verification: 49/49 Edit Mode, 92/92 Play Mode, macOS ARM64 Development build, every
+  required headless and graphical gameplay smoke, complete-match Restart and Quit, both adaptive live
+  runs, clean logs, static checks, and evidence/hash validation passed.
+- Merge: squash-merged as `93be1c75d70f1281c9347f6a38bef135a2e4f453`; the feature branch was
+  deleted.
+- Post-merge: `make post-merge` passed on merged `main` at that exact SHA with the same complete ladder,
+  proving the procedural/primitive shipped game remained unchanged and playable.
