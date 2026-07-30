@@ -71,7 +71,7 @@ namespace AshesOfRum.Tests
                 .Where(itemRenderer => itemRenderer.name == "Black Falcon Diamond").ToArray();
             var hostileMarkers = spearmen.GetComponentsInChildren<Renderer>(true)
                 .Where(itemRenderer => itemRenderer.name == "Living Flame Square").ToArray();
-            Assert.That(friendlyMarkers, Has.Length.EqualTo(8));
+            Assert.That(friendlyMarkers, Has.Length.EqualTo(1));
             Assert.That(hostileMarkers, Has.Length.EqualTo(8));
             Assert.That(friendlyMarkers.All(itemRenderer => itemRenderer.transform.localRotation != Quaternion.identity),
                 Is.True);
@@ -122,6 +122,16 @@ namespace AshesOfRum.Tests
             Assert.That(target.GetComponentsInChildren<ArcherMemberPresentation>()
                 .All(presentation => Mathf.Abs(presentation.WorldBottomY - target.transform.position.y) < 0.03f),
                 Is.True, "Hostile animated feet must sit on the battlefield surface.");
+            Assert.That(archers.GetComponentsInChildren<Renderer>()
+                .Where(itemRenderer => itemRenderer.name.Contains("Archer Bow"))
+                .All(itemRenderer => itemRenderer.bounds.size.y > itemRenderer.bounds.size.x),
+                Is.True, "Each bow must hang vertically from the Archer's left hand.");
+            Assert.That(archers.GetComponentsInChildren<Renderer>()
+                .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(1),
+                "The formation should use one blue identity marker without obscuring the authored textures.");
+            Assert.That(target.GetComponentsInChildren<Renderer>()
+                .Count(itemRenderer => itemRenderer.name == "Living Flame Square"), Is.EqualTo(1),
+                "The formation should use one red identity marker without obscuring the authored textures.");
 
             archers.IssueMove(archers.transform.position + Vector3.forward * 4f);
             yield return WaitUntil(() => visuals.Any(visual =>

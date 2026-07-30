@@ -51,6 +51,7 @@ MonoBehaviour:
   feedbackRenderers:
   - {fileID: 6672426485733250620}
   - {fileID: 276545589091340967}
+  bow: {fileID: 1413374244966001096}
 --- !u!1001 &1447882121679932963
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -210,6 +211,10 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: 0.5733847
       objectReference: {fileID: 0}
+    - target: {fileID: -6224647625920531925, guid: 87aed53b87d38432a8ea5dcf6ab49962, type: 3}
+      propertyPath: m_Mesh
+      value: 
+      objectReference: {fileID: 4300000, guid: a8210243e7265466bb575589b285d98b, type: 2}
     - target: {fileID: -6224647625920531925, guid: 87aed53b87d38432a8ea5dcf6ab49962, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 

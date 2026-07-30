@@ -371,10 +371,12 @@ namespace AshesOfRum
                 var archerPresentation = itemRenderer.GetComponentInParent<ArcherMemberPresentation>();
                 var expected = itemRenderer.GetComponent<FormationMemberVisual>() != null ||
                                archerPresentation != null && archerPresentation.IsFactionRenderer(itemRenderer)
-                    ? archerPresentation == null
-                        ? (IsFriendly ? FriendlyColor : HostileColor)
-                        : archerPresentation.FactionTint
-                    : itemRenderer.GetComponent<FormationSelectionRing>() != null ? SelectionColor : Color.white;
+                    ? archerPresentation == null ? (IsFriendly ? FriendlyColor : HostileColor) : Color.white
+                    : itemRenderer.GetComponent<FormationSelectionRing>() != null
+                        ? SelectionColor
+                        : itemRenderer.name == "Black Falcon Diamond" || itemRenderer.name == "Living Flame Square"
+                            ? (IsFriendly ? FriendlyColor : HostileColor)
+                            : Color.white;
                 if (!Approximately(itemRenderer.sharedMaterial.color, expected))
                 {
                     Debug.Log(

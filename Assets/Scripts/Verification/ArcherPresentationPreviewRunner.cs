@@ -50,6 +50,7 @@ namespace AshesOfRum
                 hostile = economy.DeployEnemyForAutomation(FormationType.Archers,
                     new Vector3(2.6f, 0f, 5.5f));
                 hostile.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+                var showFactionMarkers = HasArgument("--archer-preview-show-factions");
 
                 var camera = Camera.main ?? throw new InvalidOperationException("Main camera was not found.");
                 var controller = camera.GetComponent<RtsCameraController>();
@@ -57,12 +58,29 @@ namespace AshesOfRum
                 var target = new Vector3(0f, 0.8f, 4.8f);
                 camera.transform.position = target + new Vector3(0f, 7.2f, -7.4f);
                 camera.transform.LookAt(target);
-                camera.fieldOfView = 32f;
+                camera.fieldOfView = showFactionMarkers ? 36f : 32f;
 
                 foreach (var canvas in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
                     canvas.gameObject.SetActive(false);
-                HideGameplayMarkers(friendly);
-                HideGameplayMarkers(hostile);
+                HideGameplayMarkers(friendly, !showFactionMarkers);
+                HideGameplayMarkers(hostile, !showFactionMarkers);
+
+                if (HasArgument("--archer-preview-single"))
+                {
+                    var friendlyPresentations = friendly.GetComponentsInChildren<ArcherMemberPresentation>();
+                    foreach (var presentation in friendlyPresentations.Skip(1))
+                        presentation.gameObject.SetActive(false);
+                    hostile.gameObject.SetActive(false);
+
+                    var inspectedArcher = friendlyPresentations[0].transform.position;
+                    target = new Vector3(inspectedArcher.x, 0.9f, inspectedArcher.z);
+                    var cameraOffset = HasArgument("--archer-preview-front")
+                        ? new Vector3(0f, 1.2f, 3.2f)
+                        : new Vector3(0f, 1.2f, -3.2f);
+                    camera.transform.position = target + cameraOffset;
+                    camera.transform.LookAt(target);
+                    camera.fieldOfView = 28f;
+                }
             }
             catch (Exception exception)
             {
@@ -73,8 +91,10 @@ namespace AshesOfRum
 
             for (var frame = 0; frame < 14; frame++) yield return new WaitForEndOfFrame();
 
-            var presentations = friendly.GetComponentsInChildren<ArcherMemberPresentation>()
-                .Concat(hostile.GetComponentsInChildren<ArcherMemberPresentation>()).ToArray();
+            var singlePreview = HasArgument("--archer-preview-single");
+            var presentations = friendly.GetComponentsInChildren<ArcherMemberPresentation>(true)
+                .Concat(hostile.GetComponentsInChildren<ArcherMemberPresentation>(true))
+                .Where(presentation => !singlePreview || presentation.gameObject.activeInHierarchy).ToArray();
             result.friendlyArchers = friendly.MemberCount;
             result.hostileArchers = hostile.MemberCount;
             result.lowestFootY = presentations.Min(presentation => presentation.WorldBottomY);
@@ -82,7 +102,7 @@ namespace AshesOfRum
 
             if (result.friendlyArchers != 8 || result.hostileArchers != 8)
                 result.error = "The preview did not spawn two complete Archer formations.";
-            else if (presentations.Length != 16 || presentations.Any(presentation =>
+            else if (presentations.Length != (singlePreview ? 1 : 16) || presentations.Any(presentation =>
                          Mathf.Abs(presentation.WorldBottomY) > 0.1f))
                 result.error = "One or more animated Archers are not grounded.";
             result.screenshotPath = GetArgumentValue("--archer-preview-screenshot")
@@ -111,13 +131,14 @@ namespace AshesOfRum
             Application.Quit(result.passed ? 0 : 1);
         }
 
-        private static void HideGameplayMarkers(FormationAgent formation)
+        private static void HideGameplayMarkers(FormationAgent formation, bool hideFactionMarkers)
         {
             foreach (var itemRenderer in formation.GetComponentsInChildren<Renderer>(true))
             {
                 if (itemRenderer.GetComponent<FormationSelectionRing>() != null ||
                     itemRenderer.GetComponent<FormationFrontIndicator>() != null ||
-                    itemRenderer.name == "Black Falcon Diamond" || itemRenderer.name == "Living Flame Square")
+                    hideFactionMarkers && (itemRenderer.name == "Black Falcon Diamond" ||
+                                           itemRenderer.name == "Living Flame Square"))
                     itemRenderer.gameObject.SetActive(false);
             }
         }

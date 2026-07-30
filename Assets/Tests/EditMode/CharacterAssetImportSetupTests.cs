@@ -126,6 +126,18 @@ namespace AshesOfRum.Tests.EditMode
             Assert.That(prefab.GetComponentsInChildren<Renderer>(true)
                 .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
             var bodyRenderer = prefab.transform.Find("Archer Model").GetComponentInChildren<SkinnedMeshRenderer>();
+            Assert.That(AssetDatabase.GetAssetPath(bodyRenderer.sharedMesh), Is.EqualTo(ArcherRuntimeAssetSetup.BodyMeshPath));
+            var spineIndex = System.Array.FindIndex(bodyRenderer.bones,
+                bone => bone.name.EndsWith("Spine2", System.StringComparison.Ordinal));
+            var correctedWeights = bodyRenderer.sharedMesh.boneWeights;
+            var correctedVertices = bodyRenderer.sharedMesh.vertices
+                .Select((vertex, index) => (vertex, index))
+                .Count(item => item.vertex.x < -0.0018f && item.vertex.y > 0.0109f &&
+                               item.vertex.z < -0.0009f &&
+                               correctedWeights[item.index].boneIndex0 == spineIndex &&
+                               correctedWeights[item.index].weight0 > 0.999f);
+            Assert.That(correctedVertices, Is.GreaterThan(50),
+                "The authored arrows must remain rigidly attached to the upper spine instead of the head.");
             var authoredHeight = bodyRenderer.localBounds.size.y * bodyRenderer.transform.lossyScale.y;
             Assert.That(authoredHeight, Is.InRange(1.5f, 2.1f),
                 "The generated character must be normalized to a readable gameplay height.");

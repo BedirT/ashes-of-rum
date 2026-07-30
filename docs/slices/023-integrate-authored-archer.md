@@ -6,15 +6,15 @@ State: In progress
 
 Friendly and hostile Archer formations use the authored Archer character, bow, arrow projectile, and
 Humanoid animations in the running match. Individual Archers visibly idle, walk, release arrows,
-react to hits, and fall on death while retaining the existing faction colors and overhead shape
-markers.
+react to hits, and fall on death while retaining the authored green-and-brown texture. One colored
+diamond/square marker identifies each formation without recoloring or obscuring its members.
 
 ## Acceptance
 
 - [ ] Newly trained and AI-controlled Archer formations show eight authored characters at the existing
   four-wide, two-deep member positions.
-- [ ] Friendly and hostile Archers remain distinguishable by blue/red character tint and the existing
-  diamond/square overhead markers.
+- [ ] Friendly and hostile Archers retain the authored texture and remain distinguishable through one
+  blue diamond or red square marker per formation.
 - [ ] Authored idle and walk clips follow code-owned member movement with root motion disabled.
 - [ ] The release/recoil clip begins at the existing code-owned projectile release instant; projectile
   flight, attack cadence, impact timing, damage, and targeting remain unchanged.
@@ -40,9 +40,10 @@ markers.
 
 Launch the macOS Development player with `--archer-preview` to bypass the normal match and directly
 spawn one friendly and one hostile Archer formation under a close camera. Confirm all sixteen models
-stand on the battlefield surface, retain readable texture detail under their blue/red faction tint, and
-show their authored bows and quivers without primitive member meshes obscuring them. Inspect the
-generated preview result and player log before exit.
+stand on the battlefield surface, retain their authored green-and-brown texture, and show their bows
+held vertically in the left hand with arrows seated in the back-mounted quiver. Confirm one blue diamond
+or red square identifies each formation without covering its members. Inspect the generated preview
+result and player log before exit.
 
 ## Evidence
 

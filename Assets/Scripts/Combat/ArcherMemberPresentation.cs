@@ -15,13 +15,15 @@ namespace AshesOfRum
         [SerializeField] private Animator animator;
         [SerializeField] private Renderer[] factionRenderers = Array.Empty<Renderer>();
         [SerializeField] private Renderer[] feedbackRenderers = Array.Empty<Renderer>();
+        [SerializeField] private Transform bow;
+        private Transform leftHand;
         private float desiredGroundY;
         private int groundingFramesRemaining;
+        private bool equipmentAligned;
 
         public Animator Animator => animator;
         public Renderer[] FeedbackRenderers => feedbackRenderers;
         public string CurrentState { get; private set; } = IdleState;
-        public Color FactionTint { get; private set; } = Color.white;
         public float WorldBottomY => factionRenderers.Length == 0
             ? transform.position.y
             : factionRenderers.Where(itemRenderer => itemRenderer != null)
@@ -29,32 +31,38 @@ namespace AshesOfRum
 
         public bool IsFactionRenderer(Renderer candidate) => Array.IndexOf(factionRenderers, candidate) >= 0;
 
-        public void Configure(Animator targetAnimator, Renderer[] tintedRenderers, Renderer[] flashedRenderers)
+        public void Configure(Animator targetAnimator, Renderer[] tintedRenderers, Renderer[] flashedRenderers,
+            Transform bowTransform)
         {
             animator = targetAnimator;
             factionRenderers = tintedRenderers ?? Array.Empty<Renderer>();
             feedbackRenderers = flashedRenderers ?? Array.Empty<Renderer>();
+            bow = bowTransform;
         }
 
-        public void Initialize(Color factionColor, float groundY)
+        public void Initialize(float groundY)
         {
             if (animator == null)
                 throw new InvalidOperationException("Archer presentation requires an Animator.");
+            if (bow == null)
+                throw new InvalidOperationException("Archer presentation requires a bow attachment.");
 
             animator.applyRootMotion = false;
-            FactionTint = Color.Lerp(Color.white, factionColor, 0.6f);
             foreach (var itemRenderer in factionRenderers)
             {
                 if (itemRenderer == null) continue;
-                itemRenderer.material.color = FactionTint;
+                itemRenderer.material.color = Color.white;
             }
             foreach (var itemRenderer in feedbackRenderers)
             {
                 if (itemRenderer == null || IsFactionRenderer(itemRenderer)) continue;
                 itemRenderer.material.color = Color.white;
             }
+            leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand)
+                ?? throw new InvalidOperationException("Archer Avatar has no mapped left hand.");
             desiredGroundY = groundY;
             groundingFramesRemaining = 12;
+            equipmentAligned = false;
             Play(IdleState, 0f);
         }
 
@@ -68,9 +76,38 @@ namespace AshesOfRum
 
         private void LateUpdate()
         {
-            if (groundingFramesRemaining <= 0 || factionRenderers.Length == 0) return;
-            groundingFramesRemaining--;
-            transform.position += Vector3.up * (desiredGroundY - WorldBottomY);
+            if (!equipmentAligned)
+            {
+                AlignBowToHand();
+                equipmentAligned = true;
+            }
+            if (groundingFramesRemaining > 0 && factionRenderers.Length > 0)
+            {
+                groundingFramesRemaining--;
+                transform.position += Vector3.up * (desiredGroundY - WorldBottomY);
+            }
+        }
+
+        private void AlignBowToHand()
+        {
+            bow.SetPositionAndRotation(leftHand.position, animator.transform.rotation);
+            var meshFilter = bow.GetComponentInChildren<MeshFilter>()
+                ?? throw new InvalidOperationException("Archer bow requires a mesh.");
+            var size = meshFilter.sharedMesh.bounds.size;
+            var longAxis = size.x > size.y && size.x > size.z
+                ? Vector3.right
+                : size.y > size.z ? Vector3.up : Vector3.forward;
+            var thinAxis = size.x < size.y && size.x < size.z
+                ? Vector3.right
+                : size.y < size.z ? Vector3.up : Vector3.forward;
+
+            var up = animator.transform.up;
+            var longDirection = meshFilter.transform.TransformDirection(longAxis);
+            bow.rotation = Quaternion.FromToRotation(longDirection, up) * bow.rotation;
+
+            var normal = Vector3.ProjectOnPlane(meshFilter.transform.TransformDirection(thinAxis), up).normalized;
+            var facing = Vector3.ProjectOnPlane(animator.transform.forward, up).normalized;
+            bow.rotation = Quaternion.AngleAxis(Vector3.SignedAngle(normal, facing, up), up) * bow.rotation;
         }
     }
 }

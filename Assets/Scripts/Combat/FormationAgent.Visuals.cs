@@ -123,21 +123,26 @@ namespace AshesOfRum
                     authored.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                     authored.transform.localScale = new Vector3(1f / 0.7f, 1f / 0.85f, 1f / 0.7f);
                     archerPresentation = authored.GetComponent<ArcherMemberPresentation>();
-                    archerPresentation.Initialize(IsFriendly ? FriendlyColor : HostileColor, transform.position.y);
+                    archerPresentation.Initialize(transform.position.y);
                 }
             }
             member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer, archerPresentation);
             var memberAgent = member.AddComponent<FormationMemberAgent>();
             memberAgent.Initialize(this, index, tuning.memberHealth);
 
-            var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            marker.name = IsFriendly ? "Black Falcon Diamond" : "Living Flame Square";
-            marker.transform.SetParent(member.transform, false);
-            marker.transform.localPosition = new Vector3(0f, 1.25f, 0f);
-            marker.transform.localScale = Vector3.one * 0.35f;
-            if (IsFriendly) marker.transform.localRotation = Quaternion.Euler(45f, 0f, 45f);
-            AssignSupportedMaterial(marker.GetComponent<Renderer>(), Color.white);
-            Destroy(marker.GetComponent<Collider>());
+            if (Type != FormationType.Archers || index == 0)
+            {
+                var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                marker.name = IsFriendly ? "Black Falcon Diamond" : "Living Flame Square";
+                marker.transform.SetParent(Type == FormationType.Archers ? transform : member.transform, false);
+                marker.transform.localPosition = Type == FormationType.Archers
+                    ? new Vector3(0f, 2.25f, 0f)
+                    : new Vector3(0f, 1.25f, 0f);
+                marker.transform.localScale = Vector3.one * (Type == FormationType.Archers ? 0.22f : 0.35f);
+                if (IsFriendly) marker.transform.localRotation = Quaternion.Euler(45f, 0f, 45f);
+                AssignSupportedMaterial(marker.GetComponent<Renderer>(), IsFriendly ? FriendlyColor : HostileColor);
+                Destroy(marker.GetComponent<Collider>());
+            }
 
             var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             ring.name = "Formation Selection Ring";

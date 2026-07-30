@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AshesOfRum;
@@ -14,6 +15,7 @@ namespace AshesOfRum.Editor
         public const string ProjectilePrefabPath = "Assets/Resources/Presentation/ArcherArrowProjectile.prefab";
         public const string ControllerPath = "Assets/Resources/Presentation/Archer.controller";
         public const string BodyMaterialPath = "Assets/Resources/Presentation/ArcherBody.mat";
+        public const string BodyMeshPath = "Assets/Resources/Presentation/ArcherBodyMesh.asset";
         public const string BowMaterialPath = "Assets/Resources/Presentation/ArcherBow.mat";
         public const string ArrowMaterialPath = "Assets/Resources/Presentation/ArcherArrow.mat";
 
@@ -129,6 +131,8 @@ namespace AshesOfRum.Editor
                 var bodyRenderers = model.GetComponentsInChildren<Renderer>(true);
                 if (bodyRenderers.Length == 0)
                     throw new InvalidOperationException("Archer model did not instantiate with renderers.");
+                var bodyRenderer = bodyRenderers.OfType<SkinnedMeshRenderer>().Single();
+                bodyRenderer.sharedMesh = CreateCorrectedBodyMesh(bodyRenderer);
                 NormalizeHeightAndGround(model.transform, bodyRenderers, 1.8f);
                 AssignMaterial(bodyRenderers, bodyMaterial);
 
@@ -143,7 +147,8 @@ namespace AshesOfRum.Editor
                 AssignMaterial(bowRenderers, bowMaterial);
 
                 var presentation = prefabRoot.AddComponent<ArcherMemberPresentation>();
-                presentation.Configure(animator, bodyRenderers, bodyRenderers.Concat(bowRenderers).ToArray());
+                presentation.Configure(animator, bodyRenderers, bodyRenderers.Concat(bowRenderers).ToArray(),
+                    bow.transform);
                 PrefabUtility.SaveAsPrefabAsset(prefabRoot, MemberPrefabPath);
             }
             finally
@@ -188,6 +193,106 @@ namespace AshesOfRum.Editor
         {
             foreach (var itemRenderer in renderers)
                 itemRenderer.sharedMaterials = Enumerable.Repeat(material, itemRenderer.sharedMaterials.Length).ToArray();
+        }
+
+        private static Mesh CreateCorrectedBodyMesh(SkinnedMeshRenderer renderer)
+        {
+            var source = renderer.sharedMesh;
+            var corrected = UnityEngine.Object.Instantiate(source);
+            corrected.name = "ArcherBodyMesh";
+
+            var spineIndex = Array.FindIndex(renderer.bones,
+                bone => bone != null && bone.name.EndsWith("Spine2", StringComparison.Ordinal));
+            var headIndex = Array.FindIndex(renderer.bones,
+                bone => bone != null && bone.name.EndsWith("Head", StringComparison.Ordinal));
+            if (spineIndex < 0 || headIndex < 0)
+                throw new InvalidOperationException("Archer mesh requires mapped Spine2 and Head bones.");
+
+            var vertices = corrected.vertices;
+            var parents = Enumerable.Range(0, vertices.Length).ToArray();
+            var weldedPositions = new Dictionary<Vector3Int, int>();
+            int Find(int index)
+            {
+                while (parents[index] != index)
+                {
+                    parents[index] = parents[parents[index]];
+                    index = parents[index];
+                }
+                return index;
+            }
+            void Union(int left, int right)
+            {
+                var leftRoot = Find(left);
+                var rightRoot = Find(right);
+                if (leftRoot != rightRoot) parents[rightRoot] = leftRoot;
+            }
+
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                var vertex = vertices[index];
+                var key = new Vector3Int(
+                    Mathf.RoundToInt(vertex.x * 100000f),
+                    Mathf.RoundToInt(vertex.y * 100000f),
+                    Mathf.RoundToInt(vertex.z * 100000f));
+                if (weldedPositions.TryGetValue(key, out var matchingIndex)) Union(index, matchingIndex);
+                else weldedPositions.Add(key, index);
+            }
+            var triangles = corrected.triangles;
+            for (var index = 0; index < triangles.Length; index += 3)
+            {
+                Union(triangles[index], triangles[index + 1]);
+                Union(triangles[index], triangles[index + 2]);
+            }
+
+            var weights = corrected.boneWeights;
+            var arrowComponents = new HashSet<int>();
+            var headBounds = new Bounds();
+            var hasHeadBounds = false;
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                var vertex = vertices[index];
+                var weight = weights[index];
+                var headWeight = 0f;
+                if (weight.boneIndex0 == headIndex) headWeight += weight.weight0;
+                if (weight.boneIndex1 == headIndex) headWeight += weight.weight1;
+                if (weight.boneIndex2 == headIndex) headWeight += weight.weight2;
+                if (weight.boneIndex3 == headIndex) headWeight += weight.weight3;
+                if (headWeight > 0.4f)
+                {
+                    if (!hasHeadBounds) headBounds = new Bounds(vertex, Vector3.zero);
+                    else headBounds.Encapsulate(vertex);
+                    hasHeadBounds = true;
+                }
+                if (vertex.x < -0.0018f && vertex.y > 0.0109f && vertex.z < -0.0009f && headWeight > 0.4f)
+                    arrowComponents.Add(Find(index));
+            }
+
+            var correctedVertices = 0;
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                if (!arrowComponents.Contains(Find(index))) continue;
+                weights[index] = new BoneWeight { boneIndex0 = spineIndex, weight0 = 1f };
+                correctedVertices++;
+            }
+            if (correctedVertices < 500 || correctedVertices > 1500)
+                throw new InvalidOperationException(
+                    $"Unexpected Archer arrow vertex count: {correctedVertices}; " +
+                    $"head min={headBounds.min.ToString("F6")}, max={headBounds.max.ToString("F6")}.");
+            corrected.boneWeights = weights;
+
+            var asset = AssetDatabase.LoadAssetAtPath<Mesh>(BodyMeshPath);
+            if (asset == null)
+            {
+                AssetDatabase.CreateAsset(corrected, BodyMeshPath);
+                asset = corrected;
+            }
+            else
+            {
+                EditorUtility.CopySerialized(corrected, asset);
+                UnityEngine.Object.DestroyImmediate(corrected);
+            }
+            EditorUtility.SetDirty(asset);
+            return asset;
         }
 
         private static void NormalizeHeightAndGround(Transform model, Renderer[] renderers, float targetHeight)
