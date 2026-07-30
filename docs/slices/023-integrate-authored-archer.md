@@ -38,11 +38,11 @@ markers.
 
 ## Manual Play Check
 
-Launch the macOS Development player through the graphical combat smoke path. Train or deploy a friendly
-Archer formation, order it to move, and focus a hostile formation. Confirm eight blue authored Archers
-walk in formation, stop, visibly release authored arrow projectiles, react when hit, and leave an
-animated casualty presentation while survivors re-form. Confirm hostile Archers use red tint and square
-markers. Continue through the complete-match smoke and inspect logs before exit.
+Launch the macOS Development player with `--archer-preview` to bypass the normal match and directly
+spawn one friendly and one hostile Archer formation under a close camera. Confirm all sixteen models
+stand on the battlefield surface, retain readable texture detail under their blue/red faction tint, and
+show their authored bows and quivers without primitive member meshes obscuring them. Inspect the
+generated preview result and player log before exit.
 
 ## Evidence
 

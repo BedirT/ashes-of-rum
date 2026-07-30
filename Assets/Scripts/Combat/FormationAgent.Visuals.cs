@@ -116,13 +116,14 @@ namespace AshesOfRum
                 var authoredPrefab = Resources.Load<GameObject>("Presentation/ArcherMember");
                 if (authoredPrefab != null)
                 {
-                    memberRenderer.enabled = false;
+                    Destroy(memberRenderer);
+                    memberRenderer = null;
                     var authored = Instantiate(authoredPrefab, member.transform);
                     authored.name = "Authored Archer";
-                    authored.transform.SetLocalPositionAndRotation(Vector3.down, Quaternion.identity);
+                    authored.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                     authored.transform.localScale = new Vector3(1f / 0.7f, 1f / 0.85f, 1f / 0.7f);
                     archerPresentation = authored.GetComponent<ArcherMemberPresentation>();
-                    archerPresentation.Initialize(IsFriendly ? FriendlyColor : HostileColor);
+                    archerPresentation.Initialize(IsFriendly ? FriendlyColor : HostileColor, transform.position.y);
                 }
             }
             member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer, archerPresentation);

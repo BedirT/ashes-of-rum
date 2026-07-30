@@ -35,7 +35,7 @@ namespace AshesOfRum
         public void Initialize(Renderer targetRenderer, ArcherMemberPresentation authoredPresentation = null)
         {
             memberRenderer = targetRenderer;
-            restingColor = targetRenderer.sharedMaterial.color;
+            restingColor = targetRenderer == null ? Color.white : targetRenderer.sharedMaterial.color;
             restingScale = transform.localScale;
             archerPresentation = authoredPresentation;
             if (archerPresentation == null) return;
@@ -84,7 +84,8 @@ namespace AshesOfRum
                 FlankDirection.Rear => 1.3f,
                 _ => 1.12f
             };
-            memberRenderer.sharedMaterial.color = Color.Lerp(restingColor, flashColor, 0.85f);
+            if (memberRenderer != null)
+                memberRenderer.sharedMaterial.color = Color.Lerp(restingColor, flashColor, 0.85f);
             for (var index = 0; index < feedbackRenderers.Length; index++)
             {
                 if (feedbackRenderers[index] != null)
@@ -94,7 +95,7 @@ namespace AshesOfRum
             transform.localScale = restingScale * scale;
             archerPresentation?.Play(ArcherMemberPresentation.HitState, 0.04f);
             yield return new WaitForSeconds(HitSeconds);
-            memberRenderer.sharedMaterial.color = restingColor;
+            if (memberRenderer != null) memberRenderer.sharedMaterial.color = restingColor;
             RestoreFeedbackColors();
             transform.localScale = restingScale;
             IsShowingHitFeedback = false;

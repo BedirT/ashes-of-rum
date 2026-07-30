@@ -115,6 +115,14 @@ namespace AshesOfRum.Tests
             Assert.That(archers.GetComponentsInChildren<Animator>()
                 .All(animator => !animator.applyRootMotion), Is.True);
 
+            for (var frame = 0; frame < 14; frame++) yield return null;
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Abs(presentation.WorldBottomY - archers.transform.position.y) < 0.03f),
+                Is.True, "Friendly animated feet must sit on the battlefield surface.");
+            Assert.That(target.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Abs(presentation.WorldBottomY - target.transform.position.y) < 0.03f),
+                Is.True, "Hostile animated feet must sit on the battlefield surface.");
+
             archers.IssueMove(archers.transform.position + Vector3.forward * 4f);
             yield return WaitUntil(() => visuals.Any(visual =>
                 visual.CurrentAnimationState == ArcherMemberPresentation.MoveState));
