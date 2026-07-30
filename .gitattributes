@@ -3,12 +3,14 @@
 *.json text eol=lf
 *.md text eol=lf
 *.sh text eol=lf
+*.py text eol=lf
 *.unity text eol=lf
 *.asset text eol=lf
 *.meta text eol=lf
 *.inputactions text eol=lf
 *.png binary
 *.jpg binary
+*.fbx binary
 
 # Unity serializes empty YAML values with a trailing space. Keep other whitespace checks active.
 *.asset whitespace=-trailing-space

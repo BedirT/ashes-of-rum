@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Meshy Character Pipeline"
+  short_description: "Concept through Meshy, Mixamo, and Unity intake"
+  default_prompt: "Use $prepare-meshy-character to prepare the next Ashes of Rum unit from approved concept through validated character and animation assets."

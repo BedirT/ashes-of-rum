@@ -30,6 +30,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | Exceptional refactor 019 - Make agent play live and adaptive | Keep one Development player alive while an external agent observes fog-safe JSON state, submits one semantic command at a time, corrects rejected actions, and reviews exact state-paired frames. |
 | Complete | Exceptional refactor 020 - Isolate verification authority | Fail closed before launch when privileged smoke automation is combined with either player-authority agent mode, so test-only mutations can never contaminate agent observations. |
 | Complete | Exceptional refactor 021 - Stabilize complete-match agent scouting | Wait for the west Supplies cache to become observable before gathering it, rather than requiring every selected worker to settle into an exact movement slot. |
+| In Progress | Documentation and asset workflow 022 - Establish the authored Archer pipeline | Store and validate the approved Archer source assets and reusable concept-to-Meshy-to-Mixamo workflow without changing the running game. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
