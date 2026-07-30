@@ -46,10 +46,13 @@ the prototype understandable and usable.
 ## 3. Presentation
 
 - Stylized 3D top-down presentation.
-- Readable graybox fidelity using an in-engine primitive kit rather than external art packs.
-- Simple procedural motion communicates movement and combat: movement bob, facing, attack
-  anticipation, projectile arcs, hit feedback, and casualty removal. Do not introduce
-  skeletal-animation scope.
+- The running prototype remains readable at graybox fidelity until authored replacements are
+  integrated through small player-observable slices. Repository-owned prototype character,
+  equipment, and skeletal-animation source assets may be prepared and validated ahead of runtime
+  integration; do not replace a playable path through an unintegrated art dump.
+- Simple procedural motion continues to communicate movement and combat for roles that have not yet
+  received an authored integration slice. Authored clips must remain presentation-only: gameplay
+  code owns translation, facing, attack timing, projectile release, damage, and casualty state.
 - Friendly and hostile forces use blue and red materials plus shape markers so recognition
   does not rely on color alone.
 - Use functional audio feedback for selection, orders, construction, production, attacks,
@@ -337,6 +340,9 @@ other automatic or player-triggered special abilities.
 - Use AI Navigation/NavMesh for movement and navigation, including runtime building
   obstruction and path validation.
 - Use Canvas-based runtime UI.
+- Prepare authored humanoid characters around one compatible skeleton where practical. Keep
+  locomotion in place with root motion disabled, keep held equipment as separate socketed assets,
+  and preserve body-worn equipment on the base character.
 - Use a custom bounded RTS camera rather than adding Cinemachine.
 - Do not add networking, cloud services, accounts, monetization, analytics services,
   Addressables, or third-party runtime assets.
