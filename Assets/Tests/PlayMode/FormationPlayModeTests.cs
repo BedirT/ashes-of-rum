@@ -92,6 +92,60 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
+        public IEnumerator ArcherPresentation_FollowsMovementAttackHitAndDeathWithoutOwningGameplay()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
+                new Vector3(0f, 0f, 7f));
+            var target = economy.DeployEnemyForAutomation(FormationType.Spearmen,
+                new Vector3(0f, 0f, 15f));
+
+            var visuals = archers.GetComponentsInChildren<FormationMemberVisual>();
+            Assert.That(visuals, Has.Length.EqualTo(8));
+            Assert.That(visuals.All(visual => visual.HasAuthoredPresentation), Is.True);
+            Assert.That(visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.IdleState), Is.True);
+            Assert.That(archers.GetComponentsInChildren<Animator>(), Has.Length.EqualTo(8));
+            Assert.That(archers.GetComponentsInChildren<Animator>()
+                .All(animator => !animator.applyRootMotion), Is.True);
+
+            archers.IssueMove(archers.transform.position + Vector3.forward * 4f);
+            yield return WaitUntil(() => visuals.Any(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.MoveState));
+
+            var memberPositionsBeforeAttack = archers.Members.Select(member => member.WorldPosition).ToArray();
+            Assert.That(archers.ExecuteAttackVolley(target), Is.True);
+            yield return null;
+            Assert.That(visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.AttackState), Is.True);
+            Assert.That(GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None),
+                Has.Length.EqualTo(8));
+            Assert.That(archers.Members.Select((member, index) =>
+                    Vector3.Distance(member.WorldPosition, memberPositionsBeforeAttack[index]))
+                .Max(), Is.LessThan(0.2f),
+                "Authored clips must not drive member translation.");
+
+            var casualty = archers.Members[0];
+            casualty.ApplyDamage(1, FlankDirection.Side);
+            Assert.That(casualty.GetComponent<FormationMemberVisual>().CurrentAnimationState,
+                Is.EqualTo(ArcherMemberPresentation.HitState));
+            yield return new WaitForSeconds(0.2f);
+
+            archers.ApplyDeterministicHit(casualty, FormationType.Cavalry,
+                casualty.WorldPosition + Vector3.forward);
+            Assert.That(archers.MemberCount, Is.EqualTo(7),
+                "The casualty must leave gameplay immediately.");
+            Assert.That(casualty, Is.Not.Null,
+                "The authored casualty presentation must remain long enough to show the fall.");
+            Assert.That(casualty.GetComponent<FormationMemberVisual>().CurrentAnimationState,
+                Is.EqualTo(ArcherMemberPresentation.DeathState));
+
+            Object.Destroy(archers.gameObject);
+            Object.Destroy(target.gameObject);
+        }
+
+        [UnityTest]
         public IEnumerator Combat_LivingMembersDriveOutputAndNonlethalHitsFlashTheMember()
         {
             var tuning = ScriptableObject.CreateInstance<EconomyTuning>();

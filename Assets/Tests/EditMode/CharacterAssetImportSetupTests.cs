@@ -110,6 +110,53 @@ namespace AshesOfRum.Tests.EditMode
             }
         }
 
+        [Test]
+        public void ArcherRuntimeAssetsUseTheApprovedHumanoidClipsAndEquipment()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ArcherRuntimeAssetSetup.MemberPrefabPath);
+            Assert.That(prefab, Is.Not.Null);
+            var presentation = prefab.GetComponent<ArcherMemberPresentation>();
+            Assert.That(presentation, Is.Not.Null);
+            Assert.That(presentation.Animator, Is.Not.Null);
+            Assert.That(presentation.Animator.applyRootMotion, Is.False);
+            Assert.That(presentation.Animator.avatar, Is.Not.Null);
+            Assert.That(presentation.Animator.avatar.isHuman, Is.True);
+            Assert.That(prefab.transform.Find("Archer Model"), Is.Not.Null);
+            Assert.That(prefab.GetComponentsInChildren<Renderer>(true), Is.Not.Empty);
+            Assert.That(prefab.GetComponentsInChildren<Renderer>(true)
+                .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
+            var bodyRenderer = prefab.transform.Find("Archer Model").GetComponentInChildren<SkinnedMeshRenderer>();
+            var authoredHeight = bodyRenderer.localBounds.size.y * bodyRenderer.transform.lossyScale.y;
+            Assert.That(authoredHeight, Is.InRange(1.5f, 2.1f),
+                "The generated character must be normalized to a readable gameplay height.");
+
+            var controller = AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(
+                ArcherRuntimeAssetSetup.ControllerPath);
+            var states = controller.layers[0].stateMachine.states.ToDictionary(
+                child => child.state.name, child => child.state.motion.name);
+            Assert.That(states, Is.EquivalentTo(new Dictionary<string, string>
+            {
+                [ArcherMemberPresentation.IdleState] = "Idle",
+                [ArcherMemberPresentation.MoveState] = "WalkForward",
+                [ArcherMemberPresentation.AttackState] = "AimRecoil",
+                [ArcherMemberPresentation.HitState] = "HitFront",
+                [ArcherMemberPresentation.DeathState] = "DeathBackward"
+            }));
+
+            var projectile = AssetDatabase.LoadAssetAtPath<GameObject>(
+                ArcherRuntimeAssetSetup.ProjectilePrefabPath);
+            Assert.That(projectile, Is.Not.Null);
+            Assert.That(projectile.GetComponent<AuthoredArrowProjectile>(), Is.Not.Null);
+            var projectileRenderers = projectile.GetComponentsInChildren<Renderer>(true);
+            Assert.That(projectileRenderers, Is.Not.Empty);
+            var projectileBounds = projectileRenderers[0].bounds;
+            foreach (var itemRenderer in projectileRenderers.Skip(1))
+                projectileBounds.Encapsulate(itemRenderer.bounds);
+            Assert.That(projectileBounds.size.z, Is.InRange(0.6f, 0.9f));
+            Assert.That(projectileBounds.size.z, Is.GreaterThan(projectileBounds.size.x));
+            Assert.That(projectileBounds.size.z, Is.GreaterThan(projectileBounds.size.y));
+        }
+
         private static void CreateTexture(string fileName)
         {
             var texture = new Texture2D(1, 1);

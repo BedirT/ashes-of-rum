@@ -504,9 +504,10 @@ length, or formation density is wrong, fix the shared base now.
 - [ ] 7. Worker idle, walk, gather, carry-walk, construct, hit, and death clips.
 - [x] 8. CHAR-004 Archer source package plus separate bow and arrow props. The quiver remains body-worn;
   see `SourceAssets/Archer/`.
-- [ ] 9. Archer idle, walk, aim/draw/release, hit, and death clips. A matching 39-clip Mixamo source
-  library is preserved, but core candidates still require actual-character equipment preview, trimming,
-  loop review, and release-frame approval before runtime integration.
+- [x] 9. Archer idle, walk, release/recoil, hit, and death clips. Runtime integration uses the reviewed
+  `Idle`, `WalkForward`, `AimRecoil`, `HitFront`, and `DeathBackward` subset with root motion disabled,
+  a socketed bow, and projectile release remaining code-owned. The other preserved Mixamo clips remain
+  source-only.
 - [ ] 10. CHAR-006 Horse model and rig.
 - [ ] 11. CHAR-005 Cavalry Rider plus saber.
 - [ ] 12. Combined mounted idle, run, attack, hit, and death clips.

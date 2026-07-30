@@ -22,6 +22,7 @@ namespace AshesOfRum
         private NavMeshPath path;
         private NavMeshPath stepPath;
         private FormationAgent owner;
+        private FormationMemberVisual visual;
         private Vector3 worldPosition;
         private Quaternion worldRotation;
         private Vector3 pathDestination;
@@ -49,6 +50,7 @@ namespace AshesOfRum
         public void Initialize(FormationAgent formation, int identity, int health)
         {
             owner = formation;
+            visual = GetComponent<FormationMemberVisual>();
             path = new NavMeshPath();
             stepPath = new NavMeshPath();
             Identity = identity;
@@ -67,14 +69,15 @@ namespace AshesOfRum
         public void ApplyDamage(int damage, FlankDirection flank)
         {
             Health = Mathf.Max(0, Health - Mathf.Max(0, damage));
-            GetComponent<FormationMemberVisual>()?.ShowHit(flank);
+            visual?.ShowHit(flank);
         }
 
-        public void DetachForDeath()
+        public bool DetachForDeath()
         {
             transform.SetParent(null, true);
             transform.position = worldPosition;
             owner = null;
+            return visual?.ShowDeath() == true;
         }
 
         public void TeleportBy(Vector3 displacement)
@@ -93,6 +96,7 @@ namespace AshesOfRum
             IReadOnlyList<FormationMemberAgent> formationMembers, FormationMemberAgent attackTarget)
         {
             if (!IsAlive) return;
+            var positionBeforeMovement = worldPosition;
             AssignAttackTarget(attackTarget);
             attackRemaining -= Time.deltaTime;
             transform.position = worldPosition;
@@ -127,9 +131,13 @@ namespace AshesOfRum
                 worldRotation = Quaternion.RotateTowards(worldRotation,
                     Quaternion.LookRotation(facing.normalized), 540f * Time.deltaTime);
             transform.rotation = worldRotation;
+            visual?.SetMoving(
+                (worldPosition - positionBeforeMovement).sqrMagnitude > 0.000001f);
         }
 
         public void BeginAttackCooldown(float seconds) => attackRemaining = Mathf.Max(0f, seconds);
+
+        public void ShowAttack() => visual?.ShowAttack();
 
         public void RecordProjectileImpact(Vector3 position)
         {

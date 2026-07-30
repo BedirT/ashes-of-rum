@@ -245,8 +245,7 @@ namespace AshesOfRum
             }
 
             members.RemoveAt(hitIndex);
-            member.DetachForDeath();
-            Destroy(member.gameObject);
+            if (!member.DetachForDeath()) Destroy(member.gameObject);
             casualtyCallback?.Invoke(1);
             nextHitMemberIndex = members.Count == 0 ? 0 : hitIndex % members.Count;
             ReForm();

@@ -334,7 +334,7 @@ namespace AshesOfRum
             foreach (var attacker in attackers)
             {
                 if (Type == FormationType.Archers)
-                    StartCoroutine(FireArrow(attacker.WorldPosition, intendedTarget));
+                    StartCoroutine(FireArrow(attacker, intendedTarget));
                 else
                     intendedTarget.ApplyFixedDamage(tuning.baseDamage);
             }
@@ -350,7 +350,7 @@ namespace AshesOfRum
             foreach (var attacker in attackers)
             {
                 if (Type == FormationType.Archers)
-                    StartCoroutine(FireArrow(attacker.WorldPosition, intendedTarget));
+                    StartCoroutine(FireArrow(attacker, intendedTarget));
                 else
                     intendedTarget.ApplyStructuralDamage(tuning.structuralDamage);
             }
@@ -362,7 +362,9 @@ namespace AshesOfRum
             foreach (var itemRenderer in GetComponentsInChildren<Renderer>(true))
             {
                 if (!UsesSupportedMaterial(itemRenderer)) return false;
-                var expected = itemRenderer.GetComponent<FormationMemberVisual>() != null
+                var archerPresentation = itemRenderer.GetComponentInParent<ArcherMemberPresentation>();
+                var expected = itemRenderer.GetComponent<FormationMemberVisual>() != null ||
+                               archerPresentation != null && archerPresentation.IsFactionRenderer(itemRenderer)
                     ? (IsFriendly ? FriendlyColor : HostileColor)
                     : itemRenderer.GetComponent<FormationSelectionRing>() != null ? SelectionColor : Color.white;
                 if (!Approximately(itemRenderer.sharedMaterial.color, expected)) return false;

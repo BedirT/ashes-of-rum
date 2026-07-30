@@ -12,6 +12,7 @@ namespace AshesOfRum
         private IEnumerator FireArrow(FormationMemberAgent attacker, FormationAgent intendedTarget,
             FormationMemberAgent intendedMember)
         {
+            attacker?.ShowAttack();
             var arrow = CreateArrow();
             var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
             var start = attackerPosition + Vector3.up * 1.4f;
@@ -38,10 +39,11 @@ namespace AshesOfRum
             Destroy(arrow);
         }
 
-        private IEnumerator FireArrow(Vector3 memberPosition, WorkerAgent intendedTarget)
+        private IEnumerator FireArrow(FormationMemberAgent attacker, WorkerAgent intendedTarget)
         {
+            attacker?.ShowAttack();
             var arrow = CreateArrow();
-            var start = memberPosition + Vector3.up * 1.4f;
+            var start = attacker.WorldPosition + Vector3.up * 1.4f;
             var elapsed = 0f;
             while (elapsed < tuning.projectileSeconds && intendedTarget != null && intendedTarget.IsAlive)
             {
@@ -56,10 +58,11 @@ namespace AshesOfRum
             Destroy(arrow);
         }
 
-        private IEnumerator FireArrow(Vector3 memberPosition, ICombatStructure intendedTarget)
+        private IEnumerator FireArrow(FormationMemberAgent attacker, ICombatStructure intendedTarget)
         {
+            attacker?.ShowAttack();
             var arrow = CreateArrow();
-            var start = memberPosition + Vector3.up * 1.4f;
+            var start = attacker.WorldPosition + Vector3.up * 1.4f;
             var elapsed = 0f;
             while (elapsed < tuning.projectileSeconds && intendedTarget != null &&
                    intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
@@ -77,6 +80,8 @@ namespace AshesOfRum
 
         private static GameObject CreateArrow()
         {
+            var authoredPrefab = Resources.Load<GameObject>("Presentation/ArcherArrowProjectile");
+            if (authoredPrefab != null) return Instantiate(authoredPrefab);
             var arrow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             arrow.name = "Arrow";
             arrow.transform.localScale = new Vector3(0.06f, 0.35f, 0.06f);
@@ -89,7 +94,9 @@ namespace AshesOfRum
         {
             var direction = nextPosition - projectile.position;
             if (direction.sqrMagnitude > 0.0001f)
-                projectile.rotation = Quaternion.FromToRotation(Vector3.up, direction.normalized);
+                projectile.rotation = Quaternion.FromToRotation(
+                    projectile.GetComponent<AuthoredArrowProjectile>() == null ? Vector3.up : Vector3.forward,
+                    direction.normalized);
         }
 
         private FormationMemberAgent CreateMember(int index)
@@ -103,7 +110,22 @@ namespace AshesOfRum
                 : new Vector3(0.7f, 0.85f, 0.7f);
             var memberRenderer = member.GetComponent<Renderer>();
             AssignSupportedMaterial(memberRenderer, IsFriendly ? FriendlyColor : HostileColor);
-            member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer);
+            ArcherMemberPresentation archerPresentation = null;
+            if (Type == FormationType.Archers)
+            {
+                var authoredPrefab = Resources.Load<GameObject>("Presentation/ArcherMember");
+                if (authoredPrefab != null)
+                {
+                    memberRenderer.enabled = false;
+                    var authored = Instantiate(authoredPrefab, member.transform);
+                    authored.name = "Authored Archer";
+                    authored.transform.SetLocalPositionAndRotation(Vector3.down, Quaternion.identity);
+                    authored.transform.localScale = new Vector3(1f / 0.7f, 1f / 0.85f, 1f / 0.7f);
+                    archerPresentation = authored.GetComponent<ArcherMemberPresentation>();
+                    archerPresentation.Initialize(IsFriendly ? FriendlyColor : HostileColor);
+                }
+            }
+            member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer, archerPresentation);
             var memberAgent = member.AddComponent<FormationMemberAgent>();
             memberAgent.Initialize(this, index, tuning.memberHealth);
 
