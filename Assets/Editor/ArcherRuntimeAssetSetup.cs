@@ -144,6 +144,7 @@ namespace AshesOfRum.Editor
                 var bowRenderers = bow.GetComponentsInChildren<Renderer>(true);
                 if (bowRenderers.Length == 0)
                     throw new InvalidOperationException("Archer bow did not instantiate with renderers.");
+                NormalizeLength(bow.transform, bowRenderers, 1.45f);
                 AssignMaterial(bowRenderers, bowMaterial);
 
                 var presentation = prefabRoot.AddComponent<ArcherMemberPresentation>();
@@ -323,6 +324,15 @@ namespace AshesOfRum.Editor
             projectile.localScale = Vector3.one * (targetLength / length);
             bounds = CombinedBounds(renderers);
             projectile.localPosition -= bounds.center;
+        }
+
+        private static void NormalizeLength(Transform target, Renderer[] renderers, float targetLength)
+        {
+            var bounds = CombinedBounds(renderers);
+            var length = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
+            if (length <= 0.001f)
+                throw new InvalidOperationException($"{target.name} has no measurable renderer length.");
+            target.localScale *= targetLength / length;
         }
 
         private static Bounds CombinedBounds(Renderer[] renderers)

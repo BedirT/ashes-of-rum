@@ -17,9 +17,10 @@ namespace AshesOfRum
         [SerializeField] private Renderer[] feedbackRenderers = Array.Empty<Renderer>();
         [SerializeField] private Transform bow;
         private Transform leftHand;
+        private Transform leftIndex;
+        private Transform leftRing;
         private float desiredGroundY;
         private int groundingFramesRemaining;
-        private bool equipmentAligned;
 
         public Animator Animator => animator;
         public Renderer[] FeedbackRenderers => feedbackRenderers;
@@ -60,9 +61,10 @@ namespace AshesOfRum
             }
             leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand)
                 ?? throw new InvalidOperationException("Archer Avatar has no mapped left hand.");
+            leftIndex = animator.GetBoneTransform(HumanBodyBones.LeftIndexProximal);
+            leftRing = animator.GetBoneTransform(HumanBodyBones.LeftRingProximal);
             desiredGroundY = groundY;
             groundingFramesRemaining = 12;
-            equipmentAligned = false;
             Play(IdleState, 0f);
         }
 
@@ -76,11 +78,7 @@ namespace AshesOfRum
 
         private void LateUpdate()
         {
-            if (!equipmentAligned)
-            {
-                AlignBowToHand();
-                equipmentAligned = true;
-            }
+            AlignBowToHand();
             if (groundingFramesRemaining > 0 && factionRenderers.Length > 0)
             {
                 groundingFramesRemaining--;
@@ -90,7 +88,11 @@ namespace AshesOfRum
 
         private void AlignBowToHand()
         {
-            bow.SetPositionAndRotation(leftHand.position, animator.transform.rotation);
+            var fingerBase = leftIndex != null && leftRing != null
+                ? Vector3.Lerp(leftIndex.position, leftRing.position, 0.5f)
+                : leftHand.position;
+            var palmCenter = Vector3.Lerp(leftHand.position, fingerBase, 0.55f);
+            bow.SetPositionAndRotation(palmCenter, animator.transform.rotation);
             var meshFilter = bow.GetComponentInChildren<MeshFilter>()
                 ?? throw new InvalidOperationException("Archer bow requires a mesh.");
             var size = meshFilter.sharedMesh.bounds.size;
@@ -100,6 +102,7 @@ namespace AshesOfRum
             var thinAxis = size.x < size.y && size.x < size.z
                 ? Vector3.right
                 : size.y < size.z ? Vector3.up : Vector3.forward;
+            var breadthAxis = Vector3.one - longAxis - thinAxis;
 
             var up = animator.transform.up;
             var longDirection = meshFilter.transform.TransformDirection(longAxis);
@@ -108,6 +111,11 @@ namespace AshesOfRum
             var normal = Vector3.ProjectOnPlane(meshFilter.transform.TransformDirection(thinAxis), up).normalized;
             var facing = Vector3.ProjectOnPlane(animator.transform.forward, up).normalized;
             bow.rotation = Quaternion.AngleAxis(Vector3.SignedAngle(normal, facing, up), up) * bow.rotation;
+
+            var meshBounds = meshFilter.sharedMesh.bounds;
+            var localGrip = meshBounds.center + Vector3.Scale(meshBounds.extents, breadthAxis) * 0.9f;
+            bow.position += palmCenter - meshFilter.transform.TransformPoint(localGrip);
+            if (bow.parent != leftHand) bow.SetParent(leftHand, true);
         }
     }
 }

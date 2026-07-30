@@ -73,13 +73,15 @@ namespace AshesOfRum
                     hostile.gameObject.SetActive(false);
 
                     var inspectedArcher = friendlyPresentations[0].transform.position;
-                    target = new Vector3(inspectedArcher.x, 0.9f, inspectedArcher.z);
-                    var cameraOffset = HasArgument("--archer-preview-front")
-                        ? new Vector3(0f, 1.2f, 3.2f)
-                        : new Vector3(0f, 1.2f, -3.2f);
+                    target = new Vector3(inspectedArcher.x, 1.05f, inspectedArcher.z);
+                    var cameraOffset = HasArgument("--archer-preview-side")
+                        ? new Vector3(5.4f, 1.4f, 0f)
+                        : HasArgument("--archer-preview-front")
+                            ? new Vector3(0f, 1.4f, 5.4f)
+                            : new Vector3(0f, 1.4f, -5.4f);
                     camera.transform.position = target + cameraOffset;
                     camera.transform.LookAt(target);
-                    camera.fieldOfView = 28f;
+                    camera.fieldOfView = 30f;
                 }
             }
             catch (Exception exception)
@@ -90,6 +92,17 @@ namespace AshesOfRum
             }
 
             for (var frame = 0; frame < 14; frame++) yield return new WaitForEndOfFrame();
+
+            if (HasArgument("--archer-preview-attack"))
+            {
+                var inspectedArcher = friendly.GetComponentsInChildren<FormationMemberVisual>()
+                    .First(presentation => presentation.gameObject.activeInHierarchy &&
+                                           presentation.HasAuthoredPresentation);
+                inspectedArcher.ShowAttack();
+                var attackTime = GetArgumentFloat("--archer-preview-attack-time", 0.25f);
+                yield return new WaitForSeconds(attackTime);
+                yield return new WaitForEndOfFrame();
+            }
 
             var singlePreview = HasArgument("--archer-preview-single");
             var presentations = friendly.GetComponentsInChildren<ArcherMemberPresentation>(true)
@@ -152,5 +165,8 @@ namespace AshesOfRum
             var index = Array.IndexOf(arguments, name);
             return index >= 0 && index + 1 < arguments.Length ? arguments[index + 1] : null;
         }
+
+        private static float GetArgumentFloat(string name, float fallback) =>
+            float.TryParse(GetArgumentValue(name), out var value) ? Mathf.Max(0f, value) : fallback;
     }
 }

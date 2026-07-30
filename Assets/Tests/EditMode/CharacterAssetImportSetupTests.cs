@@ -125,6 +125,12 @@ namespace AshesOfRum.Tests.EditMode
             Assert.That(prefab.GetComponentsInChildren<Renderer>(true), Is.Not.Empty);
             Assert.That(prefab.GetComponentsInChildren<Renderer>(true)
                 .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
+            var bowBounds = prefab.GetComponentsInChildren<Renderer>(true)
+                .Where(itemRenderer => itemRenderer.name.Contains("Archer Bow"))
+                .Select(itemRenderer => itemRenderer.bounds)
+                .Aggregate((combined, item) => { combined.Encapsulate(item); return combined; });
+            Assert.That(Mathf.Max(bowBounds.size.x, bowBounds.size.y, bowBounds.size.z),
+                Is.InRange(1.4f, 1.5f), "The bow should be proportionate to the Archer's full height.");
             var bodyRenderer = prefab.transform.Find("Archer Model").GetComponentInChildren<SkinnedMeshRenderer>();
             Assert.That(AssetDatabase.GetAssetPath(bodyRenderer.sharedMesh), Is.EqualTo(ArcherRuntimeAssetSetup.BodyMeshPath));
             var spineIndex = System.Array.FindIndex(bodyRenderer.bones,

@@ -114,6 +114,11 @@ namespace AshesOfRum.Tests
             Assert.That(archers.GetComponentsInChildren<Animator>(), Has.Length.EqualTo(8));
             Assert.That(archers.GetComponentsInChildren<Animator>()
                 .All(animator => !animator.applyRootMotion), Is.True);
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => presentation.Animator.GetBoneTransform(HumanBodyBones.LeftHand)
+                    .GetComponentsInChildren<Renderer>()
+                    .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow"))), Is.True,
+                "Every bow must remain parented under its Archer's left hand socket.");
 
             for (var frame = 0; frame < 14; frame++) yield return null;
             Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
@@ -124,7 +129,8 @@ namespace AshesOfRum.Tests
                 Is.True, "Hostile animated feet must sit on the battlefield surface.");
             Assert.That(archers.GetComponentsInChildren<Renderer>()
                 .Where(itemRenderer => itemRenderer.name.Contains("Archer Bow"))
-                .All(itemRenderer => itemRenderer.bounds.size.y > itemRenderer.bounds.size.x),
+                .All(itemRenderer => itemRenderer.bounds.size.y > 1.35f &&
+                                     itemRenderer.bounds.size.y > itemRenderer.bounds.size.x),
                 Is.True, "Each bow must hang vertically from the Archer's left hand.");
             Assert.That(archers.GetComponentsInChildren<Renderer>()
                 .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(1),

@@ -102,6 +102,24 @@ Each completed model should have:
 - For animation sets, a contact sheet or preview video and a clip manifest containing frame ranges,
   looping state, duration, and event timing.
 
+### 3.4 Adversarial Runtime Visual Review
+
+Before an authored character integration is accepted, run a context-free adversarial visual review of
+the character as it appears in the game. This is a focused asset gate, not a full-game test. Give the
+reviewer the approved visual target, scale reference, and runtime captures without implementation
+rationale or a suggested verdict.
+
+Required evidence:
+
+- one directly spawned character framed head-to-toe in front, rear, and side idle views;
+- close attack frames covering anticipation or draw, contact or release, and recovery;
+- one gameplay-camera formation view showing both faction readability treatments; and
+- objective measurements for character height, weapon length, grounding, and required attachment points.
+
+The reviewer must challenge proportions, orientation, grip and socket placement, equipment clipping,
+grounding, texture fidelity, faction readability, and animation silhouettes. Any visible blocker is fixed
+and recaptured before the role is accepted. Broad gameplay suites remain separate from this visual gate.
+
 ## 4. Master Inventory
 
 The minimum prototype-ready inventory is:
