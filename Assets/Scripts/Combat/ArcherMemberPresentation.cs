@@ -39,6 +39,11 @@ namespace AshesOfRum
                 if (itemRenderer == null) continue;
                 itemRenderer.material.color = factionColor;
             }
+            foreach (var itemRenderer in feedbackRenderers)
+            {
+                if (itemRenderer == null || IsFactionRenderer(itemRenderer)) continue;
+                itemRenderer.material.color = Color.white;
+            }
             Play(IdleState, 0f);
         }
 

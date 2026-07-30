@@ -361,13 +361,25 @@ namespace AshesOfRum
         {
             foreach (var itemRenderer in GetComponentsInChildren<Renderer>(true))
             {
-                if (!UsesSupportedMaterial(itemRenderer)) return false;
+                if (!UsesSupportedMaterial(itemRenderer))
+                {
+                    Debug.Log(
+                        $"FORMATION_MATERIAL_UNSUPPORTED:{name}:{itemRenderer.name}:" +
+                        $"{itemRenderer.sharedMaterial?.shader?.name ?? "missing"}");
+                    return false;
+                }
                 var archerPresentation = itemRenderer.GetComponentInParent<ArcherMemberPresentation>();
                 var expected = itemRenderer.GetComponent<FormationMemberVisual>() != null ||
                                archerPresentation != null && archerPresentation.IsFactionRenderer(itemRenderer)
                     ? (IsFriendly ? FriendlyColor : HostileColor)
                     : itemRenderer.GetComponent<FormationSelectionRing>() != null ? SelectionColor : Color.white;
-                if (!Approximately(itemRenderer.sharedMaterial.color, expected)) return false;
+                if (!Approximately(itemRenderer.sharedMaterial.color, expected))
+                {
+                    Debug.Log(
+                        $"FORMATION_MATERIAL_COLOR:{name}:{itemRenderer.name}:" +
+                        $"expected={expected}:actual={itemRenderer.sharedMaterial.color}");
+                    return false;
+                }
             }
             return true;
         }
