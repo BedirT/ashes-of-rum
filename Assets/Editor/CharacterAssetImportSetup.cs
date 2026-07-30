@@ -25,6 +25,7 @@ namespace AshesOfRum.Editor
             var modelPath = $"{root}/Model/{role}.fbx";
             var animationFolder = $"{root}/Animations";
 
+            var configuredTextures = ConfigurePbrTextures(root);
             ConfigureModel(modelPath);
             var avatar = AssetDatabase.LoadAllAssetsAtPath(modelPath).OfType<Avatar>().SingleOrDefault();
             if (avatar == null || !avatar.isValid || !avatar.isHuman)
@@ -45,7 +46,44 @@ namespace AshesOfRum.Editor
             }
 
             AssetDatabase.SaveAssets();
-            Debug.Log($"Configured {role} with one Humanoid Avatar and {importedMotions.Count} motion importers.");
+            Debug.Log(
+                $"Configured {role} with one Humanoid Avatar, {importedMotions.Count} motion importers, " +
+                $"and {configuredTextures} PBR data textures.");
+        }
+
+        public static int ConfigurePbrTextures(string root)
+        {
+            var configured = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { root }))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var fileName = Path.GetFileNameWithoutExtension(path);
+                var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+                if (importer == null)
+                {
+                    continue;
+                }
+
+                if (fileName.EndsWith("_Normal", StringComparison.Ordinal))
+                {
+                    importer.textureType = TextureImporterType.NormalMap;
+                }
+                else if (fileName.EndsWith("_Metallic", StringComparison.Ordinal) ||
+                         fileName.EndsWith("_Roughness", StringComparison.Ordinal))
+                {
+                    importer.textureType = TextureImporterType.Default;
+                }
+                else
+                {
+                    continue;
+                }
+
+                importer.sRGBTexture = false;
+                importer.SaveAndReimport();
+                configured++;
+            }
+
+            return configured;
         }
 
         private static void ConfigureModel(string path)

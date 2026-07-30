@@ -44,6 +44,8 @@ model/equipment/animation package with provenance and clip intent documented.
   preparation work truthfully without claiming runtime integration.
 - Unity imports every new production asset, generates all `.meta` files, and reports no import,
   missing-reference, compilation, or serialization errors.
+- Unity imports normal maps as normal-map textures and treats normal, metallic, and roughness maps as
+  linear PBR data through the reusable role intake command.
 - The skill passes its structural validator and a context-light forward test can recover the
   intended next-character workflow from the skill alone.
 - The full tests, macOS ARM64 Development build, runtime smoke paths, log scans, and static checks

@@ -145,7 +145,9 @@ Read [references/repository-intake.md](references/repository-intake.md).
 
    The command configures the model as Humanoid with a T-pose Avatar and every motion as Humanoid using
    that Avatar, with root rotation/height/XZ baked into pose and loop flags set only for the supplied
-   names. Treat a nonzero exit or an unknown loop name as an intake failure.
+   names. It also imports `*_Normal` textures as normal maps and imports normal, metallic, and roughness
+   maps as linear data while leaving color textures in sRGB. Treat a nonzero exit or an unknown loop
+   name as an intake failure.
 8. Run the repository's focused checks and complete verification ladder. Inspect import and runtime
    logs for missing textures, avatar errors, clip warnings, or serialization failures.
 

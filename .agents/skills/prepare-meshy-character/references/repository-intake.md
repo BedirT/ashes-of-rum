@@ -61,6 +61,12 @@ Animation-only FBXs:
 - Loop Time/Loop Pose: on only for accepted loops
 - one normalized clip name matching the FBX filename
 
+PBR textures:
+
+- `*_Normal.png`: Normal Map texture type with sRGB disabled
+- `*_Metallic.png` and `*_Roughness.png`: Default texture type with sRGB disabled
+- base-color and emission textures: retain color-data sRGB import semantics
+
 Do not create an Animator Controller during archive/intake work. Controller states, layers, parameters,
 events, equipment sockets, and gameplay wiring belong to the later role-integration slice.
 

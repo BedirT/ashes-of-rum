@@ -1,6 +1,6 @@
 {
   "name": "AshesOfRum.EditModeTests",
-  "references": ["AshesOfRum.Runtime"],
+  "references": ["AshesOfRum.Runtime", "AshesOfRum.Editor"],
   "optionalUnityReferences": ["TestAssemblies"],
   "includePlatforms": ["Editor"]
 }
