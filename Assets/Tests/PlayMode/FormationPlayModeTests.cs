@@ -92,18 +92,23 @@ namespace AshesOfRum.Tests
         }
 
         [UnityTest]
-        public IEnumerator ArcherPresentation_FollowsMovementAttackHitAndDeathWithoutOwningGameplay()
+        public IEnumerator ArcherPresentation_DirectSpawnsBothFactionsAndExercisesEveryRuntimeState()
         {
             yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
                 new Vector3(0f, 0f, 7f));
-            var target = economy.DeployEnemyForAutomation(FormationType.Spearmen,
+            var target = economy.DeployEnemyForAutomation(FormationType.Archers,
                 new Vector3(0f, 0f, 15f));
 
             var visuals = archers.GetComponentsInChildren<FormationMemberVisual>();
+            var hostileVisuals = target.GetComponentsInChildren<FormationMemberVisual>();
             Assert.That(visuals, Has.Length.EqualTo(8));
+            Assert.That(hostileVisuals, Has.Length.EqualTo(8));
             Assert.That(visuals.All(visual => visual.HasAuthoredPresentation), Is.True);
+            Assert.That(hostileVisuals.All(visual => visual.HasAuthoredPresentation), Is.True);
+            Assert.That(archers.HasSupportedVisualMaterials(), Is.True);
+            Assert.That(target.HasSupportedVisualMaterials(), Is.True);
             Assert.That(visuals.All(visual =>
                 visual.CurrentAnimationState == ArcherMemberPresentation.IdleState), Is.True);
             Assert.That(archers.GetComponentsInChildren<Animator>(), Has.Length.EqualTo(8));
