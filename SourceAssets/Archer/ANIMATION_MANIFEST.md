@@ -6,6 +6,10 @@ Download contract: FBX for Unity, 30 FPS, no keyframe reduction; canonical model
 all motion files without skin. All durations below were measured after Blender 5.2 FBX import. Every
 motion has the canonical 49-bone skeleton fingerprint documented in `README.md`.
 
+`ANIMATION_IMPORT.json` is the machine-readable Unity import companion to this table. Its
+`loopMotions` array contains exactly the rows marked `Yes`, allowing the checked-in intake command to
+reapply this mapping without manually transcribing 17 names.
+
 Status meanings:
 
 - **Core candidate**: needed by the current Archer role, but still requires preview with the actual bow.

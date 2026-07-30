@@ -1,0 +1,22 @@
+{
+  "role": "Archer",
+  "loopMotions": [
+    "Idle",
+    "WalkForward",
+    "RunForward",
+    "IdleLook",
+    "IdleExamine",
+    "UnarmedIdle",
+    "AimWalkForward",
+    "AimWalkBackward",
+    "AimWalkLeft",
+    "AimWalkRight",
+    "WalkBackward",
+    "WalkLeft",
+    "WalkRight",
+    "RunBackward",
+    "RunLeft",
+    "RunRight",
+    "FallLoop"
+  ]
+}

@@ -10,16 +10,26 @@ namespace AshesOfRum.Editor
     public static class CharacterAssetImportSetup
     {
         private const string RoleArgument = "-characterRole";
-        private const string LoopArgument = "-loopMotions";
+        private const string ManifestArgument = "-animationManifest";
+
+        [Serializable]
+        private sealed class AnimationImportManifest
+        {
+            public string role;
+            public string[] loopMotions;
+        }
 
         public static void Configure()
         {
             var arguments = Environment.GetCommandLineArgs();
             var role = ReadArgument(arguments, RoleArgument);
-            var loops = ReadArgument(arguments, LoopArgument)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(value => value.Trim())
-                .ToHashSet(StringComparer.Ordinal);
+            var manifestPath = ReadArgument(arguments, ManifestArgument);
+            ConfigureRole(role, manifestPath);
+        }
+
+        public static void ConfigureRole(string role, string manifestPath)
+        {
+            var loops = ReadLoopMotions(role, manifestPath);
 
             var root = $"Assets/Art/Characters/{role}";
             var modelPath = $"{root}/Model/{role}.fbx";
@@ -49,6 +59,39 @@ namespace AshesOfRum.Editor
             Debug.Log(
                 $"Configured {role} with one Humanoid Avatar, {importedMotions.Count} motion importers, " +
                 $"and {configuredTextures} PBR data textures.");
+        }
+
+        public static HashSet<string> ReadLoopMotions(string role, string manifestPath)
+        {
+            var projectRoot = Directory.GetParent(Application.dataPath)?.FullName
+                ?? throw new InvalidOperationException("Could not resolve the Unity project root.");
+            var fullPath = Path.IsPathRooted(manifestPath)
+                ? manifestPath
+                : Path.Combine(projectRoot, manifestPath);
+            if (!File.Exists(fullPath))
+            {
+                throw new FileNotFoundException("Animation import manifest was not found.", fullPath);
+            }
+
+            var manifest = JsonUtility.FromJson<AnimationImportManifest>(File.ReadAllText(fullPath));
+            if (manifest == null || !string.Equals(manifest.role, role, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Animation import manifest role must be {role}: {manifestPath}");
+            }
+
+            var loopMotions = manifest.loopMotions ?? Array.Empty<string>();
+            if (loopMotions.Any(string.IsNullOrWhiteSpace))
+            {
+                throw new InvalidOperationException($"Animation import manifest contains an empty loop name: {manifestPath}");
+            }
+
+            var loops = loopMotions.ToHashSet(StringComparer.Ordinal);
+            if (loops.Count != loopMotions.Length)
+            {
+                throw new InvalidOperationException($"Animation import manifest contains duplicate loop names: {manifestPath}");
+            }
+
+            return loops;
         }
 
         public static int ConfigurePbrTextures(string root)

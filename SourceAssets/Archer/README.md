@@ -26,6 +26,9 @@ The production package is under `Assets/Art/Characters/Archer/`:
 - `Equipment/Bow/`: approved bow model and PBR maps.
 - `Equipment/Arrow/`: approved arrow model and PBR maps.
 
+`ANIMATION_IMPORT.json` is the machine-readable Unity importer input. Its loop list mirrors the `Yes`
+rows in `ANIMATION_MANIFEST.md` and is consumed by the reusable role-generic intake command.
+
 Rejected Meshy motions, failed Blender animation experiments, failed Mixamo uploads, and temporary
 previews remain outside the repository.
 

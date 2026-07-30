@@ -6,6 +6,7 @@
 SourceAssets/<Role>/
   README.md
   ANIMATION_MANIFEST.md
+  ANIMATION_IMPORT.json
   References/
     Turntable/
     ScaleReference/
@@ -38,7 +39,10 @@ renders, or duplicate with-skin FBXs into the repository.
 - Equipment: `<Role>_<Item>.fbx`
 - Texture: `<Role>_<Item?>_<Map>.png`
 
-Preserve vendor filenames only in the manifest's provenance table.
+Preserve vendor filenames only in the manifest's provenance table. Keep the human-readable loop intent
+in `ANIMATION_MANIFEST.md` synchronized with the exact `loopMotions` array in
+`ANIMATION_IMPORT.json`; the Unity importer consumes the JSON file so the checked-in command is
+repeatable without transcribing loop names into shell arguments.
 
 ## Unity Import Intent
 
@@ -70,9 +74,10 @@ PBR textures:
 Do not create an Animator Controller during archive/intake work. Controller states, layers, parameters,
 events, equipment sockets, and gameplay wiring belong to the later role-integration slice.
 
-Apply importer settings with the repository's `CharacterAssetImportSetup` Editor command and the exact
-CLI invocation in `SKILL.md`. Never hand-edit generated `.meta` YAML. Treat manual Inspector setup as a
-diagnostic fallback, not an accepted repository intake path.
+Apply importer settings with the repository's `CharacterAssetImportSetup` Editor command, the role's
+machine-readable `ANIMATION_IMPORT.json`, and the exact CLI invocation in `SKILL.md`. Never hand-edit
+generated `.meta` YAML. Treat manual Inspector setup as a diagnostic fallback, not an accepted
+repository intake path.
 
 ## Verification
 

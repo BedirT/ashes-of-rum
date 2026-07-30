@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AshesOfRum.Editor;
 using NUnit.Framework;
 using UnityEditor;
@@ -10,7 +11,53 @@ namespace AshesOfRum.Tests.EditMode
     public sealed class CharacterAssetImportSetupTests
     {
         private const string ArcherRoot = "Assets/Art/Characters/Archer";
+        private const string ArcherManifest = "SourceAssets/Archer/ANIMATION_IMPORT.json";
         private const string TemporaryRoot = "Assets/CharacterAssetImportSetupTests";
+
+        [Test]
+        public void ArcherImporterRerunRestoresEveryManifestLoopSetting()
+        {
+            const string loopingPath = "Assets/Art/Characters/Archer/Animations/Archer_Idle.fbx";
+            const string nonLoopingPath = "Assets/Art/Characters/Archer/Animations/Archer_DrawArrow.fbx";
+            var restored = false;
+
+            try
+            {
+                SetLoopTime(loopingPath, false);
+                SetLoopTime(nonLoopingPath, true);
+
+                CharacterAssetImportSetup.ConfigureRole("Archer", ArcherManifest);
+                restored = true;
+
+                var expectedLoops = CharacterAssetImportSetup.ReadLoopMotions("Archer", ArcherManifest);
+                var animationPaths = AssetDatabase.FindAssets("t:Model", new[] { $"{ArcherRoot}/Animations" })
+                    .Select(AssetDatabase.GUIDToAssetPath)
+                    .OrderBy(path => path)
+                    .ToArray();
+
+                Assert.That(animationPaths, Has.Length.EqualTo(39));
+                Assert.That(expectedLoops, Has.Count.EqualTo(17));
+                foreach (var path in animationPaths)
+                {
+                    var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+                    Assert.That(importer, Is.Not.Null, path);
+                    Assert.That(importer.clipAnimations, Has.Length.EqualTo(1), path);
+
+                    var motionName = Path.GetFileNameWithoutExtension(path)["Archer_".Length..];
+                    var expectedLoop = expectedLoops.Contains(motionName);
+                    Assert.That(importer.clipAnimations[0].loopTime, Is.EqualTo(expectedLoop), path);
+                    Assert.That(importer.clipAnimations[0].loopPose, Is.EqualTo(expectedLoop), path);
+                }
+            }
+            finally
+            {
+                if (!restored)
+                {
+                    SetLoopTime(loopingPath, true);
+                    SetLoopTime(nonLoopingPath, false);
+                }
+            }
+        }
 
         [Test]
         public void ArcherPbrDataTexturesUseProductionImportSemantics()
@@ -87,6 +134,19 @@ namespace AshesOfRum.Tests.EditMode
             Assert.That(importer, Is.Not.Null, path);
             Assert.That(importer.textureType, Is.EqualTo(expectedType), path);
             Assert.That(importer.sRGBTexture, Is.EqualTo(expectedSrgb), path);
+        }
+
+        private static void SetLoopTime(string path, bool loopTime)
+        {
+            var importer = AssetImporter.GetAtPath(path) as ModelImporter;
+            Assert.That(importer, Is.Not.Null, path);
+            Assert.That(importer.clipAnimations, Has.Length.EqualTo(1), path);
+
+            var clip = importer.clipAnimations[0];
+            clip.loopTime = loopTime;
+            clip.loopPose = loopTime;
+            importer.clipAnimations = new[] { clip };
+            importer.SaveAndReimport();
         }
     }
 }

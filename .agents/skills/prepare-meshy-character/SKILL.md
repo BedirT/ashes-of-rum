@@ -130,24 +130,25 @@ Read [references/repository-intake.md](references/repository-intake.md).
 6. Require one skinned model, animation-only motion FBXs, and one identical skeleton fingerprint within
    the role package. Before reusing clips across roles, separately test Avatar compatibility and
    deformation; independent Mixamo auto-rigs are not automatically a shared production skeleton.
-7. Import through Unity so all `.meta` files exist, then run the repository importer with the exact
-   comma-separated loop names from the role manifest:
+7. Record the exact loop names from the role manifest in
+   `SourceAssets/<Role>/ANIMATION_IMPORT.json`. Import through Unity so all `.meta` files exist, then
+   run the repository importer against that machine-readable manifest:
 
    ```bash
    ROLE="Archer"
-   LOOP_MOTIONS="Idle,WalkForward,RunForward"
+   ANIMATION_MANIFEST="SourceAssets/${ROLE}/ANIMATION_IMPORT.json"
    unity run "$PWD" --timeout 600 -- \
      -executeMethod AshesOfRum.Editor.CharacterAssetImportSetup.Configure \
      -characterRole "$ROLE" \
-     -loopMotions "$LOOP_MOTIONS" \
+     -animationManifest "$ANIMATION_MANIFEST" \
      -logFile "Logs/${ROLE}AssetImportSetup.log"
    ```
 
    The command configures the model as Humanoid with a T-pose Avatar and every motion as Humanoid using
-   that Avatar, with root rotation/height/XZ baked into pose and loop flags set only for the supplied
-   names. It also imports `*_Normal` textures as normal maps and imports normal, metallic, and roughness
-   maps as linear data while leaving color textures in sRGB. Treat a nonzero exit or an unknown loop
-   name as an intake failure.
+   that Avatar, with root rotation/height/XZ baked into pose and loop flags set only for the manifest's
+   `loopMotions` names. It also imports `*_Normal` textures as normal maps and imports normal, metallic,
+   and roughness maps as linear data while leaving color textures in sRGB. Treat a nonzero exit, role
+   mismatch, duplicate entry, empty entry, or unknown loop name as an intake failure.
 8. Run the repository's focused checks and complete verification ladder. Inspect import and runtime
    logs for missing textures, avatar errors, clip warnings, or serialization failures.
 
