@@ -102,6 +102,32 @@ Each completed model should have:
 - For animation sets, a contact sheet or preview video and a clip manifest containing frame ranges,
   looping state, duration, and event timing.
 
+### 3.4 Adversarial Runtime Visual Review
+
+Before an authored character integration is accepted, run a context-free adversarial visual review of
+the character as it appears in the game. This is a focused asset gate, not a full-game test. Give the
+reviewer the approved visual target, scale reference, and runtime captures without implementation
+rationale or a suggested verdict.
+
+Required evidence:
+
+- one directly spawned character framed head-to-toe in front, rear, and side idle views;
+- close attack frames covering anticipation or draw, contact or release, and recovery;
+- one gameplay-camera formation view showing both faction readability treatments; and
+- objective measurements for character height, weapon length, grounding, and required attachment points.
+
+The reviewer must challenge proportions, orientation, grip and socket placement, equipment clipping,
+grounding, texture fidelity, faction readability, and animation silhouettes. Any visible blocker is fixed
+and recaptured before the role is accepted. Broad gameplay suites remain separate from this visual gate.
+
+Author equipment visually in Prefab Mode: parent a grip/socket transform beneath the intended rig bone,
+place the prop geometry so its physical grip sits at that socket's origin, and adjust the socket's local
+transform with Unity's scene gizmos. Add an `AuthoredEquipmentAttachment` marker to the socket so
+deterministic setup preserves the authored pose instead of overwriting it. A shield and spear remain
+independent hand attachments. Animated mounts remain separate
+actors with their own Animator, composed with the rider through a saddle socket. After saving the prefab,
+run the role's direct close-up preview and adversarial visual review.
+
 ## 4. Master Inventory
 
 The minimum prototype-ready inventory is:
@@ -504,9 +530,15 @@ length, or formation density is wrong, fix the shared base now.
 - [ ] 7. Worker idle, walk, gather, carry-walk, construct, hit, and death clips.
 - [x] 8. CHAR-004 Archer source package plus separate bow and arrow props. The quiver remains body-worn;
   see `SourceAssets/Archer/`.
-- [ ] 9. Archer idle, walk, aim/draw/release, hit, and death clips. A matching 39-clip Mixamo source
-  library is preserved, but core candidates still require actual-character equipment preview, trimming,
-  loop review, and release-frame approval before runtime integration.
+- [x] 9. Archer idle, march, turn, release/recoil, hit, and death clips. Runtime integration uses `Idle`,
+  a slowed upright `RunForward` as the formation march, visual-only `TurnLeft90` and `TurnRight90`,
+  `AimRecoil`, `HitFront`, and `DeathBackward`. Planted idles use the same clip and start timing is shared
+  by the entire formation: every member enters the same Idle, March, or Turn state on
+  the same frame with identical start time and playback speed. Explicit fixed-time
+  blends govern every Idle, March, Turn, Attack, Hit, and Death state change. Root motion remains disabled, the bow
+  remains socketed, and the attack shows a nocked arrow and drawn string until code releases the projectile.
+  Gameplay continues to own rotation, projectile release, damage, and casualties.
+  The remaining preserved Mixamo clips stay preview-only or source-only.
 - [ ] 10. CHAR-006 Horse model and rig.
 - [ ] 11. CHAR-005 Cavalry Rider plus saber.
 - [ ] 12. Combined mounted idle, run, attack, hit, and death clips.
