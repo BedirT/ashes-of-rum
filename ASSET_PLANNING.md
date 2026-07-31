@@ -344,8 +344,9 @@ origin, and sole victory target. It is non-combat.
 
 Model requirements:
 
-- Ground footprint: approximately 5.2 x 4.2 m including collision clearance.
-- Aim/read height: 3.4-3.8 m, with a compact command-pavilion silhouette roughly two human heights tall.
+- Gameplay footprint: 10.6 x 6.6 m, containing the complete pavilion without changing its uniform
+  scale. Development-only construction states share that scale but do not define gameplay collision.
+- Visual height: 3.25 m at uniform scale, preserving the authored model proportions.
 - One obvious front/drop-off side.
 - Separate overhead faction-marker socket visible from the camera; do not attach a flag or front banner.
 - No weapon emplacements or defensive attack implication.
@@ -382,6 +383,10 @@ Static construction/destruction states:
 
 Animation: none. Integration should swap/reveal states based on construction progress. Do not author an
 expensive bespoke build animation.
+
+Scale-review gate: review the complete Meshy T2 geometry untextured and uniformly scaled to 3.0 m
+height beside an eight-member authored Archer group. Do not spend credits on Meshy 6 texturing until
+the player-visible scale screenshot is approved.
 
 ### BLD-003 - Storehouse - P0
 

@@ -75,6 +75,12 @@ the prototype understandable and usable.
   maintained command pavilion rather than a palace, masonry keep, or impoverished ruin; Houses
   follow the same tent-like language. Faction markers remain separate runtime readability layers,
   never flags or banners built into the building model.
+- Building intake is approved one model at a time. The complete House must first be reviewed
+  untextured at a uniform 3.0 m height beside an authored Archer group; paid Meshy 6 texturing is
+  deferred until that scale is approved. Reuse the existing tent-like complete Hisar mesh at a
+  uniform 3.25 m visual height, preserving its authored proportions. Its logical gameplay footprint
+  may be enlarged independently to fit the model and surrounding clearance; never stretch or
+  squeeze the Hisar mesh to fill that footprint.
 - Lighting is neutral static midday light.
 - Terrain elevation may add visual depth but has no effect on movement, sight, range, or
   damage.
