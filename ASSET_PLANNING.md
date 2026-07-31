@@ -41,6 +41,9 @@ Therefore:
   unit and faction marker shapes on major buildings.
 - Neutral environment: dusty earth, sun-bleached grass, dark rock, sparse scrub or pine, weathered
   masonry, and abandoned caravan material.
+- Buildings: compact maintained timber-and-felt camp architecture with cream felt, dark lashed timber,
+  restrained teal cloth, and minimal stone footings. Avoid palace, keep, conventional house, or
+  impoverished/ruined-settlement silhouettes for completed states.
 - Lighting target: neutral static midday.
 
 ## 3. Technical Delivery Standard
@@ -332,7 +335,7 @@ These are separate meshes so they can be attached, hidden, or reused.
 ## 7. Buildings
 
 Both factions use the same architecture and footprints. Faction identity comes from material accents and
-marker/banner shape, not mechanical-looking structural differences.
+separate runtime marker shapes, not mechanical-looking structural differences or attached flags.
 
 ### BLD-001 - Hisar - P0
 
@@ -342,11 +345,14 @@ origin, and sole victory target. It is non-combat.
 Model requirements:
 
 - Ground footprint: approximately 5.2 x 4.2 m including collision clearance.
-- Aim/read height: roughly 3-5 m, with a strong keep silhouette.
+- Aim/read height: 3.4-3.8 m, with a compact command-pavilion silhouette roughly two human heights tall.
 - One obvious front/drop-off side.
-- Large faction cloth/marker socket visible from the camera.
+- Separate overhead faction-marker socket visible from the camera; do not attach a flag or front banner.
 - No weapon emplacements or defensive attack implication.
 - Production happens abstractly; doors need not open and units need not emerge from an interior.
+- Use lashed dark timber, cream felt, restrained teal cloth, and minimal stone foot pads. It must read as
+  the best maintained structure in a mobile beylik camp, not as a palace, masonry keep, conventional
+  house, poor shelter, disorganized camp, or destroyed structure.
 
 Static states:
 
@@ -363,7 +369,8 @@ Gameplay role: adds 8 population.
 Model requirements:
 
 - Approximate visual footprint: 3.6 x 3.6 m.
-- Modest dwelling silhouette with a readable roof.
+- Modest timber-and-felt dwelling silhouette derived from the same tent language as the Hisar, with a
+  readable roof and less mass than the command pavilion.
 - No implied production, garrison, or worker entrance functionality.
 
 Static construction/destruction states:
@@ -431,7 +438,7 @@ The cache is assembled from:
 | RES-003 | Tool bundle | 1 compact bundle |
 | RES-004 | Timber bundle | 1 tied stack |
 | RES-005 | Trade chest | 1 readable chest |
-| RES-006 | Broken cart base | Optional P1 anchor for larger contested caches |
+| RES-006 | Broken cart base | Optional P1 anchor for larger contested caches; reuse `ENV-010` rather than authoring a duplicate Supply prop. |
 
 Static node states:
 
@@ -501,8 +508,8 @@ Create a compact shared library rather than unique textures for every object.
 4. `MAT_Skin` - one neutral stylized range.
 5. `MAT_LeatherWood` - shared equipment, bows, handles, tack.
 6. `MAT_Metal` - restrained low-gloss weapons and helmets.
-7. `MAT_Stone_Plaster` - Hisar and building walls.
-8. `MAT_RoofTimber` - roofs, platforms, structural wood.
+7. `MAT_BuildingFelt` - cream felt walls, roofs, and restrained teal trim regions.
+8. `MAT_RoofTimber` - lashed frames, platforms, structural wood, and minimal stone footings.
 9. `MAT_Supplies` - sacks, tools, timber bundle, chest.
 10. `MAT_DustRock` - road, soil, and dark highland stone variants.
 11. `MAT_DryVegetation` - grass, scrub, and pine colors.

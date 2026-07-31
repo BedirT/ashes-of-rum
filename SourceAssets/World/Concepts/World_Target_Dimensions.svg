@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2000" height="1120" viewBox="0 0 2000 1120">
+  <defs>
+    <pattern id="half-meter-grid" width="25" height="25" patternUnits="userSpaceOnUse">
+      <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#c8beb1" stroke-width="1"/>
+    </pattern>
+    <style>
+      .title { font-family: Helvetica; font-size: 42px; font-weight: bold; fill: #30271f; }
+      .subtitle { font-family: Helvetica; font-size: 21px; fill: #5c5147; }
+      .name { font-family: Helvetica; font-size: 26px; font-weight: bold; fill: #30271f; }
+      .measure { font-family: Helvetica; font-size: 19px; font-weight: bold; fill: #463b32; }
+      .note { font-family: Helvetica; font-size: 17px; fill: #675b50; }
+    </style>
+  </defs>
+  <rect width="2000" height="1120" fill="#eee8df"/>
+  <text x="70" y="62" class="title">World concept target dimensions</text>
+  <text x="70" y="101" class="subtitle">Exact delivered complete-state images paired with declared production targets</text>
+  <text x="70" y="132" class="note">Diagram scale: 50 px = 1 m; each small square = 0.5 m; teal bar = 1.8 m human-height reference.</text>
+
+  <g transform="translate(45 175)">
+    <rect width="455" height="870" rx="14" fill="#f7f3ed" stroke="#b9ad9f" stroke-width="2"/>
+    <image x="22" y="22" width="411" height="330" preserveAspectRatio="xMidYMid meet" xlink:href="Buildings/Hisar_Complete.png"/>
+    <text x="228" y="395" text-anchor="middle" class="name">Hisar</text>
+    <text x="228" y="427" text-anchor="middle" class="measure">5.0 x 4.0 m, 3.4-3.8 m tall</text>
+    <g transform="translate(92 475)">
+      <rect width="250" height="200" fill="url(#half-meter-grid)" stroke="#5d5146" stroke-width="3"/>
+      <text x="125" y="226" text-anchor="middle" class="note">plan footprint target</text>
+    </g>
+    <g transform="translate(92 735)">
+      <line x1="0" y1="95" x2="250" y2="95" stroke="#5d5146" stroke-width="3"/>
+      <line x1="0" y1="5" x2="0" y2="95" stroke="#157b78" stroke-width="12"/>
+      <line x1="190" y1="-90" x2="190" y2="95" stroke="#8a5b36" stroke-width="12"/>
+      <text x="0" y="122" text-anchor="middle" class="note">1.8 m</text>
+      <text x="190" y="122" text-anchor="middle" class="note">3.7 m</text>
+    </g>
+  </g>
+
+  <g transform="translate(530 175)">
+    <rect width="455" height="870" rx="14" fill="#f7f3ed" stroke="#b9ad9f" stroke-width="2"/>
+    <image x="22" y="22" width="411" height="330" preserveAspectRatio="xMidYMid meet" xlink:href="Buildings/House_Complete.png"/>
+    <text x="228" y="395" text-anchor="middle" class="name">House</text>
+    <text x="228" y="427" text-anchor="middle" class="measure">3.6 x 3.6 m, about 2.6 m tall</text>
+    <g transform="translate(137 485)">
+      <rect width="180" height="180" fill="url(#half-meter-grid)" stroke="#5d5146" stroke-width="3"/>
+      <text x="90" y="206" text-anchor="middle" class="note">plan footprint target</text>
+    </g>
+    <g transform="translate(137 735)">
+      <line x1="0" y1="95" x2="180" y2="95" stroke="#5d5146" stroke-width="3"/>
+      <line x1="0" y1="5" x2="0" y2="95" stroke="#157b78" stroke-width="12"/>
+      <line x1="130" y1="-35" x2="130" y2="95" stroke="#8a5b36" stroke-width="12"/>
+      <text x="0" y="122" text-anchor="middle" class="note">1.8 m</text>
+      <text x="130" y="122" text-anchor="middle" class="note">2.6 m</text>
+    </g>
+  </g>
+
+  <g transform="translate(1015 175)">
+    <rect width="455" height="870" rx="14" fill="#f7f3ed" stroke="#b9ad9f" stroke-width="2"/>
+    <image x="22" y="22" width="411" height="330" preserveAspectRatio="xMidYMid meet" xlink:href="Buildings/Storehouse_Complete.png"/>
+    <text x="228" y="395" text-anchor="middle" class="name">Storehouse</text>
+    <text x="228" y="427" text-anchor="middle" class="measure">3.8 x 3.8 m, about 2.8 m tall</text>
+    <g transform="translate(132 480)">
+      <rect width="190" height="190" fill="url(#half-meter-grid)" stroke="#5d5146" stroke-width="3"/>
+      <text x="95" y="216" text-anchor="middle" class="note">plan footprint target</text>
+    </g>
+    <g transform="translate(132 735)">
+      <line x1="0" y1="95" x2="190" y2="95" stroke="#5d5146" stroke-width="3"/>
+      <line x1="0" y1="5" x2="0" y2="95" stroke="#157b78" stroke-width="12"/>
+      <line x1="140" y1="-45" x2="140" y2="95" stroke="#8a5b36" stroke-width="12"/>
+      <text x="0" y="122" text-anchor="middle" class="note">1.8 m</text>
+      <text x="140" y="122" text-anchor="middle" class="note">2.8 m</text>
+    </g>
+  </g>
+
+  <g transform="translate(1500 175)">
+    <rect width="455" height="870" rx="14" fill="#f7f3ed" stroke="#b9ad9f" stroke-width="2"/>
+    <image x="22" y="22" width="411" height="330" preserveAspectRatio="xMidYMid meet" xlink:href="Buildings/Watchtower_Complete.png"/>
+    <text x="228" y="395" text-anchor="middle" class="name">Watchtower</text>
+    <text x="228" y="427" text-anchor="middle" class="measure">3.0 x 3.0 m base, about 4.0 m tall</text>
+    <g transform="translate(152 500)">
+      <rect width="150" height="150" fill="url(#half-meter-grid)" stroke="#5d5146" stroke-width="3"/>
+      <text x="75" y="176" text-anchor="middle" class="note">plan footprint target</text>
+    </g>
+    <g transform="translate(127 735)">
+      <line x1="0" y1="95" x2="200" y2="95" stroke="#5d5146" stroke-width="3"/>
+      <line x1="0" y1="5" x2="0" y2="95" stroke="#157b78" stroke-width="12"/>
+      <line x1="200" y1="-105" x2="200" y2="95" stroke="#8a5b36" stroke-width="12"/>
+      <text x="0" y="122" text-anchor="middle" class="note">1.8 m</text>
+      <text x="200" y="122" text-anchor="middle" class="note">4.0 m</text>
+    </g>
+  </g>
+
+  <text x="1000" y="1090" text-anchor="middle" class="note">Concept perspective is not measurable scale. Normalize and validate the eventual geometry against these targets in Unity.</text>
+</svg>

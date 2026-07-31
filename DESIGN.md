@@ -50,6 +50,15 @@ the prototype understandable and usable.
   integrated through small player-observable slices. Repository-owned prototype character,
   equipment, and skeletal-animation source assets may be prepared and validated ahead of runtime
   integration; do not replace a playable path through an unintegrated art dump.
+- The user-approved pre-integration world-concept batch may prepare exactly one repository-owned
+  source image for each existing building state, dedicated Supply-cache component, and Sundered Road
+  environment set enumerated in `SourceAssets/World/Concepts/GENERATION_MANIFEST.md`, plus its
+  inventory, generation-summary, contact-sheet, and target-dimension review files. This exception
+  reuses the environment kit's broken caravan cart as the optional larger-cache anchor rather than
+  authorizing a duplicate Supply image or model. It authorizes source references only: no runtime
+  meshes, textures, materials, prefabs, scenes,
+  additional variants, landmarks, biomes, or graybox replacements may bypass a later
+  player-observable integration slice.
 - Simple procedural motion continues to communicate movement and combat for roles that have not yet
   received an authored integration slice. Authored clips must remain presentation-only: gameplay
   code owns translation, facing, attack timing, projectile release, damage, and casualty state.
@@ -61,6 +70,11 @@ the prototype understandable and usable.
   external audio dependencies.
 - The single battlefield is `The Sundered Road`, a dry Anatolian highland with dusty soil,
   sun-bleached grass, dark rock, sparse scrub or pines, ruined masonry, and caravan remains.
+- Authored buildings use a compact beylik-inspired timber-and-felt camp language: cream felt,
+  dark lashed timber, restrained teal cloth, and only small stone footings. The Hisar is a
+  maintained command pavilion rather than a palace, masonry keep, or impoverished ruin; Houses
+  follow the same tent-like language. Faction markers remain separate runtime readability layers,
+  never flags or banners built into the building model.
 - Lighting is neutral static midday light.
 - Terrain elevation may add visual depth but has no effect on movement, sight, range, or
   damage.
