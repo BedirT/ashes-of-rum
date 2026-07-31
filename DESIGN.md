@@ -60,6 +60,11 @@ the prototype understandable and usable.
   external audio dependencies.
 - The single battlefield is `The Sundered Road`, a dry Anatolian highland with dusty soil,
   sun-bleached grass, dark rock, sparse scrub or pines, ruined masonry, and caravan remains.
+- Authored buildings use a compact beylik-inspired timber-and-felt camp language: cream felt,
+  dark lashed timber, restrained teal cloth, and only small stone footings. The Hisar is a
+  maintained command pavilion rather than a palace, masonry keep, or impoverished ruin; Houses
+  follow the same tent-like language. Faction markers remain separate runtime readability layers,
+  never flags or banners built into the building model.
 - Lighting is neutral static midday light.
 - Terrain elevation may add visual depth but has no effect on movement, sight, range, or
   damage.

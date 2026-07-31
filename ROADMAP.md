@@ -31,6 +31,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | Exceptional refactor 020 - Isolate verification authority | Fail closed before launch when privileged smoke automation is combined with either player-authority agent mode, so test-only mutations can never contaminate agent observations. |
 | Complete | Exceptional refactor 021 - Stabilize complete-match agent scouting | Wait for the west Supplies cache to become observable before gathering it, rather than requiring every selected worker to settle into an exact movement slot. |
 | Complete | Documentation and asset workflow 022 - Establish the authored Archer pipeline | Store and validate the approved Archer source assets and reusable concept-to-Meshy-to-Mixamo workflow without changing the running game. |
+| In progress | Documentation and asset workflow 024 - Establish the world concept kit | Preserve one scale-locked, style-consistent concept for every approved building state, Supply-cache component, and Sundered Road environment set without changing gameplay. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
