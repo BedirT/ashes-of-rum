@@ -11,7 +11,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator AgentCombatCommands_ObserveFogSafeTargetsAndShareFormationOrders()
         {
-            yield return LoadEconomy(1f);
+            yield return LoadEconomy(2f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var friendly = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 0f));
