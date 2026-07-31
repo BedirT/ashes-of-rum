@@ -41,6 +41,7 @@ namespace AshesOfRum
             var matchEventLogPath = string.Empty;
             var matchEventLogSha256 = string.Empty;
             var requestShippedQuit = false;
+            var simulationSpeed = AgentVerificationSpeed.Default;
             string failure = null;
 
             try
@@ -52,6 +53,9 @@ namespace AshesOfRum
                 RequirePath(resultPath, "--agent-result");
                 RequirePath(artifactDirectory, "--agent-artifacts");
                 if (!IsSha(buildSha)) throw new InvalidOperationException("--agent-build-sha must be a full Git SHA.");
+                if (!AgentVerificationSpeed.TryRead(Environment.GetCommandLineArgs(), out simulationSpeed,
+                        out var speedError))
+                    throw new InvalidOperationException(speedError);
                 script = AgentProtocol.LoadScript(scriptPath);
                 CreateParent(outputPath);
                 CreateParent(resultPath);
@@ -80,6 +84,7 @@ namespace AshesOfRum
                     yield return null;
                 }
                 if (economy == null) failure = "Starting economy was not available before the startup timeout.";
+                else AgentVerificationSpeed.Apply(simulationSpeed);
             }
 
             if (failure == null)
@@ -139,6 +144,7 @@ namespace AshesOfRum
                             response.rejectionCode = response.accepted ? null : "restart_failed";
                             if (response.accepted)
                             {
+                                AgentVerificationSpeed.Apply(simulationSpeed);
                                 projector = new AgentStateProjector(economy, buildSha);
                                 executor = new AgentCommandExecutor(economy, projector);
                             }

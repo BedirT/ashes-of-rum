@@ -19,6 +19,7 @@ namespace AshesOfRum
             AgentLiveMailbox mailbox = null;
             var buildSha = GetArgumentValue("--agent-build-sha");
             var screenshotsEnabled = GetArgumentValue("--agent-screenshot") != null;
+            var simulationSpeed = AgentVerificationSpeed.Default;
             float idleTimeout;
             try
             {
@@ -26,6 +27,9 @@ namespace AshesOfRum
                 if (GetArgumentValue("--agent-script") != null)
                     throw new InvalidOperationException("--agent-script and --agent-live-dir are mutually exclusive.");
                 if (!IsSha(buildSha)) throw new InvalidOperationException("--agent-build-sha must be a full Git SHA.");
+                if (!AgentVerificationSpeed.TryRead(Environment.GetCommandLineArgs(), out simulationSpeed,
+                        out var speedError))
+                    throw new InvalidOperationException(speedError);
                 mailbox = new AgentLiveMailbox(GetArgumentValue("--agent-live-dir"), buildSha);
                 idleTimeout = ParseLiveIdleTimeout();
                 if (screenshotsEnabled) Screen.SetResolution(1920, 1080, FullScreenMode.Windowed);
@@ -55,6 +59,7 @@ namespace AshesOfRum
                 Application.Quit(1);
                 yield break;
             }
+            AgentVerificationSpeed.Apply(simulationSpeed);
 
             var projector = new AgentStateProjector(economy, buildSha);
             var executor = new AgentCommandExecutor(economy, projector);
@@ -140,6 +145,7 @@ namespace AshesOfRum
                             response.rejectionCode = response.accepted ? null : "restart_failed";
                             if (response.accepted)
                             {
+                                AgentVerificationSpeed.Apply(simulationSpeed);
                                 projector = new AgentStateProjector(economy, buildSha);
                                 executor = new AgentCommandExecutor(economy, projector);
                             }

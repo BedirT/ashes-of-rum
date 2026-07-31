@@ -95,7 +95,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator ArcherPresentation_DirectSpawnsBothFactionsAndExercisesEveryRuntimeState()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(1f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
                 new Vector3(0f, 0f, 7f));
@@ -300,7 +300,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator Combat_ReorientationBlocksAttacksForFixedDurationAndHudShowsFacingState()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(1f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var tuning = GetPrivateField<EconomyTuning>(economy, "tuning");
             var attacker = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
@@ -407,7 +407,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator ArcherProjectiles_FaceTheirFlightAgainstWorkersAndStructures()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(1f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
                 new Vector3(4f, 0f, 18f));
@@ -475,7 +475,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator FormationMember_RoutesAroundCarvedObstacleWithoutLeavingNavMesh()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(4f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));
@@ -539,7 +539,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator BunchedFormationMembers_KeepMovingAtObstacleEdgeAndRegroup()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(2f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));
@@ -693,7 +693,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator FormationMember_RefreshesFallbackAsBlockedSlotDriftsIncrementally()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(1f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));

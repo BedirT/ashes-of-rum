@@ -16,10 +16,11 @@ namespace AshesOfRum.Tests
 {
     public sealed partial class StartingEconomyPlayModeTests
     {
-        private static IEnumerator LoadEconomy()
+        private static IEnumerator LoadEconomy(float simulationSpeed = 20f)
         {
             yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
             yield return null;
+            Time.timeScale = simulationSpeed;
             Object.FindAnyObjectByType<StartingEconomyController>()?.SetOpponentEnabledForAutomation(false);
         }
 
