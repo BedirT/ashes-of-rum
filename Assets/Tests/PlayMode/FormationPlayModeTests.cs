@@ -539,7 +539,8 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator BunchedFormationMembers_KeepMovingAtObstacleEdgeAndRegroup()
         {
-            yield return LoadEconomy(2f);
+            // Keep this frame- and NavMesh-sensitive regression at normal simulation speed.
+            yield return LoadEconomy(1f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));
@@ -547,7 +548,7 @@ namespace AshesOfRum.Tests
 
             var edgeMember = formation.Members[0];
             var trailingMembers = new[] { formation.Members[1], formation.Members[2] };
-            var blocker = CreateRouteBlocker("Bunched Member Route Blocker", new Vector3(-4.7f, 1f, 10f),
+            var blocker = CreateRouteBlocker("Bunched Member Route Blocker", new Vector3(-4.7f, 1f, 11f),
                 new Vector3(1.5f, 2f, 4f));
             var blockerBounds = blocker.GetComponent<Collider>().bounds;
             yield return new WaitForSeconds(1f);
@@ -593,6 +594,28 @@ namespace AshesOfRum.Tests
                 "A sustained inward separation force must not suppress progress along the authoritative path.");
 
             var trackedMembers = new[] { edgeMember, trailingMembers[0], trailingMembers[1] };
+            var releasedPositions = new[]
+            {
+                new Vector3(-5.7f, 0f, 8.3f),
+                new Vector3(-6.7f, 0f, 7.8f),
+                new Vector3(-5.8f, 0f, 6.8f)
+            };
+            for (var index = 0; index < trackedMembers.Length; index++)
+            {
+                Assert.That(NavMesh.SamplePosition(releasedPositions[index], out var releasedPosition,
+                    0.25f, NavMesh.AllAreas), Is.True);
+                var worldPosition = new Vector3(releasedPosition.position.x,
+                    trackedMembers[index].WorldPosition.y, releasedPosition.position.z);
+                trackedMembers[index].TeleportBy(worldPosition - trackedMembers[index].WorldPosition);
+                Assert.That(blockerBounds.Contains(new Vector3(worldPosition.x,
+                    blockerBounds.center.y, worldPosition.z)), Is.False);
+            }
+            Assert.That(Vector3.Distance(trackedMembers[0].WorldPosition, trackedMembers[1].WorldPosition),
+                Is.GreaterThan(0.85f));
+            Assert.That(Vector3.Distance(trackedMembers[0].WorldPosition, trackedMembers[2].WorldPosition),
+                Is.GreaterThan(0.85f));
+            Assert.That(Vector3.Distance(trackedMembers[1].WorldPosition, trackedMembers[2].WorldPosition),
+                Is.GreaterThan(0.85f), "Releasing the bunch must remove separation steering deterministically.");
             var starts = trackedMembers.Select(member => member.WorldPosition).ToArray();
             var previousPositions = trackedMembers.Select(member => member.WorldPosition).ToArray();
             var greatestProgress = new float[trackedMembers.Length];
