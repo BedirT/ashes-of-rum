@@ -114,6 +114,10 @@ namespace AshesOfRum.Tests
             Assert.That(archers.GetComponentsInChildren<Animator>(), Has.Length.EqualTo(8));
             Assert.That(archers.GetComponentsInChildren<Animator>()
                 .All(animator => !animator.applyRootMotion), Is.True);
+            Assert.That(archers.GetComponentsInChildren<AuthoredEquipmentAttachment>(), Has.Length.EqualTo(8));
+            Assert.That(archers.GetComponentsInChildren<AuthoredEquipmentAttachment>()
+                .All(attachment => attachment.AttachmentId == "Bow" &&
+                                   attachment.SocketBone == HumanBodyBones.LeftHand), Is.True);
             Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
                 .All(presentation => presentation.Animator.GetBoneTransform(HumanBodyBones.LeftHand)
                     .GetComponentsInChildren<Renderer>()
@@ -121,6 +125,10 @@ namespace AshesOfRum.Tests
                 "Every bow must remain parented under its Archer's left hand socket.");
 
             for (var frame = 0; frame < 14; frame++) yield return null;
+            var idleAnimatorStates = archers.GetComponentsInChildren<Animator>()
+                .Select(animator => animator.GetCurrentAnimatorStateInfo(0)).ToArray();
+            Assert.That(idleAnimatorStates.Count(state => state.IsName(ArcherMemberPresentation.IdleState)),
+                Is.EqualTo(8), "All members must share one idle state and one animation clock.");
             Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
                 .All(presentation => Mathf.Abs(presentation.WorldBottomY - archers.transform.position.y) < 0.03f),
                 Is.True, "Friendly animated feet must sit on the battlefield surface.");
@@ -129,9 +137,9 @@ namespace AshesOfRum.Tests
                 Is.True, "Hostile animated feet must sit on the battlefield surface.");
             Assert.That(archers.GetComponentsInChildren<Renderer>()
                 .Where(itemRenderer => itemRenderer.name.Contains("Archer Bow"))
-                .All(itemRenderer => itemRenderer.bounds.size.y > 1.35f &&
-                                     itemRenderer.bounds.size.y > itemRenderer.bounds.size.x),
-                Is.True, "Each bow must hang vertically from the Archer's left hand.");
+                .All(itemRenderer => Mathf.Max(itemRenderer.bounds.size.x, itemRenderer.bounds.size.y,
+                    itemRenderer.bounds.size.z) > 1.6f),
+                Is.True, "Each left-hand bow must retain its approved visible proportions.");
             Assert.That(archers.GetComponentsInChildren<Renderer>()
                 .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(1),
                 "The formation should use one blue identity marker without obscuring the authored textures.");
@@ -140,14 +148,41 @@ namespace AshesOfRum.Tests
                 "The formation should use one red identity marker without obscuring the authored textures.");
 
             archers.IssueMove(archers.transform.position + Vector3.forward * 4f);
-            yield return WaitUntil(() => visuals.Any(visual =>
+            yield return WaitUntil(() => visuals.All(visual =>
                 visual.CurrentAnimationState == ArcherMemberPresentation.MoveState));
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.14f)), Is.True,
+                "Idle-to-march must use its explicit fixed-time blend.");
+            yield return null;
+            var marchTimes = archers.GetComponentsInChildren<Animator>()
+                .Select(animator => Mathf.Repeat(animator.GetCurrentAnimatorStateInfo(0).normalizedTime, 1f))
+                .ToArray();
+            Assert.That(marchTimes.Max() - marchTimes.Min(), Is.LessThan(0.03f),
+                "Every soldier must use the same march start time and playback speed.");
+
+            archers.IssueStop();
+            archers.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            Assert.That(archers.IssueFocus(target), Is.True);
+            yield return WaitUntil(() => archers.IsTurning);
+            yield return WaitUntil(() => visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.TurnLeftState ||
+                visual.CurrentAnimationState == ArcherMemberPresentation.TurnRightState));
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.08f)), Is.True,
+                "Turning must use its explicit fixed-time blend.");
+            Assert.That(visuals.Select(visual => visual.CurrentAnimationState).Distinct().Count(), Is.EqualTo(1),
+                "A formation turn must use one direction while gameplay owns the rotation.");
+            archers.IssueStop();
+            yield return null;
 
             var memberPositionsBeforeAttack = archers.Members.Select(member => member.WorldPosition).ToArray();
             Assert.That(archers.ExecuteAttackVolley(target), Is.True);
             yield return null;
             Assert.That(visuals.All(visual =>
                 visual.CurrentAnimationState == ArcherMemberPresentation.AttackState), Is.True);
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.06f)), Is.True,
+                "Volley entry must remain crisp through its explicit blend.");
             Assert.That(GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None),
                 Has.Length.EqualTo(8));
             Assert.That(archers.Members.Select((member, index) =>
@@ -159,6 +194,8 @@ namespace AshesOfRum.Tests
             casualty.ApplyDamage(1, FlankDirection.Side);
             Assert.That(casualty.GetComponent<FormationMemberVisual>().CurrentAnimationState,
                 Is.EqualTo(ArcherMemberPresentation.HitState));
+            Assert.That(casualty.GetComponentInChildren<ArcherMemberPresentation>().LastBlendSeconds,
+                Is.EqualTo(0.035f).Within(0.0001f));
             yield return new WaitForSeconds(0.2f);
 
             archers.ApplyDeterministicHit(casualty, FormationType.Cavalry,
@@ -169,6 +206,8 @@ namespace AshesOfRum.Tests
                 "The authored casualty presentation must remain long enough to show the fall.");
             Assert.That(casualty.GetComponent<FormationMemberVisual>().CurrentAnimationState,
                 Is.EqualTo(ArcherMemberPresentation.DeathState));
+            Assert.That(casualty.GetComponentInChildren<ArcherMemberPresentation>().LastBlendSeconds,
+                Is.EqualTo(0.04f).Within(0.0001f));
 
             Object.Destroy(archers.gameObject);
             Object.Destroy(target.gameObject);

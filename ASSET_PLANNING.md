@@ -120,6 +120,14 @@ The reviewer must challenge proportions, orientation, grip and socket placement,
 grounding, texture fidelity, faction readability, and animation silhouettes. Any visible blocker is fixed
 and recaptured before the role is accepted. Broad gameplay suites remain separate from this visual gate.
 
+Author equipment visually in Prefab Mode: parent a grip/socket transform beneath the intended rig bone,
+place the prop geometry so its physical grip sits at that socket's origin, and adjust the socket's local
+transform with Unity's scene gizmos. Add an `AuthoredEquipmentAttachment` marker to the socket so
+deterministic setup preserves the authored pose instead of overwriting it. A shield and spear remain
+independent hand attachments. Animated mounts remain separate
+actors with their own Animator, composed with the rider through a saddle socket. After saving the prefab,
+run the role's direct close-up preview and adversarial visual review.
+
 ## 4. Master Inventory
 
 The minimum prototype-ready inventory is:
@@ -522,10 +530,14 @@ length, or formation density is wrong, fix the shared base now.
 - [ ] 7. Worker idle, walk, gather, carry-walk, construct, hit, and death clips.
 - [x] 8. CHAR-004 Archer source package plus separate bow and arrow props. The quiver remains body-worn;
   see `SourceAssets/Archer/`.
-- [x] 9. Archer idle, walk, release/recoil, hit, and death clips. Runtime integration uses the reviewed
-  `Idle`, `WalkForward`, `AimRecoil`, `HitFront`, and `DeathBackward` subset with root motion disabled,
-  a socketed bow, and projectile release remaining code-owned. The other preserved Mixamo clips remain
-  source-only.
+- [x] 9. Archer idle, march, turn, release/recoil, hit, and death clips. Runtime integration uses `Idle`,
+  a slowed upright `RunForward` as the formation march, visual-only `TurnLeft90` and `TurnRight90`,
+  `AimRecoil`, `HitFront`, and `DeathBackward`. Planted idles use the same clip and start timing is shared
+  by the entire formation: every member enters the same Idle, March, or Turn state on
+  the same frame with identical start time and playback speed. Explicit fixed-time
+  blends govern every Idle, March, Turn, Attack, Hit, and Death state change. Root motion remains disabled, the bow
+  remains socketed, and gameplay continues to own rotation, projectile release, damage, and casualties.
+  The remaining preserved Mixamo clips stay preview-only or source-only.
 - [ ] 10. CHAR-006 Horse model and rig.
 - [ ] 11. CHAR-005 Cavalry Rider plus saber.
 - [ ] 12. Combined mounted idle, run, attack, hit, and death clips.

@@ -123,6 +123,15 @@ namespace AshesOfRum.Tests.EditMode
             Assert.That(presentation.Animator.avatar.isHuman, Is.True);
             Assert.That(prefab.transform.Find("Archer Model"), Is.Not.Null);
             Assert.That(prefab.GetComponentsInChildren<Renderer>(true), Is.Not.Empty);
+            var bowAttachment = prefab.GetComponentInChildren<AuthoredEquipmentAttachment>(true);
+            Assert.That(bowAttachment, Is.Not.Null);
+            Assert.That(bowAttachment.AttachmentId, Is.EqualTo("Bow"));
+            Assert.That(bowAttachment.SocketBone, Is.EqualTo(HumanBodyBones.LeftHand));
+            Assert.That(bowAttachment.transform.parent,
+                Is.EqualTo(presentation.Animator.GetBoneTransform(HumanBodyBones.LeftHand)));
+            Assert.That(bowAttachment.name, Is.EqualTo("Bow Grip Socket"));
+            Assert.That(bowAttachment.GetComponentsInChildren<Renderer>(true)
+                .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
             Assert.That(prefab.GetComponentsInChildren<Renderer>(true)
                 .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
             var bowBounds = prefab.GetComponentsInChildren<Renderer>(true)
@@ -130,7 +139,8 @@ namespace AshesOfRum.Tests.EditMode
                 .Select(itemRenderer => itemRenderer.bounds)
                 .Aggregate((combined, item) => { combined.Encapsulate(item); return combined; });
             Assert.That(Mathf.Max(bowBounds.size.x, bowBounds.size.y, bowBounds.size.z),
-                Is.InRange(1.4f, 1.5f), "The bow should be proportionate to the Archer's full height.");
+                Is.InRange(1.7f, 1.8f),
+                "The bow should preserve the visually approved hand-socket pose and proportions.");
             var bodyRenderer = prefab.transform.Find("Archer Model").GetComponentInChildren<SkinnedMeshRenderer>();
             Assert.That(AssetDatabase.GetAssetPath(bodyRenderer.sharedMesh), Is.EqualTo(ArcherRuntimeAssetSetup.BodyMeshPath));
             var spineIndex = System.Array.FindIndex(bodyRenderer.bones,
@@ -155,10 +165,17 @@ namespace AshesOfRum.Tests.EditMode
             Assert.That(states, Is.EquivalentTo(new Dictionary<string, string>
             {
                 [ArcherMemberPresentation.IdleState] = "Idle",
-                [ArcherMemberPresentation.MoveState] = "WalkForward",
+                [ArcherMemberPresentation.MoveState] = "RunForward",
                 [ArcherMemberPresentation.AttackState] = "AimRecoil",
                 [ArcherMemberPresentation.HitState] = "HitFront",
-                [ArcherMemberPresentation.DeathState] = "DeathBackward"
+                [ArcherMemberPresentation.DeathState] = "DeathBackward",
+                [ArcherMemberPresentation.TurnLeftState] = "TurnLeft90",
+                [ArcherMemberPresentation.TurnRightState] = "TurnRight90",
+                [ArcherMemberPresentation.PreviewWalkForwardState] = "WalkForward",
+                [ArcherMemberPresentation.PreviewAimWalkForwardState] = "AimWalkForward",
+                [ArcherMemberPresentation.PreviewWalkLeftState] = "WalkLeft",
+                [ArcherMemberPresentation.PreviewWalkRightState] = "WalkRight",
+                [ArcherMemberPresentation.PreviewWalkBackwardState] = "WalkBackward"
             }));
 
             var projectile = AssetDatabase.LoadAssetAtPath<GameObject>(

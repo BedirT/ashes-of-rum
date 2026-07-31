@@ -25,6 +25,8 @@ namespace AshesOfRum
         private Renderer[] feedbackRenderers = Array.Empty<Renderer>();
         private Color[] feedbackColors = Array.Empty<Color>();
         private bool moving;
+        private bool turning;
+        private bool turningRight;
 
         public bool IsShowingHitFeedback { get; private set; }
         public FlankDirection LastHitFlank { get; private set; }
@@ -47,12 +49,18 @@ namespace AshesOfRum
                     : feedbackRenderers[index].material.color;
         }
 
-        public void SetMoving(bool value)
+        public void SetMotion(bool isMoving, bool isTurning, float signedTurnDegrees)
         {
-            moving = value;
+            moving = isMoving;
+            turning = isTurning;
+            turningRight = signedTurnDegrees >= 0f;
             if (archerPresentation == null || IsShowingHitFeedback || attackRoutine != null) return;
-            var state = moving ? ArcherMemberPresentation.MoveState : ArcherMemberPresentation.IdleState;
-            if (archerPresentation.CurrentState != state) archerPresentation.Play(state);
+            var state = turning
+                ? turningRight ? ArcherMemberPresentation.TurnRightState : ArcherMemberPresentation.TurnLeftState
+                : moving ? ArcherMemberPresentation.MoveState : ArcherMemberPresentation.IdleState;
+            if (archerPresentation.CurrentState == state) return;
+            if (turning) archerPresentation.Play(state);
+            else archerPresentation.PlayLoop(state);
         }
 
         public void ShowAttack()
@@ -93,7 +101,7 @@ namespace AshesOfRum
                         Color.Lerp(feedbackColors[index], flashColor, 0.7f);
             }
             transform.localScale = restingScale * scale;
-            archerPresentation?.Play(ArcherMemberPresentation.HitState, 0.04f);
+            archerPresentation?.Play(ArcherMemberPresentation.HitState);
             yield return new WaitForSeconds(HitSeconds);
             if (memberRenderer != null) memberRenderer.sharedMaterial.color = restingColor;
             RestoreFeedbackColors();
@@ -111,14 +119,14 @@ namespace AshesOfRum
             IsShowingHitFeedback = false;
             RestoreFeedbackColors();
             transform.localScale = restingScale;
-            archerPresentation.Play(ArcherMemberPresentation.DeathState, 0.04f);
+            archerPresentation.Play(ArcherMemberPresentation.DeathState);
             Destroy(gameObject, DeathSeconds);
             return true;
         }
 
         private IEnumerator Attack()
         {
-            archerPresentation.Play(ArcherMemberPresentation.AttackState, 0.04f);
+            archerPresentation.Play(ArcherMemberPresentation.AttackState);
             yield return new WaitForSeconds(AttackSeconds);
             attackRoutine = null;
             if (!IsShowingHitFeedback) ResumeLocomotion();
@@ -126,9 +134,15 @@ namespace AshesOfRum
 
         private void ResumeLocomotion()
         {
-            archerPresentation?.Play(moving
-                ? ArcherMemberPresentation.MoveState
-                : ArcherMemberPresentation.IdleState);
+            if (archerPresentation == null) return;
+            if (turning)
+                archerPresentation.Play(turningRight
+                    ? ArcherMemberPresentation.TurnRightState
+                    : ArcherMemberPresentation.TurnLeftState);
+            else
+                archerPresentation.PlayLoop(moving
+                    ? ArcherMemberPresentation.MoveState
+                    : ArcherMemberPresentation.IdleState);
         }
 
         private void RestoreFeedbackColors()

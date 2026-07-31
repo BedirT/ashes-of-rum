@@ -11,19 +11,24 @@ namespace AshesOfRum
         public const string AttackState = "Attack";
         public const string HitState = "Hit";
         public const string DeathState = "Death";
+        public const string TurnLeftState = "TurnLeft90";
+        public const string TurnRightState = "TurnRight90";
+        public const string PreviewWalkForwardState = "PreviewWalkForward";
+        public const string PreviewAimWalkForwardState = "PreviewAimWalkForward";
+        public const string PreviewWalkLeftState = "PreviewWalkLeft";
+        public const string PreviewWalkRightState = "PreviewWalkRight";
+        public const string PreviewWalkBackwardState = "PreviewWalkBackward";
 
         [SerializeField] private Animator animator;
         [SerializeField] private Renderer[] factionRenderers = Array.Empty<Renderer>();
         [SerializeField] private Renderer[] feedbackRenderers = Array.Empty<Renderer>();
         [SerializeField] private Transform bow;
-        private Transform leftHand;
-        private Transform leftIndex;
-        private Transform leftRing;
         private float desiredGroundY;
         private int groundingFramesRemaining;
 
         public Animator Animator => animator;
         public Renderer[] FeedbackRenderers => feedbackRenderers;
+        public float LastBlendSeconds { get; private set; }
         public string CurrentState { get; private set; } = IdleState;
         public float WorldBottomY => factionRenderers.Length == 0
             ? transform.position.y
@@ -59,26 +64,52 @@ namespace AshesOfRum
                 if (itemRenderer == null || IsFactionRenderer(itemRenderer)) continue;
                 itemRenderer.material.color = Color.white;
             }
-            leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand)
-                ?? throw new InvalidOperationException("Archer Avatar has no mapped left hand.");
-            leftIndex = animator.GetBoneTransform(HumanBodyBones.LeftIndexProximal);
-            leftRing = animator.GetBoneTransform(HumanBodyBones.LeftRingProximal);
             desiredGroundY = groundY;
             groundingFramesRemaining = 12;
-            Play(IdleState, 0f);
+            PlayImmediate(IdleState);
         }
 
-        public void Play(string state, float transitionSeconds = 0.08f)
+        public void PlayLoop(string state) => TransitionTo(state);
+
+        public void Play(string state) => TransitionTo(state);
+
+        public void PlayImmediate(string state)
         {
             if (animator == null || CurrentState == DeathState && state != DeathState) return;
             CurrentState = state;
-            if (transitionSeconds <= 0f) animator.Play(state, 0, 0f);
-            else animator.CrossFadeInFixedTime(state, transitionSeconds, 0, 0f);
+            LastBlendSeconds = 0f;
+            animator.speed = 1f;
+            animator.Play(state, 0, 0f);
         }
+
+        public static float BlendSeconds(string fromState, string toState)
+        {
+            if (toState == DeathState) return 0.04f;
+            if (toState == HitState) return 0.035f;
+            if (toState == AttackState) return 0.06f;
+            if (IsTurn(toState)) return 0.08f;
+            if (IsTurn(fromState)) return 0.12f;
+            if (fromState == MoveState && toState == IdleState) return 0.18f;
+            if (fromState == IdleState && toState == MoveState) return 0.14f;
+            if (fromState == AttackState) return 0.16f;
+            if (fromState == HitState) return 0.1f;
+            return 0.1f;
+        }
+
+        private void TransitionTo(string state)
+        {
+            if (animator == null || CurrentState == DeathState && state != DeathState) return;
+            var previousState = CurrentState;
+            CurrentState = state;
+            LastBlendSeconds = BlendSeconds(previousState, state);
+            animator.speed = 1f;
+            animator.CrossFadeInFixedTime(state, LastBlendSeconds, 0, 0f);
+        }
+
+        private static bool IsTurn(string state) => state == TurnLeftState || state == TurnRightState;
 
         private void LateUpdate()
         {
-            AlignBowToHand();
             if (groundingFramesRemaining > 0 && factionRenderers.Length > 0)
             {
                 groundingFramesRemaining--;
@@ -86,36 +117,5 @@ namespace AshesOfRum
             }
         }
 
-        private void AlignBowToHand()
-        {
-            var fingerBase = leftIndex != null && leftRing != null
-                ? Vector3.Lerp(leftIndex.position, leftRing.position, 0.5f)
-                : leftHand.position;
-            var palmCenter = Vector3.Lerp(leftHand.position, fingerBase, 0.55f);
-            bow.SetPositionAndRotation(palmCenter, animator.transform.rotation);
-            var meshFilter = bow.GetComponentInChildren<MeshFilter>()
-                ?? throw new InvalidOperationException("Archer bow requires a mesh.");
-            var size = meshFilter.sharedMesh.bounds.size;
-            var longAxis = size.x > size.y && size.x > size.z
-                ? Vector3.right
-                : size.y > size.z ? Vector3.up : Vector3.forward;
-            var thinAxis = size.x < size.y && size.x < size.z
-                ? Vector3.right
-                : size.y < size.z ? Vector3.up : Vector3.forward;
-            var breadthAxis = Vector3.one - longAxis - thinAxis;
-
-            var up = animator.transform.up;
-            var longDirection = meshFilter.transform.TransformDirection(longAxis);
-            bow.rotation = Quaternion.FromToRotation(longDirection, up) * bow.rotation;
-
-            var normal = Vector3.ProjectOnPlane(meshFilter.transform.TransformDirection(thinAxis), up).normalized;
-            var facing = Vector3.ProjectOnPlane(animator.transform.forward, up).normalized;
-            bow.rotation = Quaternion.AngleAxis(Vector3.SignedAngle(normal, facing, up), up) * bow.rotation;
-
-            var meshBounds = meshFilter.sharedMesh.bounds;
-            var localGrip = meshBounds.center + Vector3.Scale(meshBounds.extents, breadthAxis) * 0.9f;
-            bow.position += palmCenter - meshFilter.transform.TransformPoint(localGrip);
-            if (bow.parent != leftHand) bow.SetParent(leftHand, true);
-        }
     }
 }

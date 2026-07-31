@@ -18,7 +18,6 @@ namespace AshesOfRum.Editor
         public const string BodyMeshPath = "Assets/Resources/Presentation/ArcherBodyMesh.asset";
         public const string BowMaterialPath = "Assets/Resources/Presentation/ArcherBow.mat";
         public const string ArrowMaterialPath = "Assets/Resources/Presentation/ArcherArrow.mat";
-
         private const string ArcherRoot = "Assets/Art/Characters/Archer";
         private const string OutputFolder = "Assets/Resources/Presentation";
         private const string ModelPath = ArcherRoot + "/Model/Archer.fbx";
@@ -34,7 +33,8 @@ namespace AshesOfRum.Editor
             var bowMaterial = CreateMaterial(BowMaterialPath, ArcherRoot + "/Equipment/Bow/Archer_Bow", true);
             var arrowMaterial = CreateMaterial(ArrowMaterialPath, ArcherRoot + "/Equipment/Arrow/Archer_Arrow", false);
             var controller = CreateController();
-            CreateMemberPrefab(bodyMaterial, bowMaterial, controller);
+            var authoredPoses = CaptureAuthoredEquipmentPoses();
+            CreateMemberPrefab(bodyMaterial, bowMaterial, controller, authoredPoses);
             CreateProjectilePrefab(arrowMaterial);
 
             AssetDatabase.SaveAssets();
@@ -79,16 +79,30 @@ namespace AshesOfRum.Editor
                 ArcherMemberPresentation.MoveState,
                 ArcherMemberPresentation.AttackState,
                 ArcherMemberPresentation.HitState,
-                ArcherMemberPresentation.DeathState
+                ArcherMemberPresentation.DeathState,
+                ArcherMemberPresentation.TurnLeftState,
+                ArcherMemberPresentation.TurnRightState,
+                ArcherMemberPresentation.PreviewWalkForwardState,
+                ArcherMemberPresentation.PreviewAimWalkForwardState,
+                ArcherMemberPresentation.PreviewWalkLeftState,
+                ArcherMemberPresentation.PreviewWalkRightState,
+                ArcherMemberPresentation.PreviewWalkBackwardState
             };
             foreach (var state in stateMachine.states.Where(child => !expectedStates.Contains(child.state.name)))
                 stateMachine.RemoveState(state.state);
 
             ConfigureState(stateMachine, ArcherMemberPresentation.IdleState, "Idle");
-            ConfigureState(stateMachine, ArcherMemberPresentation.MoveState, "WalkForward");
+            ConfigureState(stateMachine, ArcherMemberPresentation.MoveState, "RunForward", 0.78f);
             ConfigureState(stateMachine, ArcherMemberPresentation.AttackState, "AimRecoil");
             ConfigureState(stateMachine, ArcherMemberPresentation.HitState, "HitFront");
             ConfigureState(stateMachine, ArcherMemberPresentation.DeathState, "DeathBackward");
+            ConfigureState(stateMachine, ArcherMemberPresentation.TurnLeftState, "TurnLeft90", 2.5f);
+            ConfigureState(stateMachine, ArcherMemberPresentation.TurnRightState, "TurnRight90", 2.4f);
+            ConfigureState(stateMachine, ArcherMemberPresentation.PreviewWalkForwardState, "WalkForward");
+            ConfigureState(stateMachine, ArcherMemberPresentation.PreviewAimWalkForwardState, "AimWalkForward");
+            ConfigureState(stateMachine, ArcherMemberPresentation.PreviewWalkLeftState, "WalkLeft");
+            ConfigureState(stateMachine, ArcherMemberPresentation.PreviewWalkRightState, "WalkRight");
+            ConfigureState(stateMachine, ArcherMemberPresentation.PreviewWalkBackwardState, "WalkBackward");
             stateMachine.defaultState = stateMachine.states
                 .Select(child => child.state)
                 .Single(state => state.name == ArcherMemberPresentation.IdleState);
@@ -96,12 +110,14 @@ namespace AshesOfRum.Editor
             return controller;
         }
 
-        private static void ConfigureState(AnimatorStateMachine stateMachine, string stateName, string clipName)
+        private static void ConfigureState(AnimatorStateMachine stateMachine, string stateName, string clipName,
+            float speed = 1f)
         {
             var state = stateMachine.states.Select(child => child.state)
                 .SingleOrDefault(candidate => candidate.name == stateName)
                 ?? stateMachine.AddState(stateName);
             state.motion = LoadClip(clipName);
+            state.speed = speed;
             state.writeDefaultValues = true;
             EditorUtility.SetDirty(state);
         }
@@ -115,7 +131,7 @@ namespace AshesOfRum.Editor
         }
 
         private static void CreateMemberPrefab(Material bodyMaterial, Material bowMaterial,
-            RuntimeAnimatorController controller)
+            RuntimeAnimatorController controller, IReadOnlyDictionary<string, AuthoredLocalPose> authoredPoses)
         {
             var prefabRoot = new GameObject("ArcherMember");
             try
@@ -138,7 +154,12 @@ namespace AshesOfRum.Editor
 
                 var leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand)
                     ?? throw new InvalidOperationException("Archer Avatar has no mapped left hand.");
-                var bow = InstantiateAsset(BowPath, leftHand, "Archer Bow");
+                var bowSocket = new GameObject("Bow Grip Socket");
+                bowSocket.transform.SetParent(leftHand, false);
+                var bowAttachment = bowSocket.AddComponent<AuthoredEquipmentAttachment>();
+                bowAttachment.Configure("Bow", HumanBodyBones.LeftHand);
+
+                var bow = InstantiateAsset(BowPath, bowSocket.transform, "Archer Bow");
                 bow.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
                 bow.transform.localScale = Vector3.one;
                 var bowRenderers = bow.GetComponentsInChildren<Renderer>(true);
@@ -146,6 +167,9 @@ namespace AshesOfRum.Editor
                     throw new InvalidOperationException("Archer bow did not instantiate with renderers.");
                 NormalizeLength(bow.transform, bowRenderers, 1.45f);
                 AssignMaterial(bowRenderers, bowMaterial);
+                PlaceBowGripAtSocket(bow.transform, bowSocket.transform);
+                if (authoredPoses.TryGetValue("Bow", out var authoredPose))
+                    authoredPose.ApplyTo(bowSocket.transform);
 
                 var presentation = prefabRoot.AddComponent<ArcherMemberPresentation>();
                 presentation.Configure(animator, bodyRenderers, bodyRenderers.Concat(bowRenderers).ToArray(),
@@ -155,6 +179,63 @@ namespace AshesOfRum.Editor
             finally
             {
                 UnityEngine.Object.DestroyImmediate(prefabRoot);
+            }
+        }
+
+        private static IReadOnlyDictionary<string, AuthoredLocalPose> CaptureAuthoredEquipmentPoses()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(MemberPrefabPath);
+            if (prefab == null) return new Dictionary<string, AuthoredLocalPose>();
+
+            return prefab.GetComponentsInChildren<AuthoredEquipmentAttachment>(true)
+                .Where(attachment => !string.IsNullOrWhiteSpace(attachment.AttachmentId) &&
+                                     attachment.name.EndsWith("Socket", StringComparison.Ordinal))
+                .ToDictionary(attachment => attachment.AttachmentId,
+                    attachment => new AuthoredLocalPose(attachment.transform));
+        }
+
+        private static void PlaceBowGripAtSocket(Transform bow, Transform socket)
+        {
+            var meshFilter = bow.GetComponentInChildren<MeshFilter>()
+                ?? throw new InvalidOperationException("Archer bow requires a mesh for grip placement.");
+            var bounds = meshFilter.sharedMesh.bounds;
+            var axes = new[]
+            {
+                (axis: Vector3.right, size: bounds.size.x),
+                (axis: Vector3.up, size: bounds.size.y),
+                (axis: Vector3.forward, size: bounds.size.z)
+            };
+            var longAxis = axes.OrderByDescending(candidate => candidate.size).First().axis;
+            var thinAxis = axes.OrderBy(candidate => candidate.size).First().axis;
+            var breadthAxis = Vector3.one - longAxis - thinAxis;
+
+            var longDirection = meshFilter.transform.TransformDirection(longAxis);
+            bow.rotation = Quaternion.FromToRotation(longDirection, socket.up) * bow.rotation;
+            var normal = Vector3.ProjectOnPlane(meshFilter.transform.TransformDirection(thinAxis), socket.up).normalized;
+            var facing = Vector3.ProjectOnPlane(socket.forward, socket.up).normalized;
+            bow.rotation = Quaternion.AngleAxis(Vector3.SignedAngle(normal, facing, socket.up), socket.up) * bow.rotation;
+
+            var localGrip = bounds.center + Vector3.Scale(bounds.extents, breadthAxis) * 0.9f;
+            bow.position += socket.position - meshFilter.transform.TransformPoint(localGrip);
+        }
+
+        private readonly struct AuthoredLocalPose
+        {
+            private readonly Vector3 position;
+            private readonly Quaternion rotation;
+            private readonly Vector3 scale;
+
+            public AuthoredLocalPose(Transform transform)
+            {
+                position = transform.localPosition;
+                rotation = transform.localRotation;
+                scale = transform.localScale;
+            }
+
+            public void ApplyTo(Transform transform)
+            {
+                transform.SetLocalPositionAndRotation(position, rotation);
+                transform.localScale = scale;
             }
         }
 

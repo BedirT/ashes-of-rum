@@ -92,10 +92,10 @@ namespace AshesOfRum
 
         internal void AssignAttackTarget(FormationMemberAgent target) => AttackTarget = target;
 
-        public void TickMovement(Vector3 desiredWorldPosition, float speed,
+        public bool TickMovement(Vector3 desiredWorldPosition, float speed,
             IReadOnlyList<FormationMemberAgent> formationMembers, FormationMemberAgent attackTarget)
         {
-            if (!IsAlive) return;
+            if (!IsAlive) return false;
             var positionBeforeMovement = worldPosition;
             AssignAttackTarget(attackTarget);
             attackRemaining -= Time.deltaTime;
@@ -131,9 +131,11 @@ namespace AshesOfRum
                 worldRotation = Quaternion.RotateTowards(worldRotation,
                     Quaternion.LookRotation(facing.normalized), 540f * Time.deltaTime);
             transform.rotation = worldRotation;
-            visual?.SetMoving(
-                (worldPosition - positionBeforeMovement).sqrMagnitude > 0.000001f);
+            return (worldPosition - positionBeforeMovement).sqrMagnitude > 0.000001f;
         }
+
+        public void SetPresentationMotion(bool moving, bool turning, float turnDirectionDegrees) =>
+            visual?.SetMotion(moving, turning, turnDirectionDegrees);
 
         public void BeginAttackCooldown(float seconds) => attackRemaining = Mathf.Max(0f, seconds);
 

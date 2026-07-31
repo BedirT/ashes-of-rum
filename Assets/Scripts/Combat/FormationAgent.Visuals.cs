@@ -184,6 +184,7 @@ namespace AshesOfRum
 
         private void UpdateMemberMovement()
         {
+            var formationIsMoving = false;
             for (var i = 0; i < members.Count; i++)
             {
                 var member = members[i];
@@ -205,8 +206,10 @@ namespace AshesOfRum
                         }
                     }
                 }
-                member.TickMovement(destination, MoveSpeed, members, attackTarget);
+                formationIsMoving |= member.TickMovement(destination, MoveSpeed, members, attackTarget);
             }
+            foreach (var member in members)
+                member.SetPresentationMotion(formationIsMoving, IsTurning, TurnDirectionDegrees);
         }
 
         private void SynchronizeMembersForAnchorTeleport()

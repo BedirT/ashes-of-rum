@@ -66,6 +66,10 @@ namespace AshesOfRum
         public bool IsTurning { get; private set; }
         public bool IsFrontlineBlocked { get; private set; }
         public float TurnProgress => IsTurning ? Mathf.Clamp01(turnElapsed / tuning.reorientationSeconds) : 1f;
+        public float TurnDirectionDegrees => IsTurning
+            ? Vector3.SignedAngle(turnStartRotation * Vector3.forward,
+                turnTargetRotation * Vector3.forward, Vector3.up)
+            : 0f;
         public float FacingDegrees => Mathf.Repeat(transform.eulerAngles.y, 360f);
         public string FacingLabel => $"{FacingCardinal(FacingDegrees)} {FacingDegrees:0} deg";
         public FlankDirection LastReceivedFlank { get; private set; }
