@@ -17,6 +17,10 @@ validate_csharp_line_count() {
 bash -n scripts/harness scripts/harness-static scripts/agent-live-client
 git diff --check
 
+verify_body="$(awk '/^verify\(\) \{/{inside=1} inside {print} inside && /^}/{exit}' scripts/harness)"
+grep -F 'complete_match_quit_graphical_smoke' <<<"$verify_body" >/dev/null
+grep -F 'completeMatchQuitGraphical: "passed"' scripts/harness >/dev/null
+
 branch="$(git branch --show-current)"
 if [[ "$branch" != "main" ]]; then
   base_ref="${HARNESS_BASE_REF:-main}"

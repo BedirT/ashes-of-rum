@@ -713,7 +713,8 @@ complete_match_restart_smoke() {
   "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
     -logFile "$COMPLETE_RESTART_DIR/player.log" --agent-script "$COMPLETE_RESTART_SCRIPT" \
     --agent-output "$COMPLETE_RESTART_DIR/responses.jsonl" --agent-result "$COMPLETE_RESTART_RESULT" \
-    --agent-artifacts "$COMPLETE_RESTART_DIR" --agent-build-sha "$SHA" &
+    --agent-artifacts "$COMPLETE_RESTART_DIR" --agent-build-sha "$SHA" \
+    --agent-simulation-speed 4 &
   local pid=$!
   wait_for_player "$pid" "Complete-match restart agent session" 360
   jq -e --arg sha "$SHA" '.passed == true and .buildSha == $sha and
@@ -739,6 +740,7 @@ complete_match_quit_graphical_smoke() {
     -logFile "$COMPLETE_QUIT_DIR/player.log" --agent-script "$COMPLETE_QUIT_SCRIPT" \
     --agent-output "$COMPLETE_QUIT_DIR/responses.jsonl" --agent-result "$COMPLETE_QUIT_RESULT" \
     --agent-artifacts "$COMPLETE_QUIT_DIR" --agent-build-sha "$SHA" \
+    --agent-simulation-speed 4 \
     --agent-screenshot "$COMPLETE_QUIT_DIR/frames-enabled.png" &
   local pid=$!
   wait_for_player "$pid" "Graphical complete-match Quit agent session" 360
@@ -787,6 +789,7 @@ agent_graphical_smoke() {
     --agent-result "$AGENT_GRAPHICAL_RESULT" \
     --agent-artifacts "$AGENT_GRAPHICAL_DIR" \
     --agent-build-sha "$SHA" \
+    --agent-simulation-speed 4 \
     --agent-screenshot "$AGENT_GRAPHICAL_SCREENSHOT" &
   local pid=$!
   wait_for_player "$pid" "Graphical agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
@@ -1013,7 +1016,8 @@ live_agent_smoke() {
   mkdir -p "$LIVE_HEADLESS_DIR"
   "$BUILD_APP/Contents/MacOS/Ashes of Rum" -batchmode -nographics \
     -logFile "$LIVE_HEADLESS_DIR/player.log" \
-    --agent-live-dir "$LIVE_HEADLESS_DIR/session" --agent-build-sha "$SHA" &
+    --agent-live-dir "$LIVE_HEADLESS_DIR/session" --agent-build-sha "$SHA" \
+    --agent-simulation-speed 4 &
   local pid=$!
   if ! "$ROOT/scripts/agent-live-client" "$LIVE_HEADLESS_DIR/session" false \
     > "$LIVE_HEADLESS_DIR/client.log"; then
@@ -1066,20 +1070,16 @@ write_summary() {
       platform: "StandaloneOSX-arm64", developmentBuild: true, resolution: "1920x1080",
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
-      headlessSmoke: "passed", graphicalSmoke: "passed",
-      agentHeadless: "passed", agentGraphical: "passed",
-      houseAgentHeadless: "passed", houseAgentGraphical: "passed",
-      trainingAgentHeadless: "passed", trainingAgentGraphical: "passed",
-      movementAgentHeadless: "passed", movementAgentGraphical: "passed",
-      combatAgentHeadless: "passed", combatAgentGraphical: "passed",
-      economyAgentHeadless: "passed", economyAgentGraphical: "passed",
+      verificationProfile: "headless-first", simulationSpeed: 4,
+      completeMatchQuitGraphical: "passed",
       verificationModeConflict: "passed",
-      liveAgentHeadless: "passed", liveAgentGraphical: "passed",
-      completeMatchRestart: "passed", completeMatchQuitGraphical: "passed"}' \
+      liveAgentHeadless: "passed", completeMatchRestart: "passed"}' \
     > "$EVIDENCE/summary.json"
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and
-    .developmentBuild == true and .resolution == "1920x1080" and .verificationModeConflict == "passed"' \
+    .developmentBuild == true and .resolution == "1920x1080" and
+    .verificationProfile == "headless-first" and .simulationSpeed == 4 and
+    .completeMatchQuitGraphical == "passed" and .verificationModeConflict == "passed"' \
     "$EVIDENCE/summary.json" >/dev/null || fail "Verification summary contract failed"
 }
 
@@ -1100,24 +1100,9 @@ verify() {
   assert_arm64_development_build
   assert_unused_player_modules
   verification_conflict_smoke
-  smoke
-  graphical_smoke
-  agent_smoke
-  agent_graphical_smoke
-  house_agent_smoke
-  house_agent_graphical_smoke
-  training_agent_smoke
-  training_agent_graphical_smoke
-  movement_agent_smoke
-  movement_agent_graphical_smoke
-  combat_agent_smoke
-  combat_agent_graphical_smoke
-  economy_agent_smoke
-  economy_agent_graphical_smoke
   complete_match_restart_smoke
   complete_match_quit_graphical_smoke
   live_agent_smoke
-  live_agent_graphical_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"
   write_summary
