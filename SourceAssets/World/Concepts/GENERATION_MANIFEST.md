@@ -50,7 +50,7 @@ framing is not evidence of scale. Runtime models must be normalized to these mea
 
 | ID | Required concept/set | Target world size | Output |
 | --- | --- | --- | --- |
-| ENV-001 | Dusty soil, worn road, dry-grass surface set | Three seamless square references | `Environment/Ground_Road_Materials.png` |
+| ENV-001 | Dusty soil, worn road, dry-grass surface set | Three non-seamless art-direction swatches | `Environment/Ground_Road_Materials.png` |
 | ENV-002 | Three small dark-rock silhouettes | Each below 0.8 m diameter and 0.45 m tall | `Environment/Small_Dark_Rocks.png` |
 | ENV-003 | Two large dark-rock clusters | Each 3-5 m long and below 1.8 m tall | `Environment/Large_Rock_Clusters.png` |
 | ENV-004 | Three dry-scrub clumps | Each below 1.0 m diameter and 0.7 m tall | `Environment/Dry_Scrub.png` |
@@ -75,6 +75,8 @@ are not part of this concept batch.
 - Building review sheet: `Buildings_ContactSheet.png`.
 - Supply review sheet: `Resources_ContactSheet.png`.
 - Battlefield review sheet: `Environment_ContactSheet.png`.
+- Deterministic contact-sheet recipe and row-major filename order:
+  `rebuild_contact_sheets.sh`.
 - Art-direction notes and provenance limits: `GENERATION_SUMMARY.md`.
 - Deterministic target-dimension review: `World_Target_Dimensions.png` (rendered from
   `World_Target_Dimensions.svg`).
@@ -84,3 +86,6 @@ are not part of this concept batch.
   cleanup and Unity import, where scale must be validated on actual geometry.
 - Re-render the board from its exact source-image links with
   `(cd SourceAssets/World/Concepts && rsvg-convert -o World_Target_Dimensions.png World_Target_Dimensions.svg)`.
+- `Environment/Ground_Road_Materials.png` establishes palette, value, and surface character only. Its
+  three panels are not tileable production materials. Authoring and validating genuinely seamless terrain
+  textures is explicitly deferred to the later player-observable runtime integration slice.

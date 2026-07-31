@@ -16,12 +16,14 @@ scale proof; their declared meter targets must be enforced when models are creat
 - [ ] Concepts share the approved stylized top-down RTS language and remain readable from a high
       three-quarter camera.
 - [ ] A manifest and contact sheets prove that the inventory is complete, non-duplicative, and visually
-      coherent.
+      coherent; a checked-in recipe records each sheet's exact row-major filename order.
 - [ ] A deterministic target-dimension board pairs the exact delivered complete-state images with one
       common meter grid and a 1.8 m reference, without claiming that concept perspective proves scale.
 - [ ] Generated images pass file, dimension, and image-integrity validation.
 - [ ] `git diff --check` passes and the existing game remains unchanged and runnable.
 - [ ] A context-free review covers the exact final HEAD.
+- [ ] The three ground/road panels are described only as non-seamless art-direction swatches; authoring
+      and validating tileable terrain materials remains deferred to runtime integration.
 
 ## Non-Goals
 
@@ -37,6 +39,7 @@ Launch the existing game and confirm that its complete match remains unchanged. 
 building, resource, and environment contact sheets at full size, checking silhouettes, camera
 readability, historical tone, and absence of detached accidental geometry. Review the target-dimension
 board as an implementation brief for intended proportions, not as validation of generated-image scale.
+Treat the ground/road panels as palette and surface-character direction, not as tileable textures.
 
 ## Evidence
 

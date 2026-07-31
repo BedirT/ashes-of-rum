@@ -41,7 +41,9 @@ Unity rather than infer dimensions from concept framing.
 
 ### Battlefield
 
-- Three surface swatches: compact dusty soil, worn packed-earth road, and sparse dry-grass blend.
+- Three non-seamless art-direction swatches: compact dusty soil, worn packed-earth road, and sparse
+  dry-grass blend. They establish palette, value, and surface character only; actual seamless terrain
+  materials must be authored and tile-tested during runtime integration.
 - Small and large dark-rock sets, dry scrub, sun-bleached grass, and narrow wind-shaped highland pines.
 - Modular ruined walls and masonry piles, one broken caravan cart, separated caravan-debris props, and
   two plain roadside markers without writing or symbols.
@@ -52,3 +54,9 @@ Unity rather than infer dimensions from concept framing.
 the exact four accepted complete-state PNGs and plots the manifest's footprint and height targets on a
 common meter grid beside a 1.8 m reference. It deliberately does not claim that perspective concept art
 is physically measurable or that the eventual models already satisfy those targets.
+
+## Contact-Sheet Review
+
+`rebuild_contact_sheets.sh` records every contact sheet's exact row-major filename order and ImageMagick
+montage settings. It rebuilds the three checked-in review sheets byte-for-byte with the current accepted
+concept images; the sheets remain unlabeled so no generated source image is obscured.
