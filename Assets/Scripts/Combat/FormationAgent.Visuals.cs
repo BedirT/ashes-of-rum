@@ -222,7 +222,10 @@ namespace AshesOfRum
                         }
                     }
                 }
-                formationIsMoving |= member.TickMovement(destination, MoveSpeed, members, attackTarget);
+                var positionBeforeMovement = member.WorldPosition;
+                member.TickMovement(destination, MoveSpeed, members, attackTarget);
+                formationIsMoving |=
+                    (member.WorldPosition - positionBeforeMovement).sqrMagnitude > 0.000001f;
             }
             foreach (var member in members)
                 member.SetPresentationMotion(formationIsMoving, IsTurning, TurnDirectionDegrees);
