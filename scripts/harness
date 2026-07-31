@@ -740,6 +740,7 @@ complete_match_quit_graphical_smoke() {
     -logFile "$COMPLETE_QUIT_DIR/player.log" --agent-script "$COMPLETE_QUIT_SCRIPT" \
     --agent-output "$COMPLETE_QUIT_DIR/responses.jsonl" --agent-result "$COMPLETE_QUIT_RESULT" \
     --agent-artifacts "$COMPLETE_QUIT_DIR" --agent-build-sha "$SHA" \
+    --agent-simulation-speed 4 \
     --agent-screenshot "$COMPLETE_QUIT_DIR/frames-enabled.png" &
   local pid=$!
   wait_for_player "$pid" "Graphical complete-match Quit agent session" 360
@@ -1070,7 +1071,7 @@ write_summary() {
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
       verificationProfile: "headless-first", simulationSpeed: 4,
-      graphicalAgentSmoke: "passed",
+      completeMatchQuitGraphical: "passed",
       verificationModeConflict: "passed",
       liveAgentHeadless: "passed", completeMatchRestart: "passed"}' \
     > "$EVIDENCE/summary.json"
@@ -1078,7 +1079,7 @@ write_summary() {
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and
     .developmentBuild == true and .resolution == "1920x1080" and
     .verificationProfile == "headless-first" and .simulationSpeed == 4 and
-    .graphicalAgentSmoke == "passed" and .verificationModeConflict == "passed"' \
+    .completeMatchQuitGraphical == "passed" and .verificationModeConflict == "passed"' \
     "$EVIDENCE/summary.json" >/dev/null || fail "Verification summary contract failed"
 }
 
@@ -1099,8 +1100,8 @@ verify() {
   assert_arm64_development_build
   assert_unused_player_modules
   verification_conflict_smoke
-  agent_graphical_smoke
   complete_match_restart_smoke
+  complete_match_quit_graphical_smoke
   live_agent_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || fail "Unity verification modified tracked files; commit intentional normalization and rerun"

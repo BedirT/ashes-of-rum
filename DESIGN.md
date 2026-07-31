@@ -345,6 +345,13 @@ other automatic or player-triggered special abilities.
   test-only surface.
 - Structured observations are the primary automation interface. Rendered frames remain required
   evidence for presentation rules, but agents must not need pixels to operate the gameplay loop.
+- Full verification is headless-first: run semantic gameplay coverage and the complete test suites
+  without rendering wherever presentation is not under review. Keep one mandatory graphical
+  built-player complete match to prove the rendered launch-to-result path and shipped `Quit`
+  action; do not duplicate every semantic scenario graphically.
+- Development verification may accelerate simulation through an explicit launch argument while
+  retaining real-time watchdogs. This must not expose player-facing game-speed controls or alter
+  normal launches.
 - Player-perspective observations must obey fog and stale-building memory. Any omniscient test
   oracle must use a structurally separate diagnostic contract and must never inform agent actions.
 - Diagnostic action/state traces are verification artifacts, not restorable saves or a player
