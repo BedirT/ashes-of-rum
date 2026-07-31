@@ -46,6 +46,11 @@ framing is not evidence of scale. Runtime models must be normalized to these mea
 | RES-004 | Tied timber bundle | About 1.2 x 0.55 x 0.45 m | `Resources/Timber_Bundle.png` |
 | RES-005 | Trade chest | About 0.8 x 0.55 x 0.55 m | `Resources/Trade_Chest.png` |
 
+`RES-006` is an optional composition anchor, not an eighth dedicated Supply output. Larger contested
+caches may reuse the approved `ENV-010` concept at `Environment/Broken_Caravan_Cart.png` and its future
+runtime model. This one-to-one reuse avoids maintaining duplicate broken-cart art while preserving the
+five-component cache recipe in `ASSET_PLANNING.md`.
+
 ## Battlefield Environment
 
 | ID | Required concept/set | Target world size | Output |
@@ -71,7 +76,9 @@ are not part of this concept batch.
 
 ## Completion Evidence
 
-- Required isolated concept outputs: 33 of 33.
+- Required unique concept outputs: 33 of 33: 14 building states, 7 dedicated Supply outputs, and 12
+  environment sets. Optional `RES-006` maps to the existing `ENV-010` output and does not increase this
+  count.
 - Building review sheet: `Buildings_ContactSheet.png`.
 - Supply review sheet: `Resources_ContactSheet.png`.
 - Battlefield review sheet: `Environment_ContactSheet.png`.

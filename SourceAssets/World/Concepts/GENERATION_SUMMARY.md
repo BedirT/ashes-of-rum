@@ -38,6 +38,9 @@ Unity rather than infer dimensions from concept framing.
 - Two tied sack variants, one tied tool bundle, one tied six-log timber bundle, and one practical trade
   chest.
 - Full, low, and exhausted cache states share an organized footprint while reducing visible contents.
+- The optional `RES-006` broken-cart anchor for a larger contested cache reuses the battlefield's
+  `ENV-010` broken caravan cart concept and future model; it is deliberately not a fifth dedicated
+  Supply prop image or duplicate model.
 
 ### Battlefield
 

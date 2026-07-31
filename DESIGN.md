@@ -51,10 +51,12 @@ the prototype understandable and usable.
   equipment, and skeletal-animation source assets may be prepared and validated ahead of runtime
   integration; do not replace a playable path through an unintegrated art dump.
 - The user-approved pre-integration world-concept batch may prepare exactly one repository-owned
-  source image for each existing building state, Supply-cache component, and Sundered Road
+  source image for each existing building state, dedicated Supply-cache component, and Sundered Road
   environment set enumerated in `SourceAssets/World/Concepts/GENERATION_MANIFEST.md`, plus its
   inventory, generation-summary, contact-sheet, and target-dimension review files. This exception
-  authorizes source references only: no runtime meshes, textures, materials, prefabs, scenes,
+  reuses the environment kit's broken caravan cart as the optional larger-cache anchor rather than
+  authorizing a duplicate Supply image or model. It authorizes source references only: no runtime
+  meshes, textures, materials, prefabs, scenes,
   additional variants, landmarks, biomes, or graybox replacements may bypass a later
   player-observable integration slice.
 - Simple procedural motion continues to communicate movement and combat for roles that have not yet

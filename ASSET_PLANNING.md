@@ -438,7 +438,7 @@ The cache is assembled from:
 | RES-003 | Tool bundle | 1 compact bundle |
 | RES-004 | Timber bundle | 1 tied stack |
 | RES-005 | Trade chest | 1 readable chest |
-| RES-006 | Broken cart base | Optional P1 anchor for larger contested caches |
+| RES-006 | Broken cart base | Optional P1 anchor for larger contested caches; reuse `ENV-010` rather than authoring a duplicate Supply prop. |
 
 Static node states:
 

@@ -9,14 +9,16 @@ scale proof; their declared meter targets must be enforced when models are creat
 
 ## Acceptance
 
-- [ ] Every approved building state, Supply-cache asset, and Sundered Road environment set has one
-      repository-owned concept image and a declared world-space size.
+- [ ] Every approved building state, dedicated Supply-cache asset, and Sundered Road environment set has
+      one repository-owned concept image and a declared world-space size; optional `RES-006` explicitly
+      reuses `ENV-010` rather than duplicating the broken-cart concept or future model.
 - [ ] Buildings contain only the building or its attached functional contents, with no people, flags,
       detached anchors, foreground clutter, labels, or scenery.
 - [ ] Concepts share the approved stylized top-down RTS language and remain readable from a high
       three-quarter camera.
-- [ ] A manifest and contact sheets prove that the inventory is complete, non-duplicative, and visually
-      coherent; a checked-in recipe records each sheet's exact row-major filename order.
+- [ ] A manifest and contact sheets account for all 33 unique outputs and prove that the inventory is
+      complete, non-duplicative, and visually coherent; a checked-in recipe records each sheet's exact
+      row-major filename order.
 - [ ] A deterministic target-dimension board pairs the exact delivered complete-state images with one
       common meter grid and a 1.8 m reference, without claiming that concept perspective proves scale.
 - [ ] Generated images pass file, dimension, and image-integrity validation.
