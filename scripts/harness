@@ -740,7 +740,7 @@ complete_match_quit_graphical_smoke() {
     -logFile "$COMPLETE_QUIT_DIR/player.log" --agent-script "$COMPLETE_QUIT_SCRIPT" \
     --agent-output "$COMPLETE_QUIT_DIR/responses.jsonl" --agent-result "$COMPLETE_QUIT_RESULT" \
     --agent-artifacts "$COMPLETE_QUIT_DIR" --agent-build-sha "$SHA" \
-    --agent-simulation-speed 4 \
+    --agent-simulation-speed 2 \
     --agent-screenshot "$COMPLETE_QUIT_DIR/frames-enabled.png" &
   local pid=$!
   wait_for_player "$pid" "Graphical complete-match Quit agent session" 360
@@ -1070,7 +1070,7 @@ write_summary() {
       platform: "StandaloneOSX-arm64", developmentBuild: true, resolution: "1920x1080",
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
-      verificationProfile: "headless-first", simulationSpeed: 4,
+      verificationProfile: "headless-first", headlessSimulationSpeed: 4, graphicalSimulationSpeed: 2,
       completeMatchQuitGraphical: "passed",
       verificationModeConflict: "passed",
       liveAgentHeadless: "passed", completeMatchRestart: "passed"}' \
@@ -1078,7 +1078,8 @@ write_summary() {
   validate_json "$EVIDENCE/summary.json"
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and
     .developmentBuild == true and .resolution == "1920x1080" and
-    .verificationProfile == "headless-first" and .simulationSpeed == 4 and
+    .verificationProfile == "headless-first" and .headlessSimulationSpeed == 4 and
+    .graphicalSimulationSpeed == 2 and
     .completeMatchQuitGraphical == "passed" and .verificationModeConflict == "passed"' \
     "$EVIDENCE/summary.json" >/dev/null || fail "Verification summary contract failed"
 }

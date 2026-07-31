@@ -6,8 +6,8 @@ This is a repository-workflow change, not a gameplay slice.
 
 `make verify` keeps the complete Edit Mode and Play Mode suites, native Apple-silicon build,
 and built-player proof, but no longer renders every semantic agent scenario twice. Gameplay-time
-inside tests is accelerated as high as 20x, while built semantic sessions use a NavMesh-safe 4x
-speed and real-time watchdogs remain intact.
+inside tests is accelerated as high as 20x. Headless built semantic sessions use a NavMesh-safe 4x
+speed, the graphical lifecycle gate uses a stable 2x speed, and real-time watchdogs remain intact.
 
 ## Acceptance checks
 
@@ -17,7 +17,7 @@ speed and real-time watchdogs remain intact.
 - Build the native macOS Apple-silicon Development player.
 - Complete a real-economy match and shipped Restart through the semantic agent protocol in
   `-batchmode -nographics` at 4x game-time.
-- Run one 1920x1080 graphical semantic complete match at 4x game-time to prove the rendered
+- Run one 1920x1080 graphical semantic complete match at 2x game-time to prove the rendered
   launch-to-result path and shipped Quit listener without duplicating every semantic scenario.
 - Exercise the adaptive live-agent mailbox in `-batchmode -nographics` at 4x game-time.
 - Record only gates that actually ran in the exact-SHA verification summary.
