@@ -16,6 +16,7 @@ namespace AshesOfRum.Editor
         public const string ControllerPath = "Assets/Resources/Presentation/Archer.controller";
         public const string BodyMaterialPath = "Assets/Resources/Presentation/ArcherBody.mat";
         public const string BodyMeshPath = "Assets/Resources/Presentation/ArcherBodyMesh.asset";
+        public const string BowMeshPath = "Assets/Resources/Presentation/ArcherBowMesh.asset";
         public const string BowMaterialPath = "Assets/Resources/Presentation/ArcherBow.mat";
         public const string ArrowMaterialPath = "Assets/Resources/Presentation/ArcherArrow.mat";
         private const string ArcherRoot = "Assets/Art/Characters/Archer";
@@ -34,7 +35,7 @@ namespace AshesOfRum.Editor
             var arrowMaterial = CreateMaterial(ArrowMaterialPath, ArcherRoot + "/Equipment/Arrow/Archer_Arrow", false);
             var controller = CreateController();
             var authoredPoses = CaptureAuthoredEquipmentPoses();
-            CreateMemberPrefab(bodyMaterial, bowMaterial, controller, authoredPoses);
+            CreateMemberPrefab(bodyMaterial, bowMaterial, arrowMaterial, controller, authoredPoses);
             CreateProjectilePrefab(arrowMaterial);
 
             AssetDatabase.SaveAssets();
@@ -130,7 +131,7 @@ namespace AshesOfRum.Editor
                 ?? throw new InvalidOperationException($"Animation clip was not found: {path}");
         }
 
-        private static void CreateMemberPrefab(Material bodyMaterial, Material bowMaterial,
+        private static void CreateMemberPrefab(Material bodyMaterial, Material bowMaterial, Material arrowMaterial,
             RuntimeAnimatorController controller, IReadOnlyDictionary<string, AuthoredLocalPose> authoredPoses)
         {
             var prefabRoot = new GameObject("ArcherMember");
@@ -165,15 +166,37 @@ namespace AshesOfRum.Editor
                 var bowRenderers = bow.GetComponentsInChildren<Renderer>(true);
                 if (bowRenderers.Length == 0)
                     throw new InvalidOperationException("Archer bow did not instantiate with renderers.");
+                var bowMeshFilter = bow.GetComponentInChildren<MeshFilter>()
+                    ?? throw new InvalidOperationException("Archer bow requires a mesh.");
+                bowMeshFilter.sharedMesh = CreateBowMeshWithoutRigidString(bowMeshFilter.sharedMesh);
                 NormalizeLength(bow.transform, bowRenderers, 1.45f);
                 AssignMaterial(bowRenderers, bowMaterial);
                 PlaceBowGripAtSocket(bow.transform, bowSocket.transform);
                 if (authoredPoses.TryGetValue("Bow", out var authoredPose))
                     authoredPose.ApplyTo(bowSocket.transform);
 
+                var stringAnchors = CreateBowStringAnchors(bow.transform, bowMeshFilter);
+                var stringObject = new GameObject("Bow String");
+                stringObject.transform.SetParent(prefabRoot.transform, false);
+                var bowString = stringObject.AddComponent<LineRenderer>();
+                bowString.useWorldSpace = true;
+                bowString.widthMultiplier = 0.008f;
+                bowString.positionCount = 3;
+                bowString.sharedMaterial = bowMaterial;
+                bowString.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                bowString.receiveShadows = false;
+
+                var nockedArrow = InstantiateAsset(ArrowPath, prefabRoot.transform, "Nocked Arrow");
+                nockedArrow.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                nockedArrow.transform.localScale = Vector3.one;
+                var nockedArrowRenderers = nockedArrow.GetComponentsInChildren<Renderer>(true);
+                NormalizeProjectile(nockedArrow.transform, nockedArrowRenderers, 0.75f);
+                AssignMaterial(nockedArrowRenderers, arrowMaterial);
+                nockedArrow.SetActive(false);
+
                 var presentation = prefabRoot.AddComponent<ArcherMemberPresentation>();
                 presentation.Configure(animator, bodyRenderers, bodyRenderers.Concat(bowRenderers).ToArray(),
-                    bow.transform);
+                    bow.transform, nockedArrow.transform, bowString, stringAnchors.upper, stringAnchors.lower);
                 PrefabUtility.SaveAsPrefabAsset(prefabRoot, MemberPrefabPath);
             }
             finally
@@ -217,6 +240,32 @@ namespace AshesOfRum.Editor
 
             var localGrip = bounds.center + Vector3.Scale(bounds.extents, breadthAxis) * 0.9f;
             bow.position += socket.position - meshFilter.transform.TransformPoint(localGrip);
+        }
+
+        private static (Transform upper, Transform lower) CreateBowStringAnchors(Transform bow,
+            MeshFilter meshFilter)
+        {
+            var bounds = meshFilter.sharedMesh.bounds;
+            var axes = new[]
+            {
+                (axis: Vector3.right, size: bounds.size.x),
+                (axis: Vector3.up, size: bounds.size.y),
+                (axis: Vector3.forward, size: bounds.size.z)
+            };
+            var longAxis = axes.OrderByDescending(candidate => candidate.size).First().axis;
+            var longExtent = Vector3.Scale(bounds.extents, longAxis) * 0.96f;
+            var firstPosition = meshFilter.transform.TransformPoint(bounds.center + longExtent);
+            var secondPosition = meshFilter.transform.TransformPoint(bounds.center - longExtent);
+            var upperPosition = firstPosition.y >= secondPosition.y ? firstPosition : secondPosition;
+            var lowerPosition = firstPosition.y >= secondPosition.y ? secondPosition : firstPosition;
+
+            var upper = new GameObject("Bow Upper String Anchor").transform;
+            upper.SetParent(bow, false);
+            upper.position = upperPosition;
+            var lower = new GameObject("Bow Lower String Anchor").transform;
+            lower.SetParent(bow, false);
+            lower.position = lowerPosition;
+            return (upper, lower);
         }
 
         private readonly struct AuthoredLocalPose
@@ -366,6 +415,97 @@ namespace AshesOfRum.Editor
             if (asset == null)
             {
                 AssetDatabase.CreateAsset(corrected, BodyMeshPath);
+                asset = corrected;
+            }
+            else
+            {
+                EditorUtility.CopySerialized(corrected, asset);
+                UnityEngine.Object.DestroyImmediate(corrected);
+            }
+            EditorUtility.SetDirty(asset);
+            return asset;
+        }
+
+        private static Mesh CreateBowMeshWithoutRigidString(Mesh source)
+        {
+            if (source.subMeshCount != 1)
+                throw new InvalidOperationException("Archer bow string removal expects one mesh submesh.");
+            var vertices = source.vertices;
+            var triangles = source.triangles;
+            var parents = Enumerable.Range(0, vertices.Length).ToArray();
+            int Find(int index)
+            {
+                while (parents[index] != index)
+                {
+                    parents[index] = parents[parents[index]];
+                    index = parents[index];
+                }
+                return index;
+            }
+            void Union(int left, int right)
+            {
+                var leftRoot = Find(left);
+                var rightRoot = Find(right);
+                if (leftRoot != rightRoot) parents[rightRoot] = leftRoot;
+            }
+
+            var weldedPositions = new Dictionary<Vector3Int, int>();
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                var vertex = vertices[index];
+                var key = new Vector3Int(Mathf.RoundToInt(vertex.x * 10000f),
+                    Mathf.RoundToInt(vertex.y * 10000f), Mathf.RoundToInt(vertex.z * 10000f));
+                if (weldedPositions.TryGetValue(key, out var matchingIndex)) Union(index, matchingIndex);
+                else weldedPositions.Add(key, index);
+            }
+            for (var index = 0; index < triangles.Length; index += 3)
+            {
+                Union(triangles[index], triangles[index + 1]);
+                Union(triangles[index], triangles[index + 2]);
+            }
+
+            var components = new Dictionary<int, Bounds>();
+            for (var index = 0; index < vertices.Length; index++)
+            {
+                var root = Find(index);
+                if (!components.TryGetValue(root, out var bounds)) bounds = new Bounds(vertices[index], Vector3.zero);
+                else bounds.Encapsulate(vertices[index]);
+                components[root] = bounds;
+            }
+            var sourceBounds = source.bounds;
+            var sourceAxes = new[] { sourceBounds.size.x, sourceBounds.size.y, sourceBounds.size.z };
+            var longAxis = Array.IndexOf(sourceAxes, sourceAxes.Max());
+            var longSize = sourceAxes[longAxis];
+            var crossSize = sourceAxes.Where((_, axis) => axis != longAxis).Max();
+            var stringRoots = components.Where(component =>
+            {
+                var sizes = new[] { component.Value.size.x, component.Value.size.y, component.Value.size.z };
+                return sizes[longAxis] > longSize * 0.7f &&
+                       sizes.Where((_, axis) => axis != longAxis).Max() < crossSize * 0.1f;
+            }).Select(component => component.Key).ToArray();
+            if (stringRoots.Length != 1)
+                throw new InvalidOperationException(
+                    $"Expected one isolated rigid bow string, found {stringRoots.Length}.");
+            var stringRoot = stringRoots[0];
+            var retainedTriangles = new List<int>(triangles.Length);
+            for (var index = 0; index < triangles.Length; index += 3)
+            {
+                if (Find(triangles[index]) == stringRoot) continue;
+                retainedTriangles.Add(triangles[index]);
+                retainedTriangles.Add(triangles[index + 1]);
+                retainedTriangles.Add(triangles[index + 2]);
+            }
+            if (retainedTriangles.Count >= triangles.Length)
+                throw new InvalidOperationException("Archer rigid bow string triangles were not removed.");
+
+            var corrected = UnityEngine.Object.Instantiate(source);
+            corrected.name = "ArcherBowMesh";
+            corrected.triangles = retainedTriangles.ToArray();
+            corrected.RecalculateBounds();
+            var asset = AssetDatabase.LoadAssetAtPath<Mesh>(BowMeshPath);
+            if (asset == null)
+            {
+                AssetDatabase.CreateAsset(corrected, BowMeshPath);
                 asset = corrected;
             }
             else

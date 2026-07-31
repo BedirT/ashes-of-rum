@@ -18,11 +18,19 @@ namespace AshesOfRum
         public const string PreviewWalkLeftState = "PreviewWalkLeft";
         public const string PreviewWalkRightState = "PreviewWalkRight";
         public const string PreviewWalkBackwardState = "PreviewWalkBackward";
+        public const float NockSeconds = 0.12f;
+        private const float NockedArrowHalfLength = 0.375f;
 
         [SerializeField] private Animator animator;
         [SerializeField] private Renderer[] factionRenderers = Array.Empty<Renderer>();
         [SerializeField] private Renderer[] feedbackRenderers = Array.Empty<Renderer>();
         [SerializeField] private Transform bow;
+        [SerializeField] private Transform nockedArrow;
+        [SerializeField] private LineRenderer bowString;
+        [SerializeField] private Transform upperStringAnchor;
+        [SerializeField] private Transform lowerStringAnchor;
+        private Transform drawHand;
+        private bool arrowNocked;
         private float desiredGroundY;
         private int groundingFramesRemaining;
 
@@ -30,6 +38,8 @@ namespace AshesOfRum
         public Renderer[] FeedbackRenderers => feedbackRenderers;
         public float LastBlendSeconds { get; private set; }
         public string CurrentState { get; private set; } = IdleState;
+        public bool IsNockedArrowVisible => nockedArrow != null && nockedArrow.gameObject.activeSelf;
+        public bool IsBowStringDrawn { get; private set; }
         public float WorldBottomY => factionRenderers.Length == 0
             ? transform.position.y
             : factionRenderers.Where(itemRenderer => itemRenderer != null)
@@ -38,12 +48,17 @@ namespace AshesOfRum
         public bool IsFactionRenderer(Renderer candidate) => Array.IndexOf(factionRenderers, candidate) >= 0;
 
         public void Configure(Animator targetAnimator, Renderer[] tintedRenderers, Renderer[] flashedRenderers,
-            Transform bowTransform)
+            Transform bowTransform, Transform nockedArrowTransform, LineRenderer stringRenderer,
+            Transform upperAnchor, Transform lowerAnchor)
         {
             animator = targetAnimator;
             factionRenderers = tintedRenderers ?? Array.Empty<Renderer>();
             feedbackRenderers = flashedRenderers ?? Array.Empty<Renderer>();
             bow = bowTransform;
+            nockedArrow = nockedArrowTransform;
+            bowString = stringRenderer;
+            upperStringAnchor = upperAnchor;
+            lowerStringAnchor = lowerAnchor;
         }
 
         public void Initialize(float groundY)
@@ -52,6 +67,8 @@ namespace AshesOfRum
                 throw new InvalidOperationException("Archer presentation requires an Animator.");
             if (bow == null)
                 throw new InvalidOperationException("Archer presentation requires a bow attachment.");
+            if (nockedArrow == null || bowString == null || upperStringAnchor == null || lowerStringAnchor == null)
+                throw new InvalidOperationException("Archer presentation requires nocked-arrow and bow-string props.");
 
             animator.applyRootMotion = false;
             foreach (var itemRenderer in factionRenderers)
@@ -64,6 +81,9 @@ namespace AshesOfRum
                 if (itemRenderer == null || IsFactionRenderer(itemRenderer)) continue;
                 itemRenderer.material.color = Color.white;
             }
+            drawHand = animator.GetBoneTransform(HumanBodyBones.RightHand)
+                ?? throw new InvalidOperationException("Archer Avatar has no mapped right draw hand.");
+            ReleaseNockedArrow();
             desiredGroundY = groundY;
             groundingFramesRemaining = 12;
             PlayImmediate(IdleState);
@@ -80,6 +100,7 @@ namespace AshesOfRum
             LastBlendSeconds = 0f;
             animator.speed = 1f;
             animator.Play(state, 0, 0f);
+            SetAttackPresentation(state == AttackState);
         }
 
         public static float BlendSeconds(string fromState, string toState)
@@ -104,6 +125,7 @@ namespace AshesOfRum
             LastBlendSeconds = BlendSeconds(previousState, state);
             animator.speed = 1f;
             animator.CrossFadeInFixedTime(state, LastBlendSeconds, 0, 0f);
+            SetAttackPresentation(state == AttackState);
         }
 
         private static bool IsTurn(string state) => state == TurnLeftState || state == TurnRightState;
@@ -115,7 +137,48 @@ namespace AshesOfRum
                 groundingFramesRemaining--;
                 transform.position += Vector3.up * (desiredGroundY - WorldBottomY);
             }
+            UpdateDrawEquipment();
         }
 
+        public void ReleaseNockedArrow()
+        {
+            arrowNocked = false;
+            IsBowStringDrawn = false;
+            if (nockedArrow != null) nockedArrow.gameObject.SetActive(false);
+            UpdateDrawEquipment();
+        }
+
+        private void SetAttackPresentation(bool attacking)
+        {
+            if (!attacking)
+            {
+                ReleaseNockedArrow();
+                return;
+            }
+            arrowNocked = true;
+            IsBowStringDrawn = true;
+            if (nockedArrow != null) nockedArrow.gameObject.SetActive(true);
+            UpdateDrawEquipment();
+        }
+
+        private void UpdateDrawEquipment()
+        {
+            if (bowString == null || upperStringAnchor == null || lowerStringAnchor == null) return;
+            var upper = upperStringAnchor.position;
+            var lower = lowerStringAnchor.position;
+            var restingNock = Vector3.Lerp(upper, lower, 0.5f);
+            var drawPoint = arrowNocked && drawHand != null ? drawHand.position : restingNock;
+            bowString.positionCount = 3;
+            bowString.SetPosition(0, upper);
+            bowString.SetPosition(1, drawPoint);
+            bowString.SetPosition(2, lower);
+            if (!arrowNocked || nockedArrow == null || drawHand == null) return;
+
+            var direction = restingNock - drawHand.position;
+            if (direction.sqrMagnitude <= 0.0001f) direction = animator.transform.forward;
+            direction.Normalize();
+            nockedArrow.SetPositionAndRotation(drawHand.position + direction * NockedArrowHalfLength,
+                Quaternion.LookRotation(direction, animator.transform.up));
+        }
     }
 }

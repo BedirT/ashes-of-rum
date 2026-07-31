@@ -132,6 +132,12 @@ namespace AshesOfRum.Tests.EditMode
             Assert.That(bowAttachment.name, Is.EqualTo("Bow Grip Socket"));
             Assert.That(bowAttachment.GetComponentsInChildren<Renderer>(true)
                 .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
+            var bowMesh = bowAttachment.GetComponentInChildren<MeshFilter>(true).sharedMesh;
+            Assert.That(AssetDatabase.GetAssetPath(bowMesh), Is.EqualTo(ArcherRuntimeAssetSetup.BowMeshPath));
+            Assert.That(bowMesh.triangles.Length, Is.LessThan(AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Art/Characters/Archer/Equipment/Bow/Archer_Bow.fbx")
+                .GetComponentInChildren<MeshFilter>().sharedMesh.triangles.Length),
+                "The generated bow must replace its rigid source string with the runtime drawn string.");
             Assert.That(prefab.GetComponentsInChildren<Renderer>(true)
                 .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow")), Is.True);
             var bowBounds = prefab.GetComponentsInChildren<Renderer>(true)
@@ -143,6 +149,14 @@ namespace AshesOfRum.Tests.EditMode
                 "The bow should preserve the visually approved hand-socket pose and proportions.");
             var bodyRenderer = prefab.transform.Find("Archer Model").GetComponentInChildren<SkinnedMeshRenderer>();
             Assert.That(AssetDatabase.GetAssetPath(bodyRenderer.sharedMesh), Is.EqualTo(ArcherRuntimeAssetSetup.BodyMeshPath));
+            Assert.That(AssetDatabase.GetAssetPath(bodyRenderer.sharedMaterial.GetTexture("_BaseMap")),
+                Is.EqualTo("Assets/Art/Characters/Archer/Model/Textures/Archer_BaseColor.png"),
+                "Faction readability must preserve the authored body texture rather than tinting the whole model.");
+            Assert.That(prefab.transform.Find("Nocked Arrow"), Is.Not.Null);
+            Assert.That(prefab.transform.Find("Nocked Arrow").gameObject.activeSelf, Is.False);
+            Assert.That(prefab.transform.Find("Bow String")?.GetComponent<LineRenderer>(), Is.Not.Null);
+            Assert.That(bowAttachment.transform.Find("Archer Bow/Bow Upper String Anchor"), Is.Not.Null);
+            Assert.That(bowAttachment.transform.Find("Archer Bow/Bow Lower String Anchor"), Is.Not.Null);
             var spineIndex = System.Array.FindIndex(bodyRenderer.bones,
                 bone => bone.name.EndsWith("Spine2", System.StringComparison.Ordinal));
             var correctedWeights = bodyRenderer.sharedMesh.boneWeights;

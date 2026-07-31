@@ -71,7 +71,7 @@ namespace AshesOfRum.Tests
                 .Where(itemRenderer => itemRenderer.name == "Black Falcon Diamond").ToArray();
             var hostileMarkers = spearmen.GetComponentsInChildren<Renderer>(true)
                 .Where(itemRenderer => itemRenderer.name == "Living Flame Square").ToArray();
-            Assert.That(friendlyMarkers, Has.Length.EqualTo(1));
+            Assert.That(friendlyMarkers, Has.Length.EqualTo(8));
             Assert.That(hostileMarkers, Has.Length.EqualTo(8));
             Assert.That(friendlyMarkers.All(itemRenderer => itemRenderer.transform.localRotation != Quaternion.identity),
                 Is.True);
@@ -81,7 +81,8 @@ namespace AshesOfRum.Tests
             Assert.That(spearmen.GetComponentInChildren<FormationFrontIndicator>(true), Is.Not.Null);
 
             Assert.That(archers.ExecuteAttackVolley(spearmen), Is.True);
-            yield return null;
+            yield return WaitUntil(() => GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
+                .Count(itemRenderer => itemRenderer.name == "Arrow") == 8);
             var arrows = GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
                 .Where(itemRenderer => itemRenderer.name == "Arrow").ToArray();
             Assert.That(arrows, Has.Length.EqualTo(8));
@@ -141,11 +142,11 @@ namespace AshesOfRum.Tests
                     itemRenderer.bounds.size.z) > 1.6f),
                 Is.True, "Each left-hand bow must retain its approved visible proportions.");
             Assert.That(archers.GetComponentsInChildren<Renderer>()
-                .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(1),
-                "The formation should use one blue identity marker without obscuring the authored textures.");
+                .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(8),
+                "Every Archer should use a blue diamond without obscuring the authored body texture.");
             Assert.That(target.GetComponentsInChildren<Renderer>()
-                .Count(itemRenderer => itemRenderer.name == "Living Flame Square"), Is.EqualTo(1),
-                "The formation should use one red identity marker without obscuring the authored textures.");
+                .Count(itemRenderer => itemRenderer.name == "Living Flame Square"), Is.EqualTo(8),
+                "Every hostile Archer should use a red square without obscuring the authored body texture.");
 
             archers.IssueMove(archers.transform.position + Vector3.forward * 4f);
             yield return WaitUntil(() => visuals.All(visual =>
@@ -183,12 +184,21 @@ namespace AshesOfRum.Tests
             Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
                 .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.06f)), Is.True,
                 "Volley entry must remain crisp through its explicit blend.");
+            var attackPresentations = archers.GetComponentsInChildren<ArcherMemberPresentation>();
+            Assert.That(attackPresentations.All(presentation => presentation.IsNockedArrowVisible), Is.True,
+                "Every Archer must show its held arrow before code releases the projectile.");
+            Assert.That(attackPresentations.All(presentation => presentation.IsBowStringDrawn), Is.True,
+                "Every Archer must draw its bow string before release.");
             Assert.That(GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None),
-                Has.Length.EqualTo(8));
+                Is.Empty, "Flying arrows must not spawn before the visible release.");
             Assert.That(archers.Members.Select((member, index) =>
                     Vector3.Distance(member.WorldPosition, memberPositionsBeforeAttack[index]))
                 .Max(), Is.LessThan(0.2f),
                 "Authored clips must not drive member translation.");
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 8);
+            Assert.That(attackPresentations.All(presentation => !presentation.IsNockedArrowVisible), Is.True);
+            Assert.That(attackPresentations.All(presentation => !presentation.IsBowStringDrawn), Is.True);
 
             var casualty = archers.Members[0];
             casualty.ApplyDamage(1, FlankDirection.Side);
@@ -389,6 +399,51 @@ namespace AshesOfRum.Tests
             Object.Destroy(archers.gameObject);
             Object.Destroy(cavalry.gameObject);
             Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator ArcherProjectiles_FaceTheirFlightAgainstWorkersAndStructures()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
+                new Vector3(4f, 0f, 18f));
+            var worker = economy.EnemyWorkers.First(candidate => candidate != null && candidate.IsAlive);
+            economy.FogOfWar.RefreshNow();
+
+            Assert.That(archers.ExecuteAttackVolley(worker), Is.True);
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 8);
+            var workerArrows = GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None);
+            var workerPositions = workerArrows.ToDictionary(arrow => arrow,
+                arrow => arrow.transform.position);
+            yield return null;
+            foreach (var arrow in workerArrows)
+            {
+                Assert.That(arrow, Is.Not.Null);
+                var movement = arrow.transform.position - workerPositions[arrow];
+                Assert.That(Vector3.Angle(arrow.transform.forward, movement), Is.LessThan(1f),
+                    "Authored arrows must point along their worker-target flight path.");
+            }
+
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 0);
+            Assert.That(archers.ExecuteStructuralVolley(economy.EnemyHisar), Is.True);
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 8);
+            var structureArrows = GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None);
+            var structurePositions = structureArrows.ToDictionary(arrow => arrow,
+                arrow => arrow.transform.position);
+            yield return null;
+            foreach (var arrow in structureArrows)
+            {
+                Assert.That(arrow, Is.Not.Null);
+                var movement = arrow.transform.position - structurePositions[arrow];
+                Assert.That(Vector3.Angle(arrow.transform.forward, movement), Is.LessThan(1f),
+                    "Authored arrows must point along their structure-target flight path.");
+            }
+
+            Object.Destroy(archers.gameObject);
         }
 
         [UnityTest]

@@ -12,16 +12,21 @@ namespace AshesOfRum
         private IEnumerator FireArrow(FormationMemberAgent attacker, FormationAgent intendedTarget,
             FormationMemberAgent intendedMember)
         {
-            attacker?.ShowAttack();
-            var arrow = CreateArrow();
             var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
+            attacker?.ShowAttack();
+            yield return new WaitForSeconds(Mathf.Min(ArcherMemberPresentation.NockSeconds,
+                tuning.projectileSeconds * 0.5f));
+            if (attacker != null) attacker.ReleaseNockedArrow();
+            var arrow = CreateArrow();
             var start = attackerPosition + Vector3.up * 1.4f;
             var targetPosition = intendedMember == null ? intendedTarget.transform.position : intendedMember.WorldPosition;
             var elapsed = 0f;
-            while (elapsed < tuning.projectileSeconds && intendedTarget != null)
+            var flightSeconds = Mathf.Max(0.05f, tuning.projectileSeconds -
+                Mathf.Min(ArcherMemberPresentation.NockSeconds, tuning.projectileSeconds * 0.5f));
+            while (elapsed < flightSeconds && intendedTarget != null)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
+                var t = Mathf.Clamp01(elapsed / flightSeconds);
                 if (intendedMember != null && intendedMember.IsAlive) targetPosition = intendedMember.WorldPosition;
                 var end = targetPosition + Vector3.up;
                 var nextPosition = Vector3.Lerp(start, end, t) + Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
@@ -41,17 +46,25 @@ namespace AshesOfRum
 
         private IEnumerator FireArrow(FormationMemberAgent attacker, WorkerAgent intendedTarget)
         {
+            var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
             attacker?.ShowAttack();
+            yield return new WaitForSeconds(Mathf.Min(ArcherMemberPresentation.NockSeconds,
+                tuning.projectileSeconds * 0.5f));
+            if (attacker != null) attacker.ReleaseNockedArrow();
             var arrow = CreateArrow();
-            var start = attacker.WorldPosition + Vector3.up * 1.4f;
+            var start = attackerPosition + Vector3.up * 1.4f;
             var elapsed = 0f;
-            while (elapsed < tuning.projectileSeconds && intendedTarget != null && intendedTarget.IsAlive)
+            var flightSeconds = Mathf.Max(0.05f, tuning.projectileSeconds -
+                Mathf.Min(ArcherMemberPresentation.NockSeconds, tuning.projectileSeconds * 0.5f));
+            while (elapsed < flightSeconds && intendedTarget != null && intendedTarget.IsAlive)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
+                var t = Mathf.Clamp01(elapsed / flightSeconds);
                 var end = intendedTarget.transform.position + Vector3.up;
-                arrow.transform.position = Vector3.Lerp(start, end, t) +
-                                           Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                var nextPosition = Vector3.Lerp(start, end, t) +
+                                   Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                FaceProjectile(arrow.transform, nextPosition);
+                arrow.transform.position = nextPosition;
                 yield return null;
             }
             if (intendedTarget != null && intendedTarget.IsAlive) intendedTarget.ApplyFixedDamage(tuning.baseDamage);
@@ -60,17 +73,25 @@ namespace AshesOfRum
 
         private IEnumerator FireArrow(FormationMemberAgent attacker, ICombatStructure intendedTarget)
         {
+            var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
             attacker?.ShowAttack();
+            yield return new WaitForSeconds(Mathf.Min(ArcherMemberPresentation.NockSeconds,
+                tuning.projectileSeconds * 0.5f));
+            if (attacker != null) attacker.ReleaseNockedArrow();
             var arrow = CreateArrow();
-            var start = attacker.WorldPosition + Vector3.up * 1.4f;
+            var start = attackerPosition + Vector3.up * 1.4f;
             var elapsed = 0f;
-            while (elapsed < tuning.projectileSeconds && intendedTarget != null &&
+            var flightSeconds = Mathf.Max(0.05f, tuning.projectileSeconds -
+                Mathf.Min(ArcherMemberPresentation.NockSeconds, tuning.projectileSeconds * 0.5f));
+            while (elapsed < flightSeconds && intendedTarget != null &&
                    intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
-                arrow.transform.position = Vector3.Lerp(start, intendedTarget.AimPoint, t) +
-                                           Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                var t = Mathf.Clamp01(elapsed / flightSeconds);
+                var nextPosition = Vector3.Lerp(start, intendedTarget.AimPoint, t) +
+                                   Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                FaceProjectile(arrow.transform, nextPosition);
+                arrow.transform.position = nextPosition;
                 yield return null;
             }
             if (intendedTarget != null && intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
@@ -130,19 +151,14 @@ namespace AshesOfRum
             var memberAgent = member.AddComponent<FormationMemberAgent>();
             memberAgent.Initialize(this, index, tuning.memberHealth);
 
-            if (Type != FormationType.Archers || index == 0)
-            {
-                var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                marker.name = IsFriendly ? "Black Falcon Diamond" : "Living Flame Square";
-                marker.transform.SetParent(Type == FormationType.Archers ? transform : member.transform, false);
-                marker.transform.localPosition = Type == FormationType.Archers
-                    ? new Vector3(0f, 2.25f, 0f)
-                    : new Vector3(0f, 1.25f, 0f);
-                marker.transform.localScale = Vector3.one * (Type == FormationType.Archers ? 0.22f : 0.35f);
-                if (IsFriendly) marker.transform.localRotation = Quaternion.Euler(45f, 0f, 45f);
-                AssignSupportedMaterial(marker.GetComponent<Renderer>(), IsFriendly ? FriendlyColor : HostileColor);
-                Destroy(marker.GetComponent<Collider>());
-            }
+            var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            marker.name = IsFriendly ? "Black Falcon Diamond" : "Living Flame Square";
+            marker.transform.SetParent(member.transform, false);
+            marker.transform.localPosition = new Vector3(0f, Type == FormationType.Archers ? 1.4f : 1.25f, 0f);
+            marker.transform.localScale = Vector3.one * (Type == FormationType.Archers ? 0.22f : 0.35f);
+            if (IsFriendly) marker.transform.localRotation = Quaternion.Euler(45f, 0f, 45f);
+            AssignSupportedMaterial(marker.GetComponent<Renderer>(), IsFriendly ? FriendlyColor : HostileColor);
+            Destroy(marker.GetComponent<Collider>());
 
             var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             ring.name = "Formation Selection Ring";

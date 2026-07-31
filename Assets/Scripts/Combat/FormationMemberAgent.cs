@@ -141,6 +141,9 @@ namespace AshesOfRum
 
         public void ShowAttack() => visual?.ShowAttack();
 
+        public void ReleaseNockedArrow() =>
+            GetComponentInChildren<ArcherMemberPresentation>()?.ReleaseNockedArrow();
+
         public void RecordProjectileImpact(Vector3 position)
         {
             ProjectileImpactCount++;

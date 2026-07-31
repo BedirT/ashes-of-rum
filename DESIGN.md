@@ -53,8 +53,9 @@ the prototype understandable and usable.
 - Simple procedural motion continues to communicate movement and combat for roles that have not yet
   received an authored integration slice. Authored clips must remain presentation-only: gameplay
   code owns translation, facing, attack timing, projectile release, damage, and casualty state.
-- Friendly and hostile forces use blue and red materials plus shape markers so recognition
-  does not rely on color alone.
+- Preserve real authored body textures instead of replacing them with a whole-body faction tint.
+  Friendly and hostile forces retain blue and ember-red accent materials plus distinct shape markers
+  on each actor so recognition does not rely on color alone.
 - Use functional audio feedback for selection, orders, construction, production, attacks,
   hits, warnings, victory, and defeat. Do not add music or voice acting. Avoid licensed
   external audio dependencies.
@@ -340,9 +341,9 @@ other automatic or player-triggered special abilities.
 - Use AI Navigation/NavMesh for movement and navigation, including runtime building
   obstruction and path validation.
 - Use Canvas-based runtime UI.
-- Prepare authored humanoid characters around one compatible skeleton where practical. Keep
-  locomotion in place with root motion disabled, keep held equipment as separate socketed assets,
-  and preserve body-worn equipment on the base character.
+- Prepare future authored humanoid characters around one canonical compatible skeleton and equipment
+  socket convention where practical. Keep locomotion in place with root motion disabled, keep held
+  equipment as separate socketed assets, and preserve body-worn equipment on the base character.
 - Use a custom bounded RTS camera rather than adding Cinemachine.
 - Do not add networking, cloud services, accounts, monetization, analytics services,
   Addressables, or third-party runtime assets.

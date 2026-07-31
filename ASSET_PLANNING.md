@@ -536,7 +536,8 @@ length, or formation density is wrong, fix the shared base now.
   by the entire formation: every member enters the same Idle, March, or Turn state on
   the same frame with identical start time and playback speed. Explicit fixed-time
   blends govern every Idle, March, Turn, Attack, Hit, and Death state change. Root motion remains disabled, the bow
-  remains socketed, and gameplay continues to own rotation, projectile release, damage, and casualties.
+  remains socketed, and the attack shows a nocked arrow and drawn string until code releases the projectile.
+  Gameplay continues to own rotation, projectile release, damage, and casualties.
   The remaining preserved Mixamo clips stay preview-only or source-only.
 - [ ] 10. CHAR-006 Horse model and rig.
 - [ ] 11. CHAR-005 Cavalry Rider plus saber.

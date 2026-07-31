@@ -1,6 +1,6 @@
 # Archer Source Package
 
-Status: Approved source archive, Unity intake, and runtime integration.
+Status: Approved source archive, Unity intake, and accepted runtime integration.
 
 ## Visual And Equipment Contract
 
@@ -59,11 +59,14 @@ The fingerprint is SHA-256 over the sorted Blender-imported bone names, generate
 ## Runtime Integration
 
 `ArcherRuntimeAssetSetup` deterministically creates the runtime member prefab, Humanoid Animator
-Controller, explicit URP materials, left-hand bow attachment, and normalized arrow projectile under
+Controller, explicit URP materials, left-hand bow attachment, nocked arrow and drawn string, and
+normalized arrow projectile under
 `Assets/Resources/Presentation/`. Runtime formation code uses those presentation assets only for Archer
 members while retaining its invisible gameplay capsule, code-owned translation and facing, selection,
 formation behavior, collision, navigation, attack cadence, projectile flight, damage, fog, AI, and
 complete-match authority.
 
-The runtime controller uses only `Idle`, `WalkForward`, `AimRecoil`, `HitFront`, and `DeathBackward`.
+The runtime controller uses `Idle`, a slowed `RunForward` march, visual-only left/right turns,
+`AimRecoil`, `HitFront`, and `DeathBackward`; other preserved clips remain preview-only or source-only.
+Code hides the nocked arrow and straightens the string when it releases the deterministic projectile.
 No gameplay events are animation-driven, and root motion remains disabled.
