@@ -141,6 +141,9 @@ namespace AshesOfRum.Tests
                 .All(itemRenderer => Mathf.Max(itemRenderer.bounds.size.x, itemRenderer.bounds.size.y,
                     itemRenderer.bounds.size.z) > 1.6f),
                 Is.True, "Each left-hand bow must retain its approved visible proportions.");
+            Assert.That(archers.GetComponentsInChildren<LineRenderer>()
+                .All(stringRenderer => stringRenderer.sharedMaterial.color == Color.white), Is.True,
+                "Every runtime bow string must retain a supported visible material color.");
             Assert.That(archers.GetComponentsInChildren<Renderer>()
                 .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(8),
                 "Every Archer should use a blue diamond without obscuring the authored body texture.");
