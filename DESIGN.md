@@ -50,6 +50,13 @@ the prototype understandable and usable.
   integrated through small player-observable slices. Repository-owned prototype character,
   equipment, and skeletal-animation source assets may be prepared and validated ahead of runtime
   integration; do not replace a playable path through an unintegrated art dump.
+- The user-approved pre-integration world-concept batch may prepare exactly one repository-owned
+  source image for each existing building state, Supply-cache component, and Sundered Road
+  environment set enumerated in `SourceAssets/World/Concepts/GENERATION_MANIFEST.md`, plus its
+  inventory, generation-summary, contact-sheet, and target-dimension review files. This exception
+  authorizes source references only: no runtime meshes, textures, materials, prefabs, scenes,
+  additional variants, landmarks, biomes, or graybox replacements may bypass a later
+  player-observable integration slice.
 - Simple procedural motion continues to communicate movement and combat for roles that have not yet
   received an authored integration slice. Authored clips must remain presentation-only: gameplay
   code owns translation, facing, attack timing, projectile release, damage, and casualty state.

@@ -75,6 +75,12 @@ are not part of this concept batch.
 - Building review sheet: `Buildings_ContactSheet.png`.
 - Supply review sheet: `Resources_ContactSheet.png`.
 - Battlefield review sheet: `Environment_ContactSheet.png`.
-- Shared human-scale review: `World_Scale_Reference.png`.
-- The scale lineup is review evidence only. The numeric world-space targets above remain authoritative for
-  Meshy cleanup and Unity import because generated-image framing cannot enforce physical dimensions.
+- Art-direction notes and provenance limits: `GENERATION_SUMMARY.md`.
+- Deterministic target-dimension review: `World_Target_Dimensions.png` (rendered from
+  `World_Target_Dimensions.svg`).
+- The target board uses the exact four delivered complete-state images and plots their declared footprints,
+  heights, and a 1.8 m reference on a common meter grid. It is an implementation brief, not proof that
+  perspective concept art has physical scale. The numeric targets above remain authoritative for Meshy
+  cleanup and Unity import, where scale must be validated on actual geometry.
+- Re-render the board from its exact source-image links with
+  `(cd SourceAssets/World/Concepts && rsvg-convert -o World_Target_Dimensions.png World_Target_Dimensions.svg)`.

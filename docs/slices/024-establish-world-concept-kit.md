@@ -3,8 +3,9 @@
 ## Player Outcome
 
 This is a documentation and source-asset workflow, not a gameplay slice. It provides the complete,
-scale-locked visual reference kit needed to replace the prototype's building, resource, and battlefield
-grayboxes one player-observable integration slice at a time.
+dimension-targeted visual reference kit needed to replace the prototype's building, resource, and
+battlefield grayboxes one player-observable integration slice at a time. The concept images are not
+scale proof; their declared meter targets must be enforced when models are created and imported.
 
 ## Acceptance
 
@@ -16,6 +17,8 @@ grayboxes one player-observable integration slice at a time.
       three-quarter camera.
 - [ ] A manifest and contact sheets prove that the inventory is complete, non-duplicative, and visually
       coherent.
+- [ ] A deterministic target-dimension board pairs the exact delivered complete-state images with one
+      common meter grid and a 1.8 m reference, without claiming that concept perspective proves scale.
 - [ ] Generated images pass file, dimension, and image-integrity validation.
 - [ ] `git diff --check` passes and the existing game remains unchanged and runnable.
 - [ ] A context-free review covers the exact final HEAD.
@@ -31,8 +34,9 @@ grayboxes one player-observable integration slice at a time.
 ## Manual Play Check
 
 Launch the existing game and confirm that its complete match remains unchanged. Review the generated
-building, resource, and environment contact sheets at full size, checking silhouettes, relative scale,
-camera readability, historical tone, and absence of detached accidental geometry.
+building, resource, and environment contact sheets at full size, checking silhouettes, camera
+readability, historical tone, and absence of detached accidental geometry. Review the target-dimension
+board as an implementation brief for intended proportions, not as validation of generated-image scale.
 
 ## Evidence
 
