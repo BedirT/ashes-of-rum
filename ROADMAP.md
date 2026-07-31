@@ -34,6 +34,7 @@ change when playtesting exposes a stronger dependency.
 | Complete | Documentation and asset workflow 024 - Establish the world concept kit | Preserve one dimension-targeted, style-consistent concept for every approved building state, Supply-cache component, and Sundered Road environment set without changing gameplay. |
 | Complete | 025 - Preserve authored buildings and review scale | Preserve the proportion-correct Hisar construction set and untextured House in repeatable built-player previews beside authored units without changing the compact prototype map or live match. |
 | Complete | Workflow 026 - Make verification headless-first | Keep the complete test and native-build gates while replacing redundant rendered scenario replays with accelerated headless semantic proof and one rendered smoke. |
+| Complete | Corrective workflow 027 - Stabilize graphical lifecycle proof | Keep the graphical complete-match Quit gate reliable at a renderer-safe simulation speed while headless scenarios remain faster. |
 
 Use [the slice template](docs/slices/TEMPLATE.md) for each new slice. Do not begin a
 slice until its player outcome and deterministic acceptance path are explicit.
