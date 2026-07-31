@@ -71,17 +71,11 @@ namespace AshesOfRum
                 throw new InvalidOperationException("Archer presentation requires nocked-arrow and bow-string props.");
 
             animator.applyRootMotion = false;
-            foreach (var itemRenderer in factionRenderers)
+            foreach (var itemRenderer in GetComponentsInChildren<Renderer>(true))
             {
                 if (itemRenderer == null) continue;
                 itemRenderer.material.color = Color.white;
             }
-            foreach (var itemRenderer in feedbackRenderers)
-            {
-                if (itemRenderer == null || IsFactionRenderer(itemRenderer)) continue;
-                itemRenderer.material.color = Color.white;
-            }
-            bowString.material.color = Color.white;
             drawHand = animator.GetBoneTransform(HumanBodyBones.RightHand)
                 ?? throw new InvalidOperationException("Archer Avatar has no mapped right draw hand.");
             ReleaseNockedArrow();
