@@ -81,7 +81,8 @@ namespace AshesOfRum.Tests
             Assert.That(spearmen.GetComponentInChildren<FormationFrontIndicator>(true), Is.Not.Null);
 
             Assert.That(archers.ExecuteAttackVolley(spearmen), Is.True);
-            yield return null;
+            yield return WaitUntil(() => GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
+                .Count(itemRenderer => itemRenderer.name == "Arrow") == 8);
             var arrows = GameObject.FindObjectsByType<Renderer>(FindObjectsSortMode.None)
                 .Where(itemRenderer => itemRenderer.name == "Arrow").ToArray();
             Assert.That(arrows, Has.Length.EqualTo(8));
@@ -89,6 +90,140 @@ namespace AshesOfRum.Tests
             archers.ApplyFixedDamage(archers.MaximumMemberHealth);
             Assert.That(archers.GetComponentInChildren<FormationFrontIndicator>(true), Is.Not.Null,
                 "The front indicator must survive member casualties.");
+        }
+
+        [UnityTest]
+        public IEnumerator ArcherPresentation_DirectSpawnsBothFactionsAndExercisesEveryRuntimeState()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
+                new Vector3(0f, 0f, 7f));
+            var target = economy.DeployEnemyForAutomation(FormationType.Archers,
+                new Vector3(0f, 0f, 15f));
+
+            var visuals = archers.GetComponentsInChildren<FormationMemberVisual>();
+            var hostileVisuals = target.GetComponentsInChildren<FormationMemberVisual>();
+            Assert.That(visuals, Has.Length.EqualTo(8));
+            Assert.That(hostileVisuals, Has.Length.EqualTo(8));
+            Assert.That(visuals.All(visual => visual.HasAuthoredPresentation), Is.True);
+            Assert.That(hostileVisuals.All(visual => visual.HasAuthoredPresentation), Is.True);
+            Assert.That(archers.HasSupportedVisualMaterials(), Is.True);
+            Assert.That(target.HasSupportedVisualMaterials(), Is.True);
+            Assert.That(visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.IdleState), Is.True);
+            Assert.That(archers.GetComponentsInChildren<Animator>(), Has.Length.EqualTo(8));
+            Assert.That(archers.GetComponentsInChildren<Animator>()
+                .All(animator => !animator.applyRootMotion), Is.True);
+            Assert.That(archers.GetComponentsInChildren<AuthoredEquipmentAttachment>(), Has.Length.EqualTo(8));
+            Assert.That(archers.GetComponentsInChildren<AuthoredEquipmentAttachment>()
+                .All(attachment => attachment.AttachmentId == "Bow" &&
+                                   attachment.SocketBone == HumanBodyBones.LeftHand), Is.True);
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => presentation.Animator.GetBoneTransform(HumanBodyBones.LeftHand)
+                    .GetComponentsInChildren<Renderer>()
+                    .Any(itemRenderer => itemRenderer.name.Contains("Archer Bow"))), Is.True,
+                "Every bow must remain parented under its Archer's left hand socket.");
+
+            for (var frame = 0; frame < 14; frame++) yield return null;
+            var idleAnimatorStates = archers.GetComponentsInChildren<Animator>()
+                .Select(animator => animator.GetCurrentAnimatorStateInfo(0)).ToArray();
+            Assert.That(idleAnimatorStates.Count(state => state.IsName(ArcherMemberPresentation.IdleState)),
+                Is.EqualTo(8), "All members must share one idle state and one animation clock.");
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Abs(presentation.WorldBottomY - archers.transform.position.y) < 0.03f),
+                Is.True, "Friendly animated feet must sit on the battlefield surface.");
+            Assert.That(target.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Abs(presentation.WorldBottomY - target.transform.position.y) < 0.03f),
+                Is.True, "Hostile animated feet must sit on the battlefield surface.");
+            Assert.That(archers.GetComponentsInChildren<Renderer>()
+                .Where(itemRenderer => itemRenderer.name.Contains("Archer Bow"))
+                .All(itemRenderer => Mathf.Max(itemRenderer.bounds.size.x, itemRenderer.bounds.size.y,
+                    itemRenderer.bounds.size.z) > 1.6f),
+                Is.True, "Each left-hand bow must retain its approved visible proportions.");
+            Assert.That(archers.GetComponentsInChildren<LineRenderer>()
+                .All(stringRenderer => stringRenderer.sharedMaterial.color == Color.white), Is.True,
+                "Every runtime bow string must retain a supported visible material color.");
+            Assert.That(archers.GetComponentsInChildren<Renderer>()
+                .Count(itemRenderer => itemRenderer.name == "Black Falcon Diamond"), Is.EqualTo(8),
+                "Every Archer should use a blue diamond without obscuring the authored body texture.");
+            Assert.That(target.GetComponentsInChildren<Renderer>()
+                .Count(itemRenderer => itemRenderer.name == "Living Flame Square"), Is.EqualTo(8),
+                "Every hostile Archer should use a red square without obscuring the authored body texture.");
+
+            archers.IssueMove(archers.transform.position + Vector3.forward * 4f);
+            yield return WaitUntil(() => visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.MoveState));
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.14f)), Is.True,
+                "Idle-to-march must use its explicit fixed-time blend.");
+            yield return null;
+            var marchTimes = archers.GetComponentsInChildren<Animator>()
+                .Select(animator => Mathf.Repeat(animator.GetCurrentAnimatorStateInfo(0).normalizedTime, 1f))
+                .ToArray();
+            Assert.That(marchTimes.Max() - marchTimes.Min(), Is.LessThan(0.03f),
+                "Every soldier must use the same march start time and playback speed.");
+
+            archers.IssueStop();
+            archers.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            Assert.That(archers.IssueFocus(target), Is.True);
+            yield return WaitUntil(() => archers.IsTurning);
+            yield return WaitUntil(() => visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.TurnLeftState ||
+                visual.CurrentAnimationState == ArcherMemberPresentation.TurnRightState));
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.08f)), Is.True,
+                "Turning must use its explicit fixed-time blend.");
+            Assert.That(visuals.Select(visual => visual.CurrentAnimationState).Distinct().Count(), Is.EqualTo(1),
+                "A formation turn must use one direction while gameplay owns the rotation.");
+            archers.IssueStop();
+            yield return null;
+
+            var memberPositionsBeforeAttack = archers.Members.Select(member => member.WorldPosition).ToArray();
+            Assert.That(archers.ExecuteAttackVolley(target), Is.True);
+            yield return null;
+            Assert.That(visuals.All(visual =>
+                visual.CurrentAnimationState == ArcherMemberPresentation.AttackState), Is.True);
+            Assert.That(archers.GetComponentsInChildren<ArcherMemberPresentation>()
+                .All(presentation => Mathf.Approximately(presentation.LastBlendSeconds, 0.06f)), Is.True,
+                "Volley entry must remain crisp through its explicit blend.");
+            var attackPresentations = archers.GetComponentsInChildren<ArcherMemberPresentation>();
+            Assert.That(attackPresentations.All(presentation => presentation.IsNockedArrowVisible), Is.True,
+                "Every Archer must show its held arrow before code releases the projectile.");
+            Assert.That(attackPresentations.All(presentation => presentation.IsBowStringDrawn), Is.True,
+                "Every Archer must draw its bow string before release.");
+            Assert.That(GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None),
+                Is.Empty, "Flying arrows must not spawn before the visible release.");
+            Assert.That(archers.Members.Select((member, index) =>
+                    Vector3.Distance(member.WorldPosition, memberPositionsBeforeAttack[index]))
+                .Max(), Is.LessThan(0.2f),
+                "Authored clips must not drive member translation.");
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 8);
+            Assert.That(attackPresentations.All(presentation => !presentation.IsNockedArrowVisible), Is.True);
+            Assert.That(attackPresentations.All(presentation => !presentation.IsBowStringDrawn), Is.True);
+
+            var casualty = archers.Members[0];
+            casualty.ApplyDamage(1, FlankDirection.Side);
+            Assert.That(casualty.GetComponent<FormationMemberVisual>().CurrentAnimationState,
+                Is.EqualTo(ArcherMemberPresentation.HitState));
+            Assert.That(casualty.GetComponentInChildren<ArcherMemberPresentation>().LastBlendSeconds,
+                Is.EqualTo(0.035f).Within(0.0001f));
+            yield return new WaitForSeconds(0.2f);
+
+            archers.ApplyDeterministicHit(casualty, FormationType.Cavalry,
+                casualty.WorldPosition + Vector3.forward);
+            Assert.That(archers.MemberCount, Is.EqualTo(7),
+                "The casualty must leave gameplay immediately.");
+            Assert.That(casualty, Is.Not.Null,
+                "The authored casualty presentation must remain long enough to show the fall.");
+            Assert.That(casualty.GetComponent<FormationMemberVisual>().CurrentAnimationState,
+                Is.EqualTo(ArcherMemberPresentation.DeathState));
+            Assert.That(casualty.GetComponentInChildren<ArcherMemberPresentation>().LastBlendSeconds,
+                Is.EqualTo(0.04f).Within(0.0001f));
+
+            Object.Destroy(archers.gameObject);
+            Object.Destroy(target.gameObject);
         }
 
         [UnityTest]
@@ -267,6 +402,51 @@ namespace AshesOfRum.Tests
             Object.Destroy(archers.gameObject);
             Object.Destroy(cavalry.gameObject);
             Object.Destroy(tuning);
+        }
+
+        [UnityTest]
+        public IEnumerator ArcherProjectiles_FaceTheirFlightAgainstWorkersAndStructures()
+        {
+            yield return LoadEconomy();
+            var economy = Object.FindAnyObjectByType<StartingEconomyController>();
+            var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
+                new Vector3(4f, 0f, 18f));
+            var worker = economy.EnemyWorkers.First(candidate => candidate != null && candidate.IsAlive);
+            economy.FogOfWar.RefreshNow();
+
+            Assert.That(archers.ExecuteAttackVolley(worker), Is.True);
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 8);
+            var workerArrows = GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None);
+            var workerPositions = workerArrows.ToDictionary(arrow => arrow,
+                arrow => arrow.transform.position);
+            yield return null;
+            foreach (var arrow in workerArrows)
+            {
+                Assert.That(arrow, Is.Not.Null);
+                var movement = arrow.transform.position - workerPositions[arrow];
+                Assert.That(Vector3.Angle(arrow.transform.forward, movement), Is.LessThan(1f),
+                    "Authored arrows must point along their worker-target flight path.");
+            }
+
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 0);
+            Assert.That(archers.ExecuteStructuralVolley(economy.EnemyHisar), Is.True);
+            yield return WaitUntil(() =>
+                GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None).Length == 8);
+            var structureArrows = GameObject.FindObjectsByType<AuthoredArrowProjectile>(FindObjectsSortMode.None);
+            var structurePositions = structureArrows.ToDictionary(arrow => arrow,
+                arrow => arrow.transform.position);
+            yield return null;
+            foreach (var arrow in structureArrows)
+            {
+                Assert.That(arrow, Is.Not.Null);
+                var movement = arrow.transform.position - structurePositions[arrow];
+                Assert.That(Vector3.Angle(arrow.transform.forward, movement), Is.LessThan(1f),
+                    "Authored arrows must point along their structure-target flight path.");
+            }
+
+            Object.Destroy(archers.gameObject);
         }
 
         [UnityTest]

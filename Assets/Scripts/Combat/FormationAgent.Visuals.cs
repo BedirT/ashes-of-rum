@@ -12,15 +12,21 @@ namespace AshesOfRum
         private IEnumerator FireArrow(FormationMemberAgent attacker, FormationAgent intendedTarget,
             FormationMemberAgent intendedMember)
         {
-            var arrow = CreateArrow();
             var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
+            attacker?.ShowAttack();
+            yield return new WaitForSeconds(Mathf.Min(ArcherMemberPresentation.NockSeconds,
+                tuning.projectileSeconds * 0.5f));
+            if (attacker != null) attacker.ReleaseNockedArrow();
+            var arrow = CreateArrow();
             var start = attackerPosition + Vector3.up * 1.4f;
             var targetPosition = intendedMember == null ? intendedTarget.transform.position : intendedMember.WorldPosition;
             var elapsed = 0f;
-            while (elapsed < tuning.projectileSeconds && intendedTarget != null)
+            var flightSeconds = Mathf.Max(0.05f, tuning.projectileSeconds -
+                Mathf.Min(ArcherMemberPresentation.NockSeconds, tuning.projectileSeconds * 0.5f));
+            while (elapsed < flightSeconds && intendedTarget != null)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
+                var t = Mathf.Clamp01(elapsed / flightSeconds);
                 if (intendedMember != null && intendedMember.IsAlive) targetPosition = intendedMember.WorldPosition;
                 var end = targetPosition + Vector3.up;
                 var nextPosition = Vector3.Lerp(start, end, t) + Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
@@ -38,36 +44,54 @@ namespace AshesOfRum
             Destroy(arrow);
         }
 
-        private IEnumerator FireArrow(Vector3 memberPosition, WorkerAgent intendedTarget)
+        private IEnumerator FireArrow(FormationMemberAgent attacker, WorkerAgent intendedTarget)
         {
+            var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
+            attacker?.ShowAttack();
+            yield return new WaitForSeconds(Mathf.Min(ArcherMemberPresentation.NockSeconds,
+                tuning.projectileSeconds * 0.5f));
+            if (attacker != null) attacker.ReleaseNockedArrow();
             var arrow = CreateArrow();
-            var start = memberPosition + Vector3.up * 1.4f;
+            var start = attackerPosition + Vector3.up * 1.4f;
             var elapsed = 0f;
-            while (elapsed < tuning.projectileSeconds && intendedTarget != null && intendedTarget.IsAlive)
+            var flightSeconds = Mathf.Max(0.05f, tuning.projectileSeconds -
+                Mathf.Min(ArcherMemberPresentation.NockSeconds, tuning.projectileSeconds * 0.5f));
+            while (elapsed < flightSeconds && intendedTarget != null && intendedTarget.IsAlive)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
+                var t = Mathf.Clamp01(elapsed / flightSeconds);
                 var end = intendedTarget.transform.position + Vector3.up;
-                arrow.transform.position = Vector3.Lerp(start, end, t) +
-                                           Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                var nextPosition = Vector3.Lerp(start, end, t) +
+                                   Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                FaceProjectile(arrow.transform, nextPosition);
+                arrow.transform.position = nextPosition;
                 yield return null;
             }
             if (intendedTarget != null && intendedTarget.IsAlive) intendedTarget.ApplyFixedDamage(tuning.baseDamage);
             Destroy(arrow);
         }
 
-        private IEnumerator FireArrow(Vector3 memberPosition, ICombatStructure intendedTarget)
+        private IEnumerator FireArrow(FormationMemberAgent attacker, ICombatStructure intendedTarget)
         {
+            var attackerPosition = attacker == null ? transform.position : attacker.WorldPosition;
+            attacker?.ShowAttack();
+            yield return new WaitForSeconds(Mathf.Min(ArcherMemberPresentation.NockSeconds,
+                tuning.projectileSeconds * 0.5f));
+            if (attacker != null) attacker.ReleaseNockedArrow();
             var arrow = CreateArrow();
-            var start = memberPosition + Vector3.up * 1.4f;
+            var start = attackerPosition + Vector3.up * 1.4f;
             var elapsed = 0f;
-            while (elapsed < tuning.projectileSeconds && intendedTarget != null &&
+            var flightSeconds = Mathf.Max(0.05f, tuning.projectileSeconds -
+                Mathf.Min(ArcherMemberPresentation.NockSeconds, tuning.projectileSeconds * 0.5f));
+            while (elapsed < flightSeconds && intendedTarget != null &&
                    intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
             {
                 elapsed += Time.deltaTime;
-                var t = Mathf.Clamp01(elapsed / tuning.projectileSeconds);
-                arrow.transform.position = Vector3.Lerp(start, intendedTarget.AimPoint, t) +
-                                           Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                var t = Mathf.Clamp01(elapsed / flightSeconds);
+                var nextPosition = Vector3.Lerp(start, intendedTarget.AimPoint, t) +
+                                   Vector3.up * (Mathf.Sin(t * Mathf.PI) * 1.5f);
+                FaceProjectile(arrow.transform, nextPosition);
+                arrow.transform.position = nextPosition;
                 yield return null;
             }
             if (intendedTarget != null && intendedTarget.TargetComponent != null && intendedTarget.IsAttackable)
@@ -77,6 +101,8 @@ namespace AshesOfRum
 
         private static GameObject CreateArrow()
         {
+            var authoredPrefab = Resources.Load<GameObject>("Presentation/ArcherArrowProjectile");
+            if (authoredPrefab != null) return Instantiate(authoredPrefab);
             var arrow = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             arrow.name = "Arrow";
             arrow.transform.localScale = new Vector3(0.06f, 0.35f, 0.06f);
@@ -89,7 +115,9 @@ namespace AshesOfRum
         {
             var direction = nextPosition - projectile.position;
             if (direction.sqrMagnitude > 0.0001f)
-                projectile.rotation = Quaternion.FromToRotation(Vector3.up, direction.normalized);
+                projectile.rotation = Quaternion.FromToRotation(
+                    projectile.GetComponent<AuthoredArrowProjectile>() == null ? Vector3.up : Vector3.forward,
+                    direction.normalized);
         }
 
         private FormationMemberAgent CreateMember(int index)
@@ -103,17 +131,33 @@ namespace AshesOfRum
                 : new Vector3(0.7f, 0.85f, 0.7f);
             var memberRenderer = member.GetComponent<Renderer>();
             AssignSupportedMaterial(memberRenderer, IsFriendly ? FriendlyColor : HostileColor);
-            member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer);
+            ArcherMemberPresentation archerPresentation = null;
+            if (Type == FormationType.Archers)
+            {
+                var authoredPrefab = Resources.Load<GameObject>("Presentation/ArcherMember");
+                if (authoredPrefab != null)
+                {
+                    Destroy(memberRenderer);
+                    memberRenderer = null;
+                    var authored = Instantiate(authoredPrefab, member.transform);
+                    authored.name = "Authored Archer";
+                    authored.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                    authored.transform.localScale = new Vector3(1f / 0.7f, 1f / 0.85f, 1f / 0.7f);
+                    archerPresentation = authored.GetComponent<ArcherMemberPresentation>();
+                    archerPresentation.Initialize(transform.position.y);
+                }
+            }
+            member.AddComponent<FormationMemberVisual>().Initialize(memberRenderer, archerPresentation);
             var memberAgent = member.AddComponent<FormationMemberAgent>();
             memberAgent.Initialize(this, index, tuning.memberHealth);
 
             var marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
             marker.name = IsFriendly ? "Black Falcon Diamond" : "Living Flame Square";
             marker.transform.SetParent(member.transform, false);
-            marker.transform.localPosition = new Vector3(0f, 1.25f, 0f);
-            marker.transform.localScale = Vector3.one * 0.35f;
+            marker.transform.localPosition = new Vector3(0f, Type == FormationType.Archers ? 1.4f : 1.25f, 0f);
+            marker.transform.localScale = Vector3.one * (Type == FormationType.Archers ? 0.22f : 0.35f);
             if (IsFriendly) marker.transform.localRotation = Quaternion.Euler(45f, 0f, 45f);
-            AssignSupportedMaterial(marker.GetComponent<Renderer>(), Color.white);
+            AssignSupportedMaterial(marker.GetComponent<Renderer>(), IsFriendly ? FriendlyColor : HostileColor);
             Destroy(marker.GetComponent<Collider>());
 
             var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -156,6 +200,7 @@ namespace AshesOfRum
 
         private void UpdateMemberMovement()
         {
+            var formationIsMoving = false;
             for (var i = 0; i < members.Count; i++)
             {
                 var member = members[i];
@@ -177,8 +222,13 @@ namespace AshesOfRum
                         }
                     }
                 }
+                var positionBeforeMovement = member.WorldPosition;
                 member.TickMovement(destination, MoveSpeed, members, attackTarget);
+                formationIsMoving |=
+                    (member.WorldPosition - positionBeforeMovement).sqrMagnitude > 0.000001f;
             }
+            foreach (var member in members)
+                member.SetPresentationMotion(formationIsMoving, IsTurning, TurnDirectionDegrees);
         }
 
         private void SynchronizeMembersForAnchorTeleport()
