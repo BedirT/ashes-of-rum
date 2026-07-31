@@ -344,8 +344,9 @@ origin, and sole victory target. It is non-combat.
 
 Model requirements:
 
-- Gameplay footprint: 10.6 x 6.6 m, containing the complete pavilion without changing its uniform
-  scale. Development-only construction states share that scale but do not define gameplay collision.
+- Planned logical footprint: 10.6 x 6.6 m, containing the complete pavilion without changing its
+  uniform scale. Live-match integration is deferred until the compact map layout can accommodate it;
+  development-only construction states share the scale but do not define gameplay collision.
 - Visual height: 3.25 m at uniform scale, preserving the authored model proportions.
 - One obvious front/drop-off side.
 - Separate overhead faction-marker socket visible from the camera; do not attach a flag or front banner.

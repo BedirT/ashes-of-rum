@@ -30,18 +30,17 @@ namespace AshesOfRum
             var root = new GameObject(friendly ? HisarObjectName : EnemyHisarObjectName);
             root.transform.SetPositionAndRotation(new Vector3(0f, 0f, friendly ? -8f : 26f),
                 friendly ? Quaternion.Euler(0f, 180f, 0f) : Quaternion.identity);
-            HisarPresentation.Create(root.transform, HisarBuildState.Complete, friendly);
-            var collider = root.AddComponent<BoxCollider>();
-            collider.center = new Vector3(0f, HisarPresentation.FootprintSize.y * 0.5f, 0f);
-            collider.size = HisarPresentation.FootprintSize;
+            var factionColor = friendly ? new Color(0.08f, 0.24f, 0.55f) : new Color(0.62f, 0.1f, 0.05f);
+            CreatePrimitive(PrimitiveType.Cube, "Hisar Keep", root.transform,
+                new Vector3(0f, 1.4f, 0f), new Vector3(5f, 2.8f, 4f), factionColor);
             CreatePrimitive(friendly ? PrimitiveType.Cylinder : PrimitiveType.Cube,
                 friendly ? "Black Falcon Marker" : "Living Flame Marker", root.transform,
-                new Vector3(0f, 4f, 0f), new Vector3(1.2f, 0.15f, 1.2f),
+                new Vector3(0f, 3.15f, 0f), new Vector3(1.2f, 0.15f, 1.2f),
                 friendly ? new Color(0.03f, 0.05f, 0.08f) : new Color(1f, 0.45f, 0.08f));
             var obstacle = root.AddComponent<NavMeshObstacle>();
             obstacle.shape = NavMeshObstacleShape.Box;
-            obstacle.center = collider.center;
-            obstacle.size = collider.size;
+            obstacle.center = new Vector3(0f, 1.5f, 0f);
+            obstacle.size = new Vector3(5.2f, 3f, 4.2f);
             obstacle.carving = true;
             var result = root.AddComponent<Hisar>();
             result.Initialize(friendly, tuning.hisarHealth, HandleHisarDestroyed,

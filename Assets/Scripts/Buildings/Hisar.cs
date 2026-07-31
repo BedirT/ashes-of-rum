@@ -10,11 +10,7 @@ namespace AshesOfRum
         private Action<Vector3> damagedCallback;
         private Renderer[] renderers;
         private Color[] restingColors;
-        private int[] colorProperties;
         private Coroutine hitRoutine;
-
-        private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
-        private static readonly int ColorProperty = Shader.PropertyToID("_Color");
 
         public Vector3 DropOffPoint => transform.position + transform.forward * -3.2f;
         public Component TargetComponent => this;
@@ -37,14 +33,8 @@ namespace AshesOfRum
             damagedCallback = onDamaged;
             renderers = GetComponentsInChildren<Renderer>();
             restingColors = new Color[renderers.Length];
-            colorProperties = new int[renderers.Length];
             for (var index = 0; index < renderers.Length; index++)
-            {
-                var material = renderers[index].sharedMaterial;
-                var property = material.HasProperty(BaseColorProperty) ? BaseColorProperty : ColorProperty;
-                colorProperties[index] = property;
-                restingColors[index] = material.HasProperty(property) ? material.GetColor(property) : Color.white;
-            }
+                restingColors[index] = renderers[index].sharedMaterial.color;
         }
 
         public bool ApplyStructuralDamage(int amount)
@@ -72,26 +62,13 @@ namespace AshesOfRum
 
         private IEnumerator FlashHit()
         {
-            var propertyBlock = new MaterialPropertyBlock();
             for (var index = 0; index < renderers.Length; index++)
                 if (renderers[index] != null)
-                {
-                    renderers[index].GetPropertyBlock(propertyBlock);
-                    propertyBlock.SetColor(colorProperties[index],
-                        Color.Lerp(restingColors[index], Color.white, 0.7f));
-                    renderers[index].SetPropertyBlock(propertyBlock);
-                    propertyBlock.Clear();
-                }
+                    renderers[index].sharedMaterial.color = Color.Lerp(restingColors[index], Color.white, 0.7f);
             yield return new WaitForSeconds(0.16f);
             if (!IsDestroyed)
                 for (var index = 0; index < renderers.Length; index++)
-                    if (renderers[index] != null)
-                    {
-                        renderers[index].GetPropertyBlock(propertyBlock);
-                        propertyBlock.SetColor(colorProperties[index], restingColors[index]);
-                        renderers[index].SetPropertyBlock(propertyBlock);
-                        propertyBlock.Clear();
-                    }
+                    if (renderers[index] != null) renderers[index].sharedMaterial.color = restingColors[index];
             hitRoutine = null;
         }
     }
