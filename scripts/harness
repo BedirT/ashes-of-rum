@@ -788,6 +788,7 @@ agent_graphical_smoke() {
     --agent-result "$AGENT_GRAPHICAL_RESULT" \
     --agent-artifacts "$AGENT_GRAPHICAL_DIR" \
     --agent-build-sha "$SHA" \
+    --agent-simulation-speed 4 \
     --agent-screenshot "$AGENT_GRAPHICAL_SCREENSHOT" &
   local pid=$!
   wait_for_player "$pid" "Graphical agent session" "$GRAPHICAL_PLAYER_TIMEOUT_SECONDS"
@@ -1069,7 +1070,7 @@ write_summary() {
       seed: 0, staticChecks: "passed", editModeTests: "passed", playModeTests: "passed",
       build: "passed", unusedDirectModulePackages: "absent", unusedPlayerFeatures: "absent",
       verificationProfile: "headless-first", simulationSpeed: 4,
-      headlessSmoke: "passed", graphicalSmoke: "passed",
+      graphicalAgentSmoke: "passed",
       verificationModeConflict: "passed",
       liveAgentHeadless: "passed", completeMatchRestart: "passed"}' \
     > "$EVIDENCE/summary.json"
@@ -1077,7 +1078,7 @@ write_summary() {
   jq -e --arg sha "$SHA" '.sha == $sha and .platform == "StandaloneOSX-arm64" and
     .developmentBuild == true and .resolution == "1920x1080" and
     .verificationProfile == "headless-first" and .simulationSpeed == 4 and
-    .verificationModeConflict == "passed"' \
+    .graphicalAgentSmoke == "passed" and .verificationModeConflict == "passed"' \
     "$EVIDENCE/summary.json" >/dev/null || fail "Verification summary contract failed"
 }
 
@@ -1098,8 +1099,7 @@ verify() {
   assert_arm64_development_build
   assert_unused_player_modules
   verification_conflict_smoke
-  smoke
-  graphical_smoke
+  agent_graphical_smoke
   complete_match_restart_smoke
   live_agent_smoke
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \

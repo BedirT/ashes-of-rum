@@ -15,7 +15,8 @@ speed and real-time watchdogs remain intact.
 - Run ordinary Play Mode gameplay waits at 20x game-time without changing production tuning,
   while frame-sensitive animation and NavMesh tests declare a lower explicit speed.
 - Build the native macOS Apple-silicon Development player.
-- Run one headless launch smoke and one 1920x1080 graphical smoke.
+- Run one 1920x1080 graphical semantic starting-economy smoke; the complete match and live-agent
+  paths supply the headless built-player proof.
 - Complete a real-economy match and shipped Restart through the semantic agent protocol in
   `-batchmode -nographics` at 4x game-time.
 - Exercise the adaptive live-agent mailbox in `-batchmode -nographics` at 4x game-time.
