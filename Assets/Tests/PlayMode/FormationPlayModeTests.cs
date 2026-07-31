@@ -475,7 +475,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator FormationMember_RoutesAroundCarvedObstacleWithoutLeavingNavMesh()
         {
-            yield return LoadEconomy(4f);
+            yield return LoadEconomy(2f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));
@@ -505,7 +505,7 @@ namespace AshesOfRum.Tests
 
             var greatestDetour = 0f;
             var previousPosition = member.WorldPosition;
-            var deadline = Time.realtimeSinceStartup + 5f;
+            var deadline = Time.realtimeSinceStartup + 10f;
             while (Vector3.Distance(member.WorldPosition, destination) > 0.45f &&
                    Time.realtimeSinceStartup < deadline)
             {

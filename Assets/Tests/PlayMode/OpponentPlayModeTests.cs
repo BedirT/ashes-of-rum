@@ -177,7 +177,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator AttackMove_RevealsAndAcquiresTheNearestHostileThroughFog()
         {
-            yield return LoadEconomy();
+            yield return LoadEconomy(1f);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
