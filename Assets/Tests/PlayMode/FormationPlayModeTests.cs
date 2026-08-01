@@ -95,7 +95,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator ArcherPresentation_DirectSpawnsBothFactionsAndExercisesEveryRuntimeState()
         {
-            yield return LoadEconomy(1f);
+            yield return LoadEconomy(DetailedSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
                 new Vector3(0f, 0f, 7f));
@@ -300,7 +300,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator Combat_ReorientationBlocksAttacksForFixedDurationAndHudShowsFacingState()
         {
-            yield return LoadEconomy(1f);
+            yield return LoadEconomy(DetailedSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var tuning = GetPrivateField<EconomyTuning>(economy, "tuning");
             var attacker = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
@@ -407,7 +407,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator ArcherProjectiles_FaceTheirFlightAgainstWorkersAndStructures()
         {
-            yield return LoadEconomy(1f);
+            yield return LoadEconomy(DetailedSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var archers = economy.DeployFriendlyForAutomation(FormationType.Archers,
                 new Vector3(4f, 0f, 18f));
@@ -475,7 +475,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator FormationMember_RoutesAroundCarvedObstacleWithoutLeavingNavMesh()
         {
-            yield return LoadEconomy(2f);
+            yield return LoadEconomy(DetailedSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));
@@ -539,8 +539,8 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator BunchedFormationMembers_KeepMovingAtObstacleEdgeAndRegroup()
         {
-            // Keep this frame- and NavMesh-sensitive regression at normal simulation speed.
-            yield return LoadEconomy(1f);
+            // Keep this frame- and NavMesh-sensitive regression at a low simulation speed.
+            yield return LoadEconomy(DetailedSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));
@@ -716,7 +716,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator FormationMember_RefreshesFallbackAsBlockedSlotDriftsIncrementally()
         {
-            yield return LoadEconomy(1f);
+            yield return LoadEconomy(DetailedSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             var formation = economy.DeployFriendlyForAutomation(FormationType.Spearmen,
                 new Vector3(0f, 0f, 10f));

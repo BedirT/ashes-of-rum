@@ -9,7 +9,6 @@ using UnityEngine.AI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
-using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
@@ -95,8 +94,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator Worker_GathersDepositsAndReturnsAutomatically()
         {
-            yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
-            yield return null;
+            yield return LoadEconomy();
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             Assert.That(economy, Is.Not.Null);
             Assert.That(economy.Workers, Has.Count.EqualTo(StartingEconomyController.WorkerCount));
@@ -560,7 +558,7 @@ namespace AshesOfRum.Tests
             GameObject secondScout = null;
             try
             {
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
                 yield return WaitUntil(() => economy.PopulationCapacity == 20);
 
@@ -735,7 +733,7 @@ namespace AshesOfRum.Tests
             var originalTimeScale = Time.timeScale;
             try
             {
-                Time.timeScale = 4f;
+                Time.timeScale = NavigationSimulationSpeed;
                 var worker = economy.Workers[0];
                 Assert.That(GetPrivateField<IReadOnlyList<ResourceCache>>(worker, "knownCaches").Count,
                     Is.EqualTo(4));
@@ -774,7 +772,7 @@ namespace AshesOfRum.Tests
             var originalTimeScale = Time.timeScale;
             try
             {
-                Time.timeScale = 4f;
+                Time.timeScale = NavigationSimulationSpeed;
                 var worker = economy.EnemyWorkers.First(candidate => candidate.CurrentConstruction == null);
                 Assert.That(GetPrivateField<IReadOnlyList<ResourceCache>>(worker, "knownCaches").Count,
                     Is.EqualTo(4));
@@ -820,7 +818,7 @@ namespace AshesOfRum.Tests
             var originalTimeScale = Time.timeScale;
             try
             {
-                Time.timeScale = 4f;
+                Time.timeScale = NavigationSimulationSpeed;
                 worker.IssueGather(depletedCache);
                 yield return WaitUntil(() => depletedCache.Remaining == 0 &&
                                              worker.CurrentActivity == WorkerAgent.Activity.Idle);
