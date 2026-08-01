@@ -8,10 +8,14 @@ namespace AshesOfRum.Editor.Tests
     public sealed class BuildingScaleReviewAssetTests
     {
         [Test]
-        public void HouseAndHisarUseUniformScaleWhileHisarHasRoomyLogicalFootprint()
+        public void ReviewBuildingsUseUniformScaleAtTheirApprovedHeights()
         {
             AssertBounds(BuildingScaleReviewAssetSetup.HousePrefabPath, expectedHeight: 3f,
-                expectedFootprint: null, requireUniformScale: true);
+                expectedFootprint: new Vector2(3.6f, 3.6f), requireUniformScale: true);
+            AssertBounds(BuildingScaleReviewAssetSetup.StorehousePrefabPath, expectedHeight: 3f,
+                expectedFootprint: new Vector2(5.7f, 4.4f), requireUniformScale: true);
+            AssertBounds(BuildingScaleReviewAssetSetup.WatchtowerPrefabPath, expectedHeight: 4f,
+                expectedFootprint: new Vector2(3.2f, 3.2f), requireUniformScale: true);
             AssertBounds(BuildingScaleReviewAssetSetup.HisarPrefabPath, expectedHeight: 3.25f,
                 expectedFootprint: new Vector2(HisarPresentation.FootprintSize.x,
                     HisarPresentation.FootprintSize.z), requireUniformScale: true);
