@@ -42,35 +42,35 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalScale.x
-      value: 106.16739
+      value: 99.99519
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalScale.y
-      value: 106.16739
+      value: 99.99519
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalScale.z
-      value: 106.16739
+      value: 99.99519
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.01171825
+      value: 0.013245238
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 1.5
+      value: 0.00007200241
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -1.3270923
+      value: 0.00000017880532
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 1
+      value: 0.7071068
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0
+      value: -0.7071068
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_LocalRotation.y
@@ -95,7 +95,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 2100000, guid: 3de256a474d49433790c20f8ce3df2bb, type: 2}
+      objectReference: {fileID: 2100000, guid: d286eb91fbedc485ca944247c2b798b1, type: 2}
     - target: {fileID: 919132149155446097, guid: 0198c3780c75642878600db6e0c4c57a, type: 3}
       propertyPath: m_Name
       value: Authored Model
