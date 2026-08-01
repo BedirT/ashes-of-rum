@@ -636,7 +636,7 @@ namespace AshesOfRum.Tests
             try
             {
                 Assert.That(economy.FogOfWar.IsCurrentlyVisible(building), Is.True);
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 yield return WaitUntil(() => building.IsComplete);
                 Time.timeScale = 0f;
                 economy.FogOfWar.RefreshNow();
@@ -685,7 +685,7 @@ namespace AshesOfRum.Tests
                 Assert.That(economy.FogOfWar.StateAt(building.transform.position), Is.EqualTo(FogState.Explored));
                 var rememberedFoundationColors = renderers.Select(itemRenderer => itemRenderer.material.color).ToArray();
 
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 yield return WaitUntil(() => building.IsComplete);
                 Time.timeScale = 0f;
                 economy.FogOfWar.RefreshNow();

@@ -36,7 +36,7 @@ namespace AshesOfRum.Tests
             Assert.That(ReferenceEquals(attackers.StructureTarget, economy.EnemyHisar), Is.True,
                 "A real contextual right click must focus the visible hostile Hisar.");
             InputSystem.RemoveDevice(mouse);
-            Time.timeScale = 20f;
+            Time.timeScale = FastSimulationSpeed;
             yield return WaitUntil(() => economy.Outcome == MatchOutcome.Victory);
 
             Assert.That(Time.timeScale, Is.Zero);
@@ -68,7 +68,7 @@ namespace AshesOfRum.Tests
             var invaders = economy.DeployEnemyForAutomation(FormationType.Cavalry,
                 economy.FriendlyHisar.transform.position + Vector3.forward * 7f);
             Assert.That(invaders.IssueFocus(economy.FriendlyHisar), Is.True);
-            Time.timeScale = 20f;
+            Time.timeScale = FastSimulationSpeed;
             yield return WaitUntil(() => economy.Outcome == MatchOutcome.Defeat);
             Assert.That(GameObject.Find("Match Result Title").GetComponent<Text>().text, Is.EqualTo("DEFEAT"));
             GameObject.Find("Quit Match").GetComponent<Button>().onClick.Invoke();
@@ -150,7 +150,7 @@ namespace AshesOfRum.Tests
             GameObject fallbackScout = null;
             try
             {
-                Time.timeScale = 4f;
+                Time.timeScale = NavigationSimulationSpeed;
                 worker.IssueGather(depletedCache);
                 yield return WaitUntil(() => depletedCache.Remaining == 0 &&
                                              worker.CurrentActivity == WorkerAgent.Activity.Idle);
@@ -204,7 +204,7 @@ namespace AshesOfRum.Tests
                 Assert.That(opponent.IsStorehouseRecoveryRequested, Is.True);
                 Assert.That(opponent.RecoveryCache, Is.SameAs(recoveryCache));
                 economy.SetOpponentEnabledForAutomation(true);
-                Time.timeScale = 1f;
+                Time.timeScale = NavigationSimulationSpeed;
                 yield return WaitUntil(() => economy.EnemyBuildings.Any(building =>
                     building.Type == BuildingType.Storehouse));
                 var storehouse = economy.EnemyBuildings.Single(building => building.Type == BuildingType.Storehouse);

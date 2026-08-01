@@ -16,7 +16,12 @@ namespace AshesOfRum.Tests
 {
     public sealed partial class StartingEconomyPlayModeTests
     {
-        private static IEnumerator LoadEconomy(float simulationSpeed = 20f)
+        private const float DefaultSimulationSpeed = 20f;
+        private const float FastSimulationSpeed = 100f;
+        private const float NavigationSimulationSpeed = 10f;
+        private const float DetailedSimulationSpeed = 2f;
+
+        private static IEnumerator LoadEconomy(float simulationSpeed = DefaultSimulationSpeed)
         {
             yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
             yield return null;

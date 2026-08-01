@@ -177,7 +177,7 @@ namespace AshesOfRum.Tests
         [UnityTest]
         public IEnumerator AttackMove_RevealsAndAcquiresTheNearestHostileThroughFog()
         {
-            yield return LoadEconomy(1f);
+            yield return LoadEconomy(NavigationSimulationSpeed);
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
             Assert.That(economy.TryPlaceHouse(economy.Workers[0], VisibleHouseSite), Is.True);
             yield return WaitUntil(() => economy.PopulationCapacity == 20);
@@ -220,7 +220,7 @@ namespace AshesOfRum.Tests
             var originalTimeScale = Time.timeScale;
             try
             {
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 yield return WaitUntil(() => economy.EnemyBuildings.Any(building => building.IsComplete) &&
                                              economy.EnemyFormations.Count >= 2);
                 Time.timeScale = 0f;
@@ -264,7 +264,7 @@ namespace AshesOfRum.Tests
             var originalTimeScale = Time.timeScale;
             try
             {
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 economy.SetOpponentEnabledForAutomation(false);
                 economy.SetOpponentTargetsAvailableForAutomation(false);
                 economy.CreditOpponentSuppliesForAutomation(tuning.storehouseCost);
@@ -322,7 +322,7 @@ namespace AshesOfRum.Tests
             yield return SceneManager.LoadSceneAsync(HarnessContract.SceneName, LoadSceneMode.Single);
             yield return null;
             var economy = Object.FindAnyObjectByType<StartingEconomyController>();
-            Time.timeScale = 20f;
+            Time.timeScale = FastSimulationSpeed;
             yield return WaitUntil(() => economy.EnemyFormations.Count >= 2);
             Time.timeScale = 0f;
 
@@ -359,7 +359,7 @@ namespace AshesOfRum.Tests
 
             try
             {
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 yield return WaitUntil(() => economy.EnemyFormations.Any(formation =>
                     formation.Type == FormationType.Cavalry));
                 Time.timeScale = 0f;
@@ -408,7 +408,7 @@ namespace AshesOfRum.Tests
             var originalTimeScale = Time.timeScale;
             try
             {
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 yield return WaitUntil(() => economy.EnemyFormations.Count >= 1);
                 Time.timeScale = 0f;
                 for (var index = 0; index < economy.EnemyWorkers.Count; index++)
@@ -463,7 +463,7 @@ namespace AshesOfRum.Tests
 
             try
             {
-                Time.timeScale = 20f;
+                Time.timeScale = FastSimulationSpeed;
                 yield return WaitUntil(() => economy.EnemyFormations.Any(formation =>
                     formation.Type == FormationType.Cavalry));
                 Time.timeScale = 0f;
