@@ -1,4 +1,4 @@
-# Slice 027 - Review textured building models
+# Slice 028 - Review textured building models
 
 ## Player-visible outcome
 
